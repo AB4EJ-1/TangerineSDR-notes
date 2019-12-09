@@ -111,12 +111,14 @@ typedef struct databBuf
 	{
 	long bufCount;
 	long timeStamp;
-	//struct dataSample myDataSample[1024];
-    float theDataSample[2048];  // should be double the number of samples
+	//struct dataSample myDataSample[1024]; this is the logical layout using dataSample.
+    //    Below is what Digital RF reequires to be able to understand the samples.
+    //    In the array, starting at zero, sample[j] = I, sample[j+1] = Q (complex data)
+        float theDataSample[2048];  // should be double the number of samples
 	} DATABUF ;
 
 
-///////// Start of Code /////////////////////////////
+///////// Start of Code /////////////////////////////////////////////////////////////
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
@@ -286,16 +288,20 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     printf("Create HDF5 file group, start time: %ld",global_start_sample);
     vector_leading_edge_index=0;
     data_object = digital_rf_create_write_hdf5(path_to_DRF_data, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
-     MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
-		  "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
+      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
+     "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
       }
 
 
 // here we write out DRF
 
-    //fprintf(stderr,"sampleCounter = %i\n",sampleCounter);
+  
     vector_sum = vector_leading_edge_index + hdf_i*vector_length; 
 /*
+
+// in case we have to convert or otherwise interpret the DE buffer, here is a
+// way to iterate through it
+
     puts("copy data");   // this can be eliminated by setting up buffer descrip better
     for(int j=0; j < 2048; j=j+2)
      {
@@ -305,6 +311,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 */
 
     puts("Write HDF5 data");
+// push buffer directly to DRF just like it is
     result = digital_rf_write_hdf5(data_object, vector_sum, buf_ptr->theDataSample,vector_length); 
   //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
 
@@ -315,8 +322,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
 
 
-
   free(buf->base);
+
   //uv_udp_recv_stop(recv_handle);
   }
 
