@@ -19,6 +19,8 @@
 *
 * External packages:
 * libuv - for asynchronous processing
+  hdf5
+  Digital_RF
 */
 
 
@@ -30,20 +32,59 @@
 #include "digital_rf.h"
 #include <dirent.h>
 #include <errno.h>
+#include "de_signals.h"
 
 // Definitions for Digital_RF
 // length of random number buffer
-#define NUM_SUBCHANNELS 4
+#define NUM_SUBCHANNELS 1
 #define RANDOM_BLOCK_SIZE 4194304 * NUM_SUBCHANNELS
 // the last starting index used from buffer
 #define N_SAMPLES 1048576
 #define WRITE_BLOCK_SIZE 1000000
-// set first time to be March 9, 2014
+// set first time to be March 9, 2014   TODO: this to be set by GPSDO or NTP clock
 #define START_TIMESTAMP 1394368230
 #define SAMPLE_RATE_NUMERATOR 1000000
 #define SAMPLE_RATE_DENOMINATOR 1
 #define SUBDIR_CADENCE 10
 #define MILLISECS_PER_FILE 1000
+
+///////////////// Digital RF / HDF5 //////////////////////////////////////
+// Based on research with old_protocol_N1.c in pihpsdr-master
+static	Digital_rf_write_object * data_object = NULL; /* main object created by init */
+static	Digital_rf_write_object * data_object1 = NULL; /* main object created by init */
+static	uint64_t vector_leading_edge_index = 0; /* index of the sample being written starting at zero with the first sample recorded */
+static	uint64_t global_start_index; /* start sample (unix time * sample_rate) of first measurement - set below */
+static	int hdf_i = 0; 
+static  int result = 0;
+static  int sampleCounter = 0;
+	/*  dataset to write */
+static	float data_hdf5[3000];  // needs to be at least 4 x vector lenth + ~72
+
+	/* writing parameters */
+static	uint64_t sample_rate_numerator = 48000; // simulating here
+static	uint64_t sample_rate_denominator = 1;
+static	uint64_t subdir_cadence = 400; /* Number of seconds per subdirectory - typically longer */
+static	uint64_t millseconds_per_file = 4000; /* Each subdirectory will have up to 10 400 ms files */
+static	int compression_level = 0; /* low level of compression */
+static	int checksum = 0; /* no checksum */
+static	int is_complex = 1; /* complex values */
+static	int is_continuous = 1; /* continuous data written */
+static	int num_subchannels = 1; /* subchannels */
+static	int marching_periods = 1; /*  marching periods when writing */
+static	char uuid[100] = "DE output";
+static  char hdf5File[50] = "/tmp/RAM_disk/ch0_3";
+static  char hdf5File1[50] = "/tmp/RAM_disk/ch4_7";
+static uint64_t theUnixTime = 0;
+//static  char hdf5File[50] = "/tmp/ramdisk";
+//char *filename = "/media/odroid/hamsci/raw_data/dat3.dat";  // for testing raw binary output
+static  char* sysCommand1;
+static  char* sysCommand2;
+static	uint64_t vector_length = 1024; /* number of samples written for each call -  */
+static  uint64_t vector_sum = 0;
+
+static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
+
+////////////////////////////////////////////////
 
 // uncomment to enable specific tests
 #define TEST_FWRITE
@@ -51,8 +92,8 @@
 #define TEST_HDF5_CHECKSUM
 #define TEST_HDF5_CHECKSUM_COMPRESS
 
-Digital_rf_write_object *data_object = NULL;
-char path_to_DRF_data[80];
+//Digital_rf_write_object *data_object = NULL;
+static char path_to_DRF_data[80];
 
 // Variables for asynchtonous processing using libuv library
 uv_loop_t *loop;
@@ -70,7 +111,8 @@ typedef struct databBuf
 	{
 	long bufCount;
 	long timeStamp;
-	struct dataSample myDataSample[1024];
+	//struct dataSample myDataSample[1024];
+    float theDataSample[2048];  // should be double the number of samples
 	} DATABUF ;
 
 
@@ -128,13 +170,21 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   char mybuf[80];
   memset(&mybuf, 0, sizeof(mybuf));
   strncpy(mybuf, buf->base, nread-1);   // subtract 1 to strip CR
-// NOTE! i if controller does not sent \n at end of buffer, commmand will be truncated (above)
+// NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
   puts("mybuf="); puts(mybuf);
   if(strncmp(buf->base,"BYE",3)==0)
     {
     puts("halting");
     uv_stop(loop);
     }
+  if(strncmp(buf->base, START_DATA_COLL,2)==0)  // is this a command to start collecting data?
+    {
+      buffers_received = 0;  // this lets us count buffers independently of counter in the buffer itself
+    }
+  if(strncmp(buf->base, STOP_DATA_COLL,2)==0)
+	{
+	  result = digital_rf_close_write_hdf5(data_object);
+	}
   puts("process_command triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
@@ -143,7 +193,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 // forward command to DE
   puts("write to DE");
   uv_write(write_req, DEsockethandle, a, 1, DE_write_cb);
-}
+  }
 
 // callback for when a connection from controller is received
 void on_new_connection(uv_stream_t *server, int status) {
@@ -189,41 +239,76 @@ void on_DE_CL_connect(uv_connect_t* connection, int status)
 	uv_buf_t buffer[] = {
 		{.base = "S?", .len = 2},
 		{.base = "S?", .len = 2}
-	};
+	 };
 	uv_write_t request;
 	uv_write(&request, stream, buffer, 1, on_DE_write);
     puts("Make ready to receive data from DE");
     uv_read_start((uv_stream_t*) stream, alloc_buffer, handleDEdata);
 }
 
-// Callback for when UDP data packets received from DE 
+///////////////////////////////////////////////////////////////
+//  Callback for when UDP data packets received from DE 
+//////////////////////////////////////////////////////////////
 void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
   {
   if(nread == 0 )
-  { 
-    puts("received UDP zero");
-	return;
-  }
-  //packetCount++;
+    { 
+      puts("received UDP zero");
+	  return;
+    }
+  buffers_received++;
   //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
   fprintf(stderr,"nread = %zd\n", nread);
   if (nread > 8000)  // looks like a valid databuffer, based on length
     {
     DATABUF *buf_ptr;
 
-// here, if bufCount is zero, we create the Digital RF / HDF5 file;
-// 
-
     buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
     memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
-    printf("bufcount = %ld\n", (long )buf_ptr->bufCount);
+    long packetCount = (long) buf_ptr->bufCount;
+    printf("bufcount = %ld\n", packetCount);
+
+  /* local variables  for Digital RF */
+    uint64_t vector_leading_edge_index = 0;
+    uint64_t global_start_sample = (uint64_t)(START_TIMESTAMP * ((long double)SAMPLE_RATE_NUMERATOR)
+		/ SAMPLE_RATE_DENOMINATOR);
+
 // if bufCount is zero, it is first data packet; create the Digital RF file
+// we also check buffers_received, so we can start recording even if we missed
+// one or more buffers at start-up.
+
+// TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running
+
+  global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR / SAMPLE_RATE_DENOMINATOR;
+
+  if(packetCount == 0 || buffers_received == 1) {
+    printf("Create HDF5 file group, start time: %ld",global_start_sample);
+    vector_leading_edge_index=0;
+    data_object = digital_rf_create_write_hdf5(path_to_DRF_data, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+     MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
+		  "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
+      }
 
 
-// next save the buffer into DRF
+// here we write out DRF
 
-// here we write out
+    //fprintf(stderr,"sampleCounter = %i\n",sampleCounter);
+    vector_sum = vector_leading_edge_index + hdf_i*vector_length; 
+/*
+    puts("copy data");   // this can be eliminated by setting up buffer descrip better
+    for(int j=0; j < 2048; j=j+2)
+     {
+     data_hdf5[j] = buf_ptr->myDataSample[j/2].I_val;
+     data_hdf5[j+1] = buf_ptr->myDataSample[j/2].Q_val;
+     }
+*/
+
+    puts("Write HDF5 data");
+    result = digital_rf_write_hdf5(data_object, vector_sum, buf_ptr->theDataSample,vector_length); 
+  //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
+
+    hdf_i++;
 
     free (buf_ptr);  // free the work buffer
     }
@@ -296,7 +381,11 @@ int main() {
     return 1;
     }
   
-//      connect to DE as client
+//      Connect to DE as client, using TCP
+
+// NOTE. If DE expects to be "discovered" a la HPSDR, this will have to be 
+// replaced with discovery code.  See pihpsdr old_protocol_N1.c
+
   puts("Trying to connect to DE as client");
   uv_tcp_t* socket = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
   uv_tcp_init(loop, socket);
@@ -304,7 +393,6 @@ int main() {
   struct sockaddr_in dest;
   uv_ip4_addr(DE_ip_str, DE_port, &dest); 
   uv_tcp_connect(connect, socket, (const struct sockaddr*)&dest, on_DE_CL_connect);
-
 
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
@@ -320,10 +408,14 @@ int main() {
 /////////// Digital RF Setup //////////////////////////////////////
 
   /* local variables */
+
+/*
   uint64_t vector_leading_edge_index = 0;
   uint64_t global_start_sample = (uint64_t)(START_TIMESTAMP * ((long double)SAMPLE_RATE_NUMERATOR)/SAMPLE_RATE_DENOMINATOR);
 
-  strcpy(path_to_DRF_data, "/tmp/hdf5/junk0");    // TODO: replace with config item
+*/
+
+  strcpy(path_to_DRF_data, "/mnt/RAM_disk/hdf5");    // TODO: replace with config item
   DIR* dir = opendir(path_to_DRF_data);
   if(dir)
 	{
@@ -359,13 +451,7 @@ int main() {
 */
 
 	
-	 else {printf("Open DIR failed"); }
-	
-	
 
-  vector_leading_edge_index=0;
-  data_object = digital_rf_create_write_hdf5(path_to_DRF_data, H5T_NATIVE_SHORT, SUBDIR_CADENCE, MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
-		  "FAKE_UUID_0", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
 
 ////////////////////////////////////////////////////////////////
 
