@@ -5,7 +5,7 @@ app = Flask(__name__)
 #@app.route("/")
 #def index():
 #    return "Index!"
-
+theStatus = "Off"
 @app.route("/hello")
 def hello():
     return "Hello World!"
@@ -17,14 +17,22 @@ def members():
 @app.route("/hello1/<thename>/")
 def hello1(thename):
     return render_template(
-    'test1.html',name=thename)
+    'tangerine.html',name=thename)
 
 @app.route("/members/<string:name>/")
 def getMember(name):
 	return name
 #    return name</string:name>
 
-@app.route('/')
+@app.route("/")
+def sdr():
+   return render_template('tangerine.html',result = theStatus)
+
+@app.route("/config")
+def config():
+   return render_template('config.html')
+
+@app.route('/student')
 def student():
    return render_template('student.html')
 
