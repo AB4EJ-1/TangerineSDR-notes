@@ -99,6 +99,14 @@ static char path_to_DRF_data[80];
 uv_loop_t *loop;
 static uv_tcp_t* DEsocket; // socket to be used across multiple functions
 static uv_stream_t* DEsockethandle;
+
+// the following probably not necessart  (TODO)
+static uv_tcp_t* websocket; // socket to be used for comm to web server
+//static uv_stream_t* websockethandle;
+
+static uv_stream_t* webStream;
+
+
 static long packetCount;
 
 // buffer for A/D data from DE
@@ -118,23 +126,29 @@ typedef struct databBuf
 	} DATABUF ;
 
 
-///////// Start of Code /////////////////////////////////////////////////////////////
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
 }
 
+///////////////////// Start of Code ///////////////////////
+
+//////////////////////////////////////////////////////////
 // callback routine for after write to sender is complete
-void echo_write(uv_write_t *req, int status) {
+////////////////////////////////////////////////////////
+void web_write_complete(uv_write_t *req, int status) {
+  printf("webctl write status = %d\n", (int)status);
   if (status == -1) {
     fprintf(stderr, "Write error!\n");
   }
   char *base = (char*) req->data;
   puts("free req");
-  free(req);
+ // free(req);
 }
 
+/////////////////////////////////////////////////////////////
 // callback for when write to DE is complete
+///////////////////////////////////////////////////////////
 void DE_write_cb(uv_write_t *req, int status) {
   if (status == -1) {
     fprintf(stderr, "Write error!\n");
@@ -144,7 +158,9 @@ void DE_write_cb(uv_write_t *req, int status) {
   free(req);
 }
 
+//////////////////////////////////////////////////////////////
 // callback for when TCP data is received from DE
+/////////////////////////////////////////////////////////////
 void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   if(nread <=0)
 	return;
@@ -153,12 +169,35 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   memset(&reply, 0, sizeof(reply));
   strncpy(reply,DEbuf->base, nread);
   fprintf(stderr,"DE sent %zd: bytes:\n", nread);
-  puts(reply);  
+  puts(reply); 
+
+
+////////// this is to forward a status message from DE to webcontrol
+  puts("process_command triggered; set up uv_write_t");
+  uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+  puts("set up write_req");
+  uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
+
+  puts("forward status to webcontrol");
+  uv_write_t DEdata;
+// Caution - doing this write before webStream is initialized will crash
+  uv_write(&DEdata, (uv_stream_t*) webStream, a, 2, web_write_complete);
+  //uv_write(write_req, LHsockethandle, a, 1, web_write_complete);
+
+
+
+/////////////
+
+//  puts("write to web control");
+//  uv_write(write_req, LHsockethandle, a, 1, DE_write_cb); 
   puts("free the DE buffer");
   free(DEbuf->base);    
 }
 
-// callback for when a command is received from controller
+/////////////////////////////////////////////////////////////////////
+// callback for when a command is received from webcontroller
+/////////////////////////////////////////////////////////////////
+
 void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   if (nread < 0) {
     fprintf(stderr, "Read error!\n");  // sender disconnecred/crashed
@@ -168,6 +207,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     free(buf->base);  // release memory allocated to read buffer
     return ;
     }
+  puts("Command received from web control");
   printf("nread = %zd\n",nread);
   char mybuf[80];
   memset(&mybuf, 0, sizeof(mybuf));
@@ -197,7 +237,9 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   uv_write(write_req, DEsockethandle, a, 1, DE_write_cb);
   }
 
-// callback for when a connection from controller is received
+/////////////////////////////////////////////////////////////////
+// callback for when a connection from webcontroller is received
+////////////////////////////////////////////////////////////////
 void on_new_connection(uv_stream_t *server, int status) {
   if (status == -1) {
     return;
@@ -207,13 +249,16 @@ void on_new_connection(uv_stream_t *server, int status) {
   uv_tcp_init(loop, client);
   if (uv_accept(server, (uv_stream_t*) client) == 0) {
     uv_read_start((uv_stream_t*) client, alloc_buffer, process_command);
+    webStream = (uv_stream_t*) client;  // save stream object for replies to webserver
   }
   else {
     uv_close((uv_handle_t*) client, NULL);
   }
 }
 
+/////////////////////////////////////////////////////////////
 // callback after write to DE is completed
+////////////////////////////////////////////////////////////
 void on_DE_write(uv_write_t* req, int status)
 {
   if (status) {
@@ -226,6 +271,7 @@ void on_DE_write(uv_write_t* req, int status)
 	//free(req);
 }
 
+/////////////////////////////////////////////////////////////////
 // callback indicating client-type connection to DE complete
 void on_DE_CL_connect(uv_connect_t* connection, int status)
 {
@@ -243,7 +289,8 @@ void on_DE_CL_connect(uv_connect_t* connection, int status)
 		{.base = "S?", .len = 2}
 	 };
 	uv_write_t request;
-	uv_write(&request, stream, buffer, 1, on_DE_write);
+   // removed temporarily
+	// uv_write(&request, stream, buffer, 1, on_DE_write);
     puts("Make ready to receive data from DE");
     uv_read_start((uv_stream_t*) stream, alloc_buffer, handleDEdata);
 }
@@ -367,9 +414,6 @@ int main() {
     fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
   else
     fprintf(stderr,"No port set for listening to webcontrol\n");
-
-
-
 
 
   loop = uv_default_loop();
