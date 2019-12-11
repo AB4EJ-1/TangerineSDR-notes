@@ -1,10 +1,50 @@
 from flask import Flask, flash, redirect, render_template, request, session, abort
 import socket
+import _thread
+import time
+
 app = Flask(__name__)
 
 #@app.route("/")
 #def index():
 #    return "Index!"
+
+statusControl = 0
+
+def check_status(threadName, delay):
+   print("Enter check_status")
+   statusControl = 1;
+   while (statusControl == 1):
+      print("Status inquiry to LH")
+      theCommand = 'S?'
+      host_ip, server_port = "127.0.0.1", 6100
+      data = theCommand + "\n"
+   
+    # Initialize a TCP client socket using SOCK_STREAM
+      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+      try:
+    # Establish connection to TCP server and exchange data
+        tcp_client.connect((host_ip, server_port))
+        tcp_client.sendall(data.encode())
+
+    # Read data from the TCP server and close the connection
+        received = tcp_client.recv(1024)
+        print("LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
+        if(received[0:2].decode("ASCII") == "OK"):
+          print("status is ON")
+          theStatus = "ON"
+      except Exception as e: 
+        print(e)
+        return
+      finally:
+        tcp_client.close() 
+      print("Thread sleep")     
+      time.sleep(delay)
+      print("exit sleep")
+
+
+
 theStatus = "Off"
 @app.route("/hello")
 def hello():
@@ -24,8 +64,15 @@ def getMember(name):
 	return name
 #    return name</string:name>
 
+
+# Here is the home page
 @app.route("/")
 def sdr():
+   statusControl = 1
+   print("start thread")
+   _thread.start_new_thread(check_status, ("Thread1",2,))
+   time.sleep(10);
+   print("WEB status ", theStatus)
    return render_template('tangerine.html',result = theStatus)
 
 @app.route("/config")
