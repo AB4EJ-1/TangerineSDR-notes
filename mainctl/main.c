@@ -134,7 +134,7 @@ static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* b
 ///////////////////// Start of Code ///////////////////////
 
 //////////////////////////////////////////////////////////
-// callback routine for after write to sender is complete
+// callback routine for after write to webcontrol is complete
 ////////////////////////////////////////////////////////
 void web_write_complete(uv_write_t *req, int status) {
   printf("webctl write status = %d\n", (int)status);
@@ -143,7 +143,7 @@ void web_write_complete(uv_write_t *req, int status) {
   }
   char *base = (char*) req->data;
   puts("free req");
- // free(req);
+  free(req);
 }
 
 /////////////////////////////////////////////////////////////
@@ -171,17 +171,19 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   fprintf(stderr,"DE sent %zd: bytes:\n", nread);
   puts(reply); 
 
-
-////////// this is to forward a status message from DE to webcontrol
+/////////////////////////////////////////////////////////////////
+//////////  forward a status message from DE to webcontrol
+//////////////////////////////////////////////////////////////////
   puts("process_command triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
   uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
 
   puts("forward status to webcontrol");
-  uv_write_t DEdata;
+//  uv_write_t DEdata;
 // Caution - doing this write before webStream is initialized will crash
-  uv_write(&DEdata, (uv_stream_t*) webStream, a, 2, web_write_complete);
+ // uv_write(&DEdata, (uv_stream_t*) webStream, a, 2, web_write_complete);
+  uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
   //uv_write(write_req, LHsockethandle, a, 1, web_write_complete);
 
 
@@ -201,6 +203,16 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   if (nread < 0) {
     fprintf(stderr, "Read error!\n");  // sender disconnecred/crashed
+    {  // inform webcontrol that DE seems unresponsive
+     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+     puts("set up write_req");
+     uv_buf_t a[]={{.base="NAK", .len=2},{.base="\n",.len=1}};
+     puts("Send NAK status to webcontrol");
+     uv_write_t WBdata;
+// Caution - doing this write before webStream is initialized will crash
+  //   uv_write(&WBdata, (uv_stream_t*) webStream, a, 2, web_write_complete);
+     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+    }
     puts("do uv_close");
     uv_close((uv_handle_t*)client, NULL);
     puts("free read buffer");
@@ -231,7 +243,6 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
   uv_buf_t a[]={{.base=mybuf,.len=nread},{.base="\n",.len=1}};
-
 // forward command to DE
   puts("write to DE");
   uv_write(write_req, DEsockethandle, a, 1, DE_write_cb);
@@ -391,7 +402,7 @@ int main() {
   config_init(&cfg);
 
   /* Read the file. If there is an error, report it and exit. */
-  if(! config_read_file(&cfg, "main.cfg"))
+  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
   {
     fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
             config_error_line(&cfg), config_error_text(&cfg));
@@ -410,7 +421,7 @@ int main() {
   else
 	fprintf(stderr,"No DE_port setting in configuration file\n");
 
-  if(config_lookup_int(&cfg, "control_port", &controller_port))
+  if(config_lookup_int(&cfg, "controller_port", &controller_port))
     fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
   else
     fprintf(stderr,"No port set for listening to webcontrol\n");
