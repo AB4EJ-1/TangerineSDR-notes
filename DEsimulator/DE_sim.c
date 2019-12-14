@@ -67,9 +67,8 @@ void* UDPthread(void* arg)
 	printf("unix time = %ld\n", epoch);
 
 	for (int i = 0; i < 1024; i++) {
-	  I = A * (sin ( (float)i / 57.295778666));
-	  Q = A * (cos ( (float)i / 57.295778666));
-
+	  I =  sin ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
+	  Q =  cos ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
 	  myBuffer.timeStamp = (double) epoch;
 	  myBuffer.myDataSample[i].I_val = I;
 	  myBuffer.myDataSample[i].Q_val = Q;
@@ -80,7 +79,7 @@ void* UDPthread(void* arg)
   long loopstart;
   loopstart = clock();
 
-  for(int j=0; j<10; j++)
+  while (1==1)  // endless loop until thread cancel
   { 
    // puts("UDP thread start; hit sem_wait");
     sem_wait(&mutex);
@@ -91,7 +90,7 @@ void* UDPthread(void* arg)
             sizeof(servaddr));
     fprintf(stderr,"UDP message sent from thread. bytes= %d\n", sentBytes); 
   //  sleep(1);
-    usleep(5288);  // wait for this many microseconds
+    usleep(250);  // wait for this many microseconds
     puts("UDP thread end");
     sem_post(&mutex);
   }
