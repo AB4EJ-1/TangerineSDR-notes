@@ -126,6 +126,7 @@ def restart():
    print("Trying to restart mainctl")
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/main")
    print("after restarting mainctl, retcode=",returned_value)
+   stopcoll()
    return redirect('/')
 
    
@@ -154,6 +155,63 @@ def config():
    return render_template('config.html', theToken = theToken,
      theLatitude = theLatitude, theLongitude = theLongitude,
      theElevation = theElevation )
+
+@app.route("/startcollection")
+def startcoll():
+  print("Start Data Collection command")
+
+  theCommand = 'SC'
+  host_ip, server_port = "127.0.0.1", 6100
+  data = theCommand + "\n"  
+    # Initialize a TCP client socket using SOCK_STREAM 
+  try:
+     print("define socket")
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Establish connection to TCP server and exchange data
+     print("connect to socket")
+     tcp_client.connect((host_ip, server_port))
+     print("send command")
+     tcp_client.sendall(data.encode())
+  except Exception as e: 
+     print(e)
+     print("'" + e.errno + "'")
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error " + e.errno +  "mainctl program not responding"
+     else:
+       theStatus = "Exception " + str(e)
+  finally:
+     tcp_client.close()
+     theStatus = "Started data collection"
+     return render_template('tangerine.html',result = theStatus)
+  return
+
+@app.route("/stopcollection")
+def stopcoll():
+  print("Stop Data Collection command")
+  theCommand = 'XC'
+  host_ip, server_port = "127.0.0.1", 6100
+  data = theCommand + "\n"  
+    # Initialize a TCP client socket using SOCK_STREAM 
+  try:
+     print("define socket")
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Establish connection to TCP server and exchange data
+     print("connect to socket")
+     tcp_client.connect((host_ip, server_port))
+     print("send command")
+     tcp_client.sendall(data.encode())
+  except Exception as e: 
+     print(e)
+     print("'" + e.errno + "'")
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error " + e.errno +  "mainctl program not responding"
+     else:
+       theStatus = "Exception " + str(e)
+  finally:
+     tcp_client.close()
+     theStatus = "Stopped data collection"
+     return render_template('tangerine.html',result = theStatus)
+  return
 
 @app.route('/student')
 def student():
@@ -188,7 +246,10 @@ def result():
 
 
 if __name__ == "__main__":
-	app.run(debug = True)
-# uncomment following lines to run production server "wairess"
+	app.run(host='0.0.0.0')
+#	app.run(debug = True)
+# uncomment following lines to run production server "waitress"
 	from waitress import serve
-	serve(app, host = "0.0.0.0", port=5000)
+#	serve(app, host = "0.0.0.0", port=5000) 
+	serve(app, host = "192.168.1.75", port=5000)
+
