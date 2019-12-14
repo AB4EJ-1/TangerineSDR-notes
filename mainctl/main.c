@@ -42,7 +42,7 @@
 #define N_SAMPLES 1048576
 #define WRITE_BLOCK_SIZE 1000000
 // set first time to be March 9, 2014   TODO: this to be set by GPSDO or NTP clock
-#define START_TIMESTAMP 1394368230
+//#define START_TIMESTAMP 1394368230
 #define SAMPLE_RATE_NUMERATOR 1000000
 #define SAMPLE_RATE_DENOMINATOR 1
 #define SUBDIR_CADENCE 10
@@ -50,8 +50,8 @@
 
 ///////////////// Digital RF / HDF5 //////////////////////////////////////
 // Based on research with old_protocol_N1.c in pihpsdr-master
-static	Digital_rf_write_object * data_object = NULL; /* main object created by init */
-static	Digital_rf_write_object * data_object1 = NULL; /* main object created by init */
+static	Digital_rf_write_object * DRFdata_object = NULL; /* main object created by init */
+//static	Digital_rf_write_object * data_object1 = NULL; /* main object created by init */
 static	uint64_t vector_leading_edge_index = 0; /* index of the sample being written starting at zero with the first sample recorded */
 static	uint64_t global_start_index; /* start sample (unix time * sample_rate) of first measurement - set below */
 static	int hdf_i = 0; 
@@ -72,8 +72,8 @@ static	int is_continuous = 1; /* continuous data written */
 static	int num_subchannels = 1; /* subchannels */
 static	int marching_periods = 1; /*  marching periods when writing */
 static	char uuid[100] = "DE output";
-static  char hdf5File[50] = "/tmp/RAM_disk/ch0_3";
-static  char hdf5File1[50] = "/tmp/RAM_disk/ch4_7";
+static  char hdf5File[50] = "/media/odroid/hamsci/hdf5";
+//static  char hdf5File1[50] = "/tmp/RAM_disk/ch4_7";
 static uint64_t theUnixTime = 0;
 //static  char hdf5File[50] = "/tmp/ramdisk";
 //char *filename = "/media/odroid/hamsci/raw_data/dat3.dat";  // for testing raw binary output
@@ -84,6 +84,8 @@ static  uint64_t vector_sum = 0;
 
 static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
 
+static char ringbuffer_path[50];
+const char *ringbufferPath;
 ////////////////////////////////////////////////
 
 // uncomment to enable specific tests
@@ -93,7 +95,7 @@ static long buffers_received = 0;  // for counting UDP buffers rec'd in case any
 #define TEST_HDF5_CHECKSUM_COMPRESS
 
 //Digital_rf_write_object *data_object = NULL;
-static char path_to_DRF_data[80];
+//static char path_to_DRF_data[80];
 
 // Variables for asynchtonous processing using libuv library
 uv_loop_t *loop;
@@ -131,7 +133,7 @@ static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* b
   buf->len = suggested_size;
 }
 
-///////////////////// Start of Code ///////////////////////
+//// *********************** Start of Code  *******************************//////
 
 //////////////////////////////////////////////////////////
 // callback routine for after write to webcontrol is complete
@@ -180,18 +182,9 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
 
   puts("forward status to webcontrol");
-//  uv_write_t DEdata;
-// Caution - doing this write before webStream is initialized will crash
- // uv_write(&DEdata, (uv_stream_t*) webStream, a, 2, web_write_complete);
+
   uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
-  //uv_write(write_req, LHsockethandle, a, 1, web_write_complete);
 
-
-
-/////////////
-
-//  puts("write to web control");
-//  uv_write(write_req, LHsockethandle, a, 1, DE_write_cb); 
   puts("free the DE buffer");
   free(DEbuf->base);    
 }
@@ -202,15 +195,14 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 
 void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   if (nread < 0) {
-    fprintf(stderr, "Read error!\n");  // sender disconnecred/crashed
+    fprintf(stderr, "Read error!\n");  // DE disconnected/crashed
     {  // inform webcontrol that DE seems unresponsive
      uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
      puts("set up write_req");
      uv_buf_t a[]={{.base="NAK", .len=2},{.base="\n",.len=1}};
      puts("Send NAK status to webcontrol");
-     uv_write_t WBdata;
-// Caution - doing this write before webStream is initialized will crash
-  //   uv_write(&WBdata, (uv_stream_t*) webStream, a, 2, web_write_complete);
+  //   uv_write_t WBdata;
+
      uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
     }
     puts("do uv_close");
@@ -235,9 +227,16 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     {
       buffers_received = 0;  // this lets us count buffers independently of counter in the buffer itself
     }
-  if(strncmp(buf->base, STOP_DATA_COLL,2)==0)
+ 
+//TODO: if this is executed without a DRF file being open, it crashes program. Need to trap or otherwise detect
+
+// try to close DRF file, but only if one is open
+  puts("check if DRF file open; if so, close it");
+  if(strncmp(buf->base, STOP_DATA_COLL,2)==0 && DRFdata_object != NULL)
 	{
-	  result = digital_rf_close_write_hdf5(data_object);
+      puts("Closing DRF file");
+	  result = digital_rf_close_write_hdf5(DRFdata_object);
+      DRFdata_object = NULL;
 	}
   puts("process_command triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
@@ -315,6 +314,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   if(nread == 0 )
     { 
       puts("received UDP zero");
+      free(buf->base);
 	  return;
     }
   buffers_received++;
@@ -331,8 +331,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
   /* local variables  for Digital RF */
     uint64_t vector_leading_edge_index = 0;
-    uint64_t global_start_sample = (uint64_t)(START_TIMESTAMP * ((long double)SAMPLE_RATE_NUMERATOR)
-		/ SAMPLE_RATE_DENOMINATOR);
+
+    uint64_t global_start_sample = 0;
 
 // if bufCount is zero, it is first data packet; create the Digital RF file
 // we also check buffers_received, so we can start recording even if we missed
@@ -340,12 +340,13 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
 // TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running
 
-  global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR / SAMPLE_RATE_DENOMINATOR;
+  global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR /  
+                 SAMPLE_RATE_DENOMINATOR;
 
-  if(packetCount == 0 || buffers_received == 1) {
-    printf("Create HDF5 file group, start time: %ld",global_start_sample);
+  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
+    fprintf(stderr,"Create HDF5 file group, start time: %ld \n",global_start_sample);
     vector_leading_edge_index=0;
-    data_object = digital_rf_create_write_hdf5(path_to_DRF_data, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
       }
@@ -368,16 +369,16 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
      }
 */
 
-    puts("Write HDF5 data");
+    fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is
-    result = digital_rf_write_hdf5(data_object, vector_sum, buf_ptr->theDataSample,vector_length); 
+    if(DRFdata_object != NULL)  // make sure there is an open DRF file
+      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length); 
   //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
 
     hdf_i++;
 
     free (buf_ptr);  // free the work buffer
     }
-
 
 
   free(buf->base);
@@ -423,6 +424,14 @@ int main() {
 
   if(config_lookup_int(&cfg, "controller_port", &controller_port))
     fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
+  else
+    fprintf(stderr,"No port set for listening to webcontrol\n");
+
+  if(config_lookup_string(&cfg, "ringbuffer_path", &ringbufferPath))
+    {
+    strcpy(ringbuffer_path, ringbufferPath);
+    fprintf(stderr,"Will store Digital RF / HDF5 files in %s \n", ringbuffer_path);
+    }
   else
     fprintf(stderr,"No port set for listening to webcontrol\n");
 
@@ -477,8 +486,9 @@ int main() {
 
 */
 
-  strcpy(path_to_DRF_data, "/mnt/RAM_disk/hdf5");    // TODO: replace with config item
-  DIR* dir = opendir(path_to_DRF_data);
+
+  //strcpy(path_to_DRF_data, "/media/odroid/hamsci/hdf5");    // TODO: replace with config item
+  DIR* dir = opendir(ringbufferPath);
   if(dir)
 	{
 	printf("Digital RF directory found\n");
@@ -489,6 +499,9 @@ int main() {
 	//char *command;
 	//strcpy(command, "mkdir /tmp/hdf5/junk0 \n");
 // will need config items to point to both upper & lower level directories
+
+// TODO:  this has to check & create directory according to the configured path, not the fixed one
+
 	FILE* fp1 = popen("mkdir /tmp/hdf5", "r");
 	FILE* fp2 = popen("mkdir /tmp/hdf5/junk0", "r");
 	pclose(fp1);
