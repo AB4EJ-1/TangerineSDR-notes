@@ -8,6 +8,10 @@ import configparser
 
 app = Flask(__name__)
 
+#@app.route("/")
+#def index():
+#    return "Index!"
+
 statusControl = 0
 
 # this thread can be scheduled for DE heartbeat check
@@ -87,11 +91,23 @@ def check_status_once():
      return(theStatus)
 
 theStatus = "Off"
+@app.route("/hello")
+def hello():
+    return "Hello World!"
 
-@app.route("/desetup2",methods=['POST','GET'])
+@app.route("/members")
 def members():
-   return render_template('desetup.html')
-   return "Members"
+    return "Members"
+
+@app.route("/hello1/<thename>/")
+def hello1(thename):
+    return render_template(
+    'tangerine.html',name=thename)
+
+@app.route("/members/<string:name>/")
+def getMember(name):
+	return name
+#    return name</string:name>
 
 
 # Here is the home page
@@ -109,7 +125,6 @@ def restart():
    print("after killing mainctl, retcode=",returned_value)
    print("Trying to restart mainctl")
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/main")
-   time.sleep(1)
    print("after restarting mainctl, retcode=",returned_value)
    stopcoll()
    return redirect('/')
@@ -124,9 +139,9 @@ def config():
      print("result of config post =")
      print(result.get('theToken'))
      parser.set('profile', 'token_value', result.get('theToken'))
-     parser.set('profile', 'latitude',    result.get('theLatitude'))
-     parser.set('profile', 'longitude',   result.get('theLongitude'))
-     parser.set('profile', 'elevation',   result.get('theElevation'))
+     parser.set('profile', 'latitude', result.get('theLatitude'))
+     parser.set('profile', 'longitude', result.get('theLongitude'))
+     parser.set('profile', 'elevation', result.get('theElevation'))
      
      fp = open('config.ini','w')
      parser.write(fp)
@@ -140,29 +155,6 @@ def config():
    return render_template('config.html', theToken = theToken,
      theLatitude = theLatitude, theLongitude = theLongitude,
      theElevation = theElevation )
-
-@app.route("/desetup",methods=['POST','GET'])
-def desetup():
-   print("reached DE setup")
-   parser = configparser.ConfigParser()
-   parser.read('config.ini')
-   if request.method == 'POST':
-     result = request.form
-     print("result of config post =")
-#     print(result.get('theToken'))
-     parser.set('profile', 'ringbuffer_path', result.get('ringbufferPath'))
-     parser.set('profile', 'DE_IP',           result.get('DEIP'))
-     
-     fp = open('config.ini','w')
-     parser.write(fp)
-     fp.close()
-   ringbufferPath =    parser['profile']['ringbuffer_path']
-   DEIP = parser['profile']['DE_IP']
-   print("ringbuffer_path ",ringbufferPath)
-   print("DE IP ",DEIP)
-   
-   return render_template('desetup.html', ringbufferPath = ringbufferPath,
-      DEIP = DEIP)
 
 @app.route("/startcollection")
 def startcoll():
@@ -221,42 +213,42 @@ def stopcoll():
      return render_template('tangerine.html',result = theStatus)
   return
 
-#@app.route('/student')
-#def student():
-#   return render_template('student.html')
+@app.route('/student')
+def student():
+   return render_template('student.html')
 
-#@app.route('/result',methods = ['POST', 'GET'])
-#def result():
-#   if request.method == 'POST':
-#      result = request.form
-#      print("result -")
-#      print(result.get('Name'))
-#      theCommand = result.get('Name')
-#      host_ip, server_port = "127.0.0.1", 6100
-#      data = theCommand + "\n"
+@app.route('/result',methods = ['POST', 'GET'])
+def result():
+   if request.method == 'POST':
+      result = request.form
+      print("result -")
+      print(result.get('Name'))
+      theCommand = result.get('Name')
+      host_ip, server_port = "127.0.0.1", 6100
+      data = theCommand + "\n"
 
 # Initialize a TCP client socket using SOCK_STREAM
-#      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-#      try:
+      try:
     # Establish connection to TCP server and exchange data
-#        tcp_client.connect((host_ip, server_port))
-#        tcp_client.sendall(data.encode())
+        tcp_client.connect((host_ip, server_port))
+        tcp_client.sendall(data.encode())
 
     # Read data from the TCP server and close the connection
 #    received = tcp_client.recv(1024)
-#      finally:
-#        tcp_client.close()
+      finally:
+        tcp_client.close()
 
-#      print ("Bytes Sent:     {}".format(data))
+      print ("Bytes Sent:     {}".format(data))
 #      print('"',theCommand,"'")
- #     return render_template("result.html",result = result)
+      return render_template("result.html",result = result)
 
 
 if __name__ == "__main__":
 #	app.run(host='0.0.0.0')
 #	app.run(debug = True)
-
+# uncomment following lines to run production server "waitress"
 	from waitress import serve
 #	serve(app, host = "0.0.0.0", port=5000) 
 	serve(app)
