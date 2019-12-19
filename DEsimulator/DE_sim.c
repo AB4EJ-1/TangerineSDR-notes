@@ -149,7 +149,7 @@ void on_UDP_read(uv_udp_t *req, ssize_t nread, const uv_buf_t *buf, const struct
    // 	uv_ip4_addr("192.168.1.75", 1024, &send_addr);
 	puts("send");
 
-
+// the following doesn't work; needs to be replaced with UDPtester code
 // system hangs after following call
 
   //  	uv_udp_send(&send_req, &send_socket, a, 1, 
@@ -159,9 +159,7 @@ void on_UDP_read(uv_udp_t *req, ssize_t nread, const uv_buf_t *buf, const struct
   //  sentBytes = sendto(sockfd, b, sizeof(b),
 //	MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
    //         sizeof(servaddr));
-    sentBytes = sendto(sockfd, b, sizeof(b),
-	MSG_CONFIRM, (const struct sockaddr *) &send_addr,  
-            sizeof(send_addr));
+
 	fprintf(stderr,"sentBytes = %d \n", sentBytes);
 	puts("send done  (?)");
      }
