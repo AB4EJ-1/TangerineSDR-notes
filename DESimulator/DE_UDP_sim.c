@@ -159,9 +159,12 @@ void on_UDP_read(uv_udp_t *req, ssize_t nread, const uv_buf_t *buf, const struct
 //		(const struct sockaddr *)&send_addr, on_UDP_send);
 
 // try to use the original UDP socket
-  //  sentBytes = sendto(sockfd, b, sizeof(b),
+    sentBytes = sendto(sockfd, buf->base, nread,
+	MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
+          sizeof(servaddr));
+ //   sentBytes = sendto(sockfd, b, sizeof(b),
 //	MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
-   //         sizeof(servaddr));
+  //        sizeof(servaddr));
 
 	fprintf(stderr,"sentBytes = %d \n", sentBytes);
 	puts("send done  (?)");
