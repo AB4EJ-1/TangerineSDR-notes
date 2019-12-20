@@ -1,17 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <uv.h>
 #include <string.h>
-#include "de_signals.h"
+#include<arpa/inet.h>
+
 #include <pthread.h>
 #include <semaphore.h>
 #include <math.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <time.h>
-
+#include "de_signals.h"
 
 #define PORT 1024  // temporary  (mainctl may expect 6200)
+#define BUFFERLEN 65	// Maximum length of buffer
+// #define PORT 1024	// Port to watch
 
 uv_loop_t *loop;
 uv_udp_t send_socket;
@@ -23,8 +27,8 @@ pthread_t t1;
 int sockfd;  // socket definition for UDP
 struct sockaddr_in     servaddr; 
 
-char *theIP;
-extern void UDPhandshake();
+//char *theIP;
+//extern void UDPhandshake();
 
 // notional buffer for DE A/D output. Will update with the real thing later...
 struct dataSample
@@ -88,11 +92,11 @@ void* UDPthread(void* arg)
     sem_wait(&mutex);
    // puts("passed wait");
     myBuffer.bufcount = bufcount++;
-    sentBytes = sendto(sockfd, (const struct dataBuf *) &myBuffer, sizeof(myBuffer),
+    sentBytes = sendto(sockfd, (const struct dataBuf *) &myBuffer, 		   	sizeof(myBuffer),
 	MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
             sizeof(servaddr));
     fprintf(stderr,"UDP message sent from thread. bytes= %d\n", sentBytes); 
-  //  sleep(1);
+   sleep(1);
     usleep(528);  // wait for this many microseconds
     puts("UDP thread end");
     sem_post(&mutex);
@@ -222,7 +226,7 @@ void handle_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     uv_write(write_req, client, a , 1, echo_write);
     }
 
- ////////////// start data collection received ///////////////////
+ ////////////// start data collection command received ///////////////////
   if(strncmp(buf->base, START_DATA_COLL, 2) == 0)
     {
     puts("Try to create thread");
@@ -262,24 +266,118 @@ void on_new_connection(uv_stream_t *server, int status) {
   }
 }
 
+void crash(char *s)
+{
+	perror(s);
+	exit(1);
+}
+
 int main() {
   puts("starting");
   loop = uv_default_loop();
-
+//  char buf[63];
   uv_tcp_t server;
   uv_tcp_init(loop, &server);
 
 // try to connect to mainctl
-  struct sockaddr_in si_me, si_other;
-  memset((char *) &si_me, 0, sizeof(si_me));
-  memset((char *) &si_other, 0, sizeof(si_other));
+//  struct sockaddr_in si_me, si_other;
+//  memset((char *) &si_me, 0, sizeof(si_me));
+//  memset((char *) &si_other, 0, sizeof(si_other));
   puts("wait for handshake\n");
   
+  bool connected = 0;
+  struct sockaddr_in si_DE, si_main;	
+  int s, i, slen = sizeof(si_main) , recv_len;  
+  char buf[BUFFERLEN];	
+  //create UDP socket
+  if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+  {
+		crash("ERROR. could not create socket ");
+  }
+	
+  // clear structure
+  memset((char *) &si_DE, 0, sizeof(si_DE));
+	
+  si_DE.sin_family = AF_INET;
+  si_DE.sin_port = htons(PORT);
+  si_DE.sin_addr.s_addr = htonl(INADDR_ANY);
+	
+  // now bind the socket to the port
+  if( bind(s , (struct sockaddr*)&si_DE, sizeof(si_DE) ) == -1)
+  {
+		crash("ERROR. could not bind socket to port");
+  }	
+  // process incoming UDP packets, looking for discovery packet
+  while(1)
+	{
+		printf("Watching for discovery...");
+		fflush(stdout);
+		
+  // await data  (blocking call)
+		if ((recv_len = recvfrom(s, buf, BUFFERLEN, 0, (struct sockaddr *) &si_main, &slen)) == -1)
+		{
+			crash("ERROR - recvfrom() failed");
+		}
+  // a discovery packet starts with hex EFFE02 (using only rightmost byte of each word)
+		if((buf[0] & 0xFF) == 0xEF && (buf[1] & 0xFF) == 0xFE
+			&& (buf[2] & 0xFF) == 0x02 ) 
+		  {
+		  fprintf(stderr,"Received SDR handshake!\n");
+		  connected = 1;
+		  }
+		else
+		  continue;  // discard packets of all other kinds
+
+  // log source of packet
+		printf("Received packet from %s:%d\n", inet_ntoa(si_main.sin_addr), 				ntohs(si_main.sin_port));
+		char theotherIP[16];
+		strcpy(theotherIP, inet_ntoa(si_main.sin_addr));
+		printf("Data: %s\n" , buf);
+		printf("IP addr: %s \n",theotherIP);		
+		//now reply to the client with the same data
+		if (sendto(s, buf, recv_len, 0, (struct sockaddr*) &si_main, slen) == -1)
+		{
+			crash("ERROR - sendto() failed");
+		}
+  // here we pass the client's IP back to the caller via pointer
+		//*theIP = theotherIP;
+		//printf("theIP = %s \n", *theIP);
+		if(connected) { close(s); break;}
+	}
+
+	close(s);
+	//return ;
+
+
+/*
   UDPhandshake(&theIP);
   
   printf("Received discovery packet from %s \n", theIP);
   free(theIP);
-  puts("define UDP socket for sending");
+  puts("define UDP socket for sending discovery response");
+// based on code in discovery section
+  struct sockaddr_in si_main;
+  int s, i, slen = sizeof(si_main);
+  puts("create socket");
+  if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+    {
+		printf("ERROR. could not create socket \n");
+    }
+  // now bind the socket to the port
+  puts("bind socket to port");
+  if( bind(s , (struct sockaddr*)&si_main, sizeof(si_main) ) == -1)
+	{
+		printf("ERROR. could not bind socket to port\n");
+	}
+  memset (buf, 0, sizeof(buf));
+  buf[0] = 0xEF; buf[1] = 0xFE; buf[2] = 0x02;
+  puts("send");
+  if (sendto(s, buf, 63, 0, (struct sockaddr*) &si_main, slen) == -1)
+	{
+		printf("ERROR - sendto() failed\n");
+	}
+	
+*/
   // Creating socket file descriptor for UDP
   if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
         perror("socket creation failed"); 
