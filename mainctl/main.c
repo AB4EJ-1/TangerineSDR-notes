@@ -469,7 +469,7 @@ int main() {
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
   struct sockaddr_in recv_addr;
-  uv_ip4_addr("0.0.0.0", 6200, &recv_addr);
+  uv_ip4_addr("0.0.0.0", 1024, &recv_addr);
   uv_udp_bind(&recv_socket, (const struct sockaddr *)&recv_addr, UV_UDP_REUSEADDR);
   uv_udp_recv_start(&recv_socket, alloc_buffer, on_UDP_read);
 
