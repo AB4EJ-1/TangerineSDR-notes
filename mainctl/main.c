@@ -23,6 +23,7 @@
   Digital_RF
 */
 
+extern void UDPdiscover();
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -194,8 +195,12 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 /////////////////////////////////////////////////////////////////
 
 void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
+  puts("process_command routine triggered");
+  if(nread == -4095)  // TODO: this seems to be junk coming from flask app (?) - need to fix
+	{ puts("ignore 1 buffer"); return;
+	}
   if (nread < 0) {
-    fprintf(stderr, "Read error!\n");  // DE disconnected/crashed
+    fprintf(stderr, "Webcontroller Read error, nread = %ld\n",nread);  // DE disconnected/crashed
     {  // inform webcontrol that DE seems unresponsive
      uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
      puts("set up write_req");
@@ -391,6 +396,10 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 /*  ************************************************************ */
 int main() {
   puts("starting");
+  puts("UDPdiscovery    ******    *****");
+  //system("pwd");
+  int retval = system("./discover");
+  fprintf(stderr,"Discover return= %d\n",retval);
 
 // get the configuratin file
   config_t cfg;
@@ -437,6 +446,7 @@ int main() {
 
 
   loop = uv_default_loop();
+
 
 
 // set up to listen to incoming port for commands from web controller
@@ -508,6 +518,11 @@ int main() {
 	pclose(fp2);
 	}
 
+
+// do UDP discovery
+ // puts("trying UDP discovery ********************");
+ // UDPdiscover();
+
 /*
 	if(fp)
 		{
@@ -524,6 +539,8 @@ int main() {
 		}
 
 */
+
+
 
 	
 

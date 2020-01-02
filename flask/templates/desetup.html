@@ -1,4 +1,10 @@
 <html>
+<script>
+function goBack() {
+  window.history.back();
+}
+</script>
+<body>
 <table width="100%">
    <tbody><tr>
     <td width="5%">
@@ -25,17 +31,61 @@
        <tr>
 	<td>
 	</td>
-	   <td class="bgtangerine" width="10%" valign="top" align="left">
-      <form action = "http://localhost:5000/desetup" method = "POST">
-         <p>Path to Ring Buffer <input type = "text" name = "ringbufferPath" value = {{ ringbufferPath }} /></p>
-         <p>IP address of Data Engine <input type = "text" name = "DEIP" value = {{ DEIP }} /></p>
 
-		 <p class="links"><b><a href="/clocksetup">Clock Setup</a></b></p>
-		 <p class="links"><b><a href="/antennasetup">Channel/Antenna Setup</a></b></p>
-         <p><input type = "submit" name = "csubmit" value = "Submit" /></p>
-         <p><input type = "submit" name = "csubmit" value = "Discard Changes and Return" /></p>
+	   <td class="bgtangerine" align = "left" width="10%" valign="top" >
+
+	  <table style="margin-left:1px" border = "1" width=70% > 
+	  <tr>
+	   <th class="bgtangerine" width="10%" valign="top" align="left">
+           <b style="font-size: 14px">Channel</th>
+	   <th style="width:50px" >Antenna (0 or 1)</th>
+	   <th>Center Frequency (MHz)</th>
+	   <th>Bandwidth (kHz)</th>	
+      </tr>
+	  <tr>
+	<form action = "http://localhost:5000/desetup" method = "post">
+	   <td>0</td>
+	   <td style="width:50px"><input type="text" name="ch0a" value={{ ant0 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch0f" value={{ ch0f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch0b" value={{ ch0b }} /> </td>
+	 <tr>
+	   <td>1</td>
+	   <td style="width:50px"><input type="text" name="ch1a" value={{ ant1 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch1f" value={{ ch1f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch1b" value={{ ch1b }} /> </td>
+	 <tr>
+	   <td>2</td>
+	   <td style="width:50px"><input type="text" name="ch2a" value={{ ant2 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch2f" value={{ ch2f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch2b" value={{ ch2b }} /> </td>
+	 <tr>
+	   <td>3</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant3 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch3f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch3b }} /> </td>
+
+	  </table>
+
+	  <table style="margin-left:1px" border = "1" width=70% > 
+ 	   <td style="width:50px">Ringbuffer path<input type="text" name="ringbufferPath" 
+            value={{ ringbufferPath }} /> </td>
+	   <td style="width:50px">DE IP Address<input type="text" name="DEIP" 
+            value={{ DEIP }} /> </td>
+
+	</table>
+
+      <form action = "http://localhost:5000/desetup" method = "POST">
+         <p><input type = "submit" name = "csubmit" value = "Save Changes" /></p>         
+         <p><input type = "submit" name = "csubmit" value = "Discard Changes" /></p>  
+<!--         <button onclick="goBack()">Cancel Chnages and Go Back</button> -->
+
      </form>
+
+
+
+
            </td>
   </tbody>
+
    </body>
 </html>

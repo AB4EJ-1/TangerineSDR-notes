@@ -444,12 +444,13 @@ static void *discover_receive_thread_o(void* arg) {
                     discovered[devices].info.network.interface_length=sizeof(interface_addr);
                     strcpy(discovered[devices].info.network.interface_name,interface_name);
 		    discovered[devices].use_tcp=0;
-		    fprintf(stderr,"discovery: found radio %s device=%d software_version=%d status=%d address=%s (%02X:%02X:%02X:%02X:%02X:%02X) on %s\n",
+		    fprintf(stderr,"discovery: found radio %s device=%d software_version=%d status=%d address=%s port=%u  (%02X:%02X:%02X:%02X:%02X:%02X) on %s\n",
                             discovered[devices].name,
                             discovered[devices].device,
                             discovered[devices].software_version,
                             discovered[devices].status,
                             inet_ntoa(discovered[devices].info.network.address.sin_addr),
+							discovered[devices].info.network.address.sin_port,
                             discovered[devices].info.network.mac_address[0],
                             discovered[devices].info.network.mac_address[1],
                             discovered[devices].info.network.mac_address[2],
