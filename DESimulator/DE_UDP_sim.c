@@ -27,6 +27,9 @@ pthread_t t1;
 int sockfd;  // socket definition for UDP
 struct sockaddr_in     servaddr; 
 
+struct sockaddr_in si_DE, si_main;
+
+
 //char *theIP;
 //extern void UDPhandshake();
 
@@ -131,7 +134,8 @@ void on_UDP_read(uv_udp_t *req, ssize_t nread, const uv_buf_t *buf, const struct
    // memset(&replybuf,0, sizeof(replybuf));
     uv_ip4_name((const struct sockaddr_in*) addr, sender, 16);
     fprintf(stderr, "Recv from %s\n", sender);
-    for(int i=0;i<nread;i++){fprintf(stderr,"%02X ",buf->base[i]);}; 		fprintf(stderr,"\n");
+    for(int i=0;i<nread;i++){fprintf(stderr,"%02X ",buf->base[i]);}
+    fprintf(stderr,"\n");
     if((buf->base[0] & 0xFF) == 0xEF && (buf->base[1] & 0xFF) == 0xFE) {
 	fprintf(stderr,"discovery packet detected\n");
 	//fprintf(stderr, "msg len = %ld \n", discover_msg.len);
@@ -146,45 +150,45 @@ void on_UDP_read(uv_udp_t *req, ssize_t nread, const uv_buf_t *buf, const struct
 	b[2] = 0x02;
 	uv_buf_t a[]={{.base = b, .len=60}};
 
-	for(int i=0;i<60;i++){fprintf(stderr,"%02X ",a[0].base[i]);}; 		fprintf(stderr,"\n");
+	for(int i=0;i<60;i++){fprintf(stderr,"%02X ",a[0].base[i]);}; 
+	fprintf(stderr,"\n");
 
 	puts("set length");
 	//discover_msg.len = sizeof(replybuf);
     	struct sockaddr_in send_addr;
 	puts("set send_addr");
-    	uv_ip4_addr("255.255.255.255", 1024, &send_addr);
+    //	uv_ip4_addr("255.255.255.255", 1024, &send_addr);
    // 	uv_ip4_addr("192.168.1.75", 1024, &send_addr);
-	puts("send");
+	//puts("send");
 
-// the following doesn't work; needs to be replaced with UDPtester code
-// system hangs after following call
+// original discovery-reply code
 
-  //  	uv_udp_send(&send_req, &send_socket, a, 1, 
-//		(const struct sockaddr *)&send_addr, on_UDP_send);
+ // struct sockaddr_in si_DE, si_main;
+ // *si_main = *addr;	// try to get input on this
+  int s, i, slen = sizeof(si_main) , recv_len; 
+	 slen = 63;
+		//printf("Received packet from %s:%d\n", inet_ntoa(si_main.sin_addr), 			//	ntohs(si_main.sin_port));
+		//printf("Received packet from %s\n", addr); 				//ntohs(si_main.sin_port));
+		//char theotherIP[16];
+		//strcpy(sender, inet_ntoa(si_main.sin_addr));
+		//printf("Data: %s\n" , buf);
+		printf("IP addr: %s \n",sender);		
+		//now reply to the client with the same data
+		printf("Received packet from %s:%d\n", inet_ntoa(si_main.sin_addr), 				ntohs(si_main.sin_port));
+/*
+		if (sendto(s, buf->base, nread, 0, (struct sockaddr*) &si_main, slen) == -1)
+		
+		{
+			puts("ERROR - sendto() failed");
+		}
+*/
 
-// try to use the original UDP socket
-    sentBytes = sendto(sockfd, buf->base, nread,
-	MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
-          sizeof(servaddr));
- //   sentBytes = sendto(sockfd, b, sizeof(b),
-//	MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
-  //        sizeof(servaddr));
 
 	fprintf(stderr,"sentBytes = %d \n", sentBytes);
 	puts("send done  (?)");
      }
 
 
-/*
-    // ... DHCP specific code
-    unsigned int *as_integer = (unsigned int*)buf->base;
-    unsigned int ipbin = ntohl(as_integer[4]);
-    unsigned char ip[4] = {0};
-    int i;
-    for (i = 0; i < 4; i++)
-        ip[i] = (ipbin >> i*8) & 0xff;
-    fprintf(stderr, "Offered IP %d.%d.%d.%d\n", ip[3], ip[2], ip[1], ip[0]);
-*/
     free(buf->base);
     uv_udp_recv_stop(req);
 }
@@ -283,10 +287,10 @@ int main() {
 //  struct sockaddr_in si_me, si_other;
 //  memset((char *) &si_me, 0, sizeof(si_me));
 //  memset((char *) &si_other, 0, sizeof(si_other));
-  puts("wait for handshake\n");
+  puts("wait for UDP handshake\n");
   
   bool connected = 0;
-  struct sockaddr_in si_DE, si_main;	
+ // struct sockaddr_in si_DE, si_main;	
   int s, i, slen = sizeof(si_main) , recv_len;  
   char buf[BUFFERLEN];	
   //create UDP socket
@@ -335,14 +339,18 @@ int main() {
 		printf("Data: %s\n" , buf);
 		printf("IP addr: %s \n",theotherIP);		
 		//now reply to the client with the same data
+
 		if (sendto(s, buf, recv_len, 0, (struct sockaddr*) &si_main, slen) == -1)
 		{
 			crash("ERROR - sendto() failed");
 		}
+
   // here we pass the client's IP back to the caller via pointer
 		//*theIP = theotherIP;
 		//printf("theIP = %s \n", *theIP);
-		if(connected) { close(s); break;}
+		if(connected) {
+		  close(s); 
+		 break;}
 	}
 
 	close(s);
@@ -386,7 +394,7 @@ int main() {
     servaddr.sin_family = AF_INET; 
     servaddr.sin_port = htons(PORT); 
 
-    struct hostent* hptr = gethostbyname("192.168.1.75");
+    struct hostent* hptr = gethostbyname("192.168.1.90");
     if(!hptr) puts ("gethostbyname error");
     if(!hptr->h_addrtype != AF_INET)
 	puts("bad address family");

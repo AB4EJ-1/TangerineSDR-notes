@@ -285,7 +285,7 @@ int main() {
     servaddr.sin_family = AF_INET; 
     servaddr.sin_port = htons(PORT); 
 
-    struct hostent* hptr = gethostbyname("192.168.1.75");
+    struct hostent* hptr = gethostbyname("192.168.1.90");
     if(!hptr) puts ("gethostbyname error");
     if(!hptr->h_addrtype != AF_INET)
 	puts("bad address family");
