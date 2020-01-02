@@ -9,6 +9,8 @@ import configparser
 app = Flask(__name__)
 
 statusControl = 0
+dataCollStatus = 0;
+theStatus = "Not yet started"
 
 # this thread can be scheduled for DE heartbeat check
 def check_status(threadName, delay):
@@ -44,8 +46,9 @@ def check_status(threadName, delay):
       print("exit sleep")
 
 def check_status_once():
-  print("Status inquiry to LH")
-  theStatus = "DE is off or disconnected"
+  print(" *********** Status inquiry to LH *********")
+  global theStatus
+  theStatus = "DE is off or disconnected (did discovery run??)"
   theCommand = 'S?'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
@@ -54,7 +57,7 @@ def check_status_once():
      print("define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("connect to socket")
+     print("*** WC: *** connect to socket")
      tcp_client.connect((host_ip, server_port))
      print("send query")
      tcp_client.sendall(data.encode())
@@ -97,6 +100,7 @@ def members():
 # Here is the home page
 @app.route("/")
 def sdr():
+   global theStatus;
    theStatus = check_status_once()
    print("WEB status ", theStatus)
    return render_template('tangerine.html',result = theStatus)
@@ -104,14 +108,16 @@ def sdr():
 
 @app.route("/restart")
 def restart():
+   global theStatus
    print("restart")
    returned_value = os.system("killall -9 main")
    print("after killing mainctl, retcode=",returned_value)
    print("Trying to restart mainctl")
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/main")
-   time.sleep(1)
+   time.sleep(3)
    print("after restarting mainctl, retcode=",returned_value)
    stopcoll()
+   theStatus = check_status_once()
    return redirect('/')
 
    
@@ -141,33 +147,98 @@ def config():
      theLatitude = theLatitude, theLongitude = theLongitude,
      theElevation = theElevation )
 
+@app.route("/clocksetup", methods = ['POST','GET'])
+def clocksetup():
+   return render_template('clock.html')
+
+@app.route("/channelantennasetup", methods = ['POST','GET'])
+def channelantennasetup():
+	return render_template('channelantennasetup.html')
+
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
    print("reached DE setup")
    parser = configparser.ConfigParser()
    parser.read('config.ini')
+   if request.method == 'GET':
+     ringbufferPath = parser['settings']['ringbuffer_path']
+     DEIP           = parser['settings']['de_ip']
+     ant0 =     parser['settings']['ant0']
+     ch0f =     parser['settings']['ch0f']
+     ch0b =     parser['settings']['ch0b']     
+     ant1 =     parser['settings']['ant1']
+     ch1f =     parser['settings']['ch1f']
+     ch1b =     parser['settings']['ch1b']
+     ant2 =     parser['settings']['ant2']
+     ch2f =     parser['settings']['ch2f']
+     ch2b =     parser['settings']['ch2b']
+     ant3 =     parser['settings']['ant3']
+     ch3f =     parser['settings']['ch3f']
+     ch3b =     parser['settings']['ch3b']
+     print("ringbufferPath=",ringbufferPath)
+     return render_template('desetup.html',
+	  ringbufferPath = ringbufferPath,
+      ant0 = ant0 , ch0f = ch0f, ch0b = ch0b,
+	  ant1 = ant1 , ch1f = ch1f, ch1b = ch1b,
+      ant2 = ant2 , ch2f = ch2f, ch2b = ch2b,
+	  ant3 = ant3,  ch3f = ch3f, ch3b = ch3b,
+      DEIP = DEIP)
+
    if request.method == 'POST':
      result = request.form
-     print("result of config post =")
-#     print(result.get('theToken'))
-     parser.set('profile', 'ringbuffer_path', result.get('ringbufferPath'))
-     parser.set('profile', 'DE_IP',           result.get('DEIP'))
+     print("result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("CANCEL")
+     else:
+       print("result of DEsetup post =")
+       ringbufferPath = ""
+       DEIP = ""
+       parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
+       parser.set('settings', 'DE_IP',           result.get('DEIP'))
+       parser.set('settings', 'ant0',            str(result.get('ch0a')))
+       parser.set('settings', 'ch0f',            str(result.get('ch0f')))
+       parser.set('settings', 'ch0b',            str(result.get('ch0b')))
+       parser.set('settings', 'ant1',            str(result.get('ch1a')))
+       parser.set('settings', 'ch1f',            str(result.get('ch1f')))
+       parser.set('settings', 'ch1b',            str(result.get('ch1b')))
+       parser.set('settings', 'ant2',            str(result.get('ch2a')))
+       parser.set('settings', 'ch2f',            str(result.get('ch2f')))
+       parser.set('settings', 'ch2b',            str(result.get('ch2b')))
+       parser.set('settings', 'ant3',            str(result.get('ch3a')))
+       parser.set('settings', 'ch3f',            str(result.get('ch3f')))
+       parser.set('settings', 'ch3b',            str(result.get('ch3b')))
      
-     fp = open('config.ini','w')
-     parser.write(fp)
-     fp.close()
-   ringbufferPath =    parser['profile']['ringbuffer_path']
-   DEIP = parser['profile']['DE_IP']
-   print("ringbuffer_path ",ringbufferPath)
-   print("DE IP ",DEIP)
-   
-   return render_template('desetup.html', ringbufferPath = ringbufferPath,
-      DEIP = DEIP)
+       fp = open('config.ini','w')
+       parser.write(fp)
+       fp.close()
+
+   ringbufferPath = parser['settings']['ringbuffer_path']
+   DEIP           = parser['settings']['de_ip']
+   ant0 =     parser['settings']['ant0']
+   ch0f =     parser['settings']['ch0f']
+   ch0b =     parser['settings']['ch0b']     
+   ant1 =     parser['settings']['ant1']
+   ch1f =     parser['settings']['ch1f']
+   ch1b =     parser['settings']['ch1b']
+   ant2 =     parser['settings']['ant2']
+   ch2f =     parser['settings']['ch2f']
+   ch2b =     parser['settings']['ch2b']
+   ant3 =     parser['settings']['ant3']
+   ch3f =     parser['settings']['ch3f']
+   ch3b =     parser['settings']['ch3b']
+   return render_template('desetup.html',
+	ringbufferPath = ringbufferPath,
+    ant0 = ant0 , ch0f = ch0f, ch0b = ch0b,
+	ant1 = ant1 , ch1f = ch1f, ch1b = ch1b,
+    ant2 = ant2 , ch2f = ch2f, ch2b = ch2b,
+	ant3 = ant3,  ch3f = ch3f, ch3b = ch3b,
+    DEIP = DEIP)
 
 @app.route("/startcollection")
 def startcoll():
+  global theStatus
   print("Start Data Collection command")
-
+  
   theCommand = 'SC'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
@@ -189,12 +260,14 @@ def startcoll():
        theStatus = "Exception " + str(e)
   finally:
      tcp_client.close()
-     theStatus = "Started data collection"
-     return render_template('tangerine.html',result = theStatus)
+     theDataStatus = "Started data collection"
+     dataCollStatus = 1
+     return render_template('tangerine.html', result = theStatus, dataStat = theDataStatus)
   return
 
 @app.route("/stopcollection")
 def stopcoll():
+  global theStatus
   print("Stop Data Collection command")
   theCommand = 'XC'
   host_ip, server_port = "127.0.0.1", 6100
@@ -217,40 +290,12 @@ def stopcoll():
        theStatus = "Exception " + str(e)
   finally:
      tcp_client.close()
-     theStatus = "Stopped data collection"
-     return render_template('tangerine.html',result = theStatus)
+     theDataStatus = "Stopped data collection"
+     dataCollStat = 0
+     return render_template('tangerine.html', dataStat = theDataStatus)
   return
 
-#@app.route('/student')
-#def student():
-#   return render_template('student.html')
 
-#@app.route('/result',methods = ['POST', 'GET'])
-#def result():
-#   if request.method == 'POST':
-#      result = request.form
-#      print("result -")
-#      print(result.get('Name'))
-#      theCommand = result.get('Name')
-#      host_ip, server_port = "127.0.0.1", 6100
-#      data = theCommand + "\n"
-
-# Initialize a TCP client socket using SOCK_STREAM
-#      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-#      try:
-    # Establish connection to TCP server and exchange data
-#        tcp_client.connect((host_ip, server_port))
-#        tcp_client.sendall(data.encode())
-
-    # Read data from the TCP server and close the connection
-#    received = tcp_client.recv(1024)
-#      finally:
-#        tcp_client.close()
-
-#      print ("Bytes Sent:     {}".format(data))
-#      print('"',theCommand,"'")
- #     return render_template("result.html",result = result)
 
 
 if __name__ == "__main__":
