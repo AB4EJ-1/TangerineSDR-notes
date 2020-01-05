@@ -6,11 +6,41 @@ import os
 import subprocess
 import configparser
 
+from flask_wtf import Form
+# following is for future flask upgrade
+#from FlaskForm import Form
+from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
+from flask import request, flash
+from forms import MainControlForm
+#from forms import ContactForm
+
+from wtforms import validators, ValidationError
+
 app = Flask(__name__)
+app.secret_key = 'development key'
 
 statusControl = 0
 dataCollStatus = 0;
 theStatus = "Not yet started"
+
+
+
+#@app.route('/contact', methods = ['GET', 'POST'])
+#def contact():
+#   form = ContactForm()
+   
+#   if request.method == 'POST':
+#      result = request.form
+#      print('got:',result.get('email'))
+#      if form.validate() == False:
+#         flash('All fields are required.')
+#         return render_template('contact.html', form = form)
+#      else:
+#         return render_template('success.html')
+#   elif request.method == 'GET':
+#         return render_template('contact.html', form = form)
+
+
 
 # this thread can be scheduled for DE heartbeat check
 def check_status(threadName, delay):
@@ -96,14 +126,32 @@ def members():
    return render_template('desetup.html')
    return "Members"
 
-
 # Here is the home page
-@app.route("/")
+@app.route("/", methods = ['GET', 'POST'])
 def sdr():
+   form = MainControlForm()
    global theStatus;
    theStatus = check_status_once()
    print("WEB status ", theStatus)
-   return render_template('tangerine.html',result = theStatus)
+   form.destatus = theStatus
+   if request.method == 'GET':   
+     return render_template('tangerine.html',form = form)
+   if request.method == 'POST':
+      print("Main control POST")
+      if form.validate() == False:
+         flash('All fields are required.')
+         return render_template('tangerine.html', form = form)
+      else:
+         result = request.form
+         print('mode set to:',form.mode.data)
+         print('start set to ',form.startDC.data)
+         print('stop set to ', form.stopDC.data)
+         if(form.startDC.data ):
+            startcoll()
+         if(form.stopDC.data ):
+            stopcoll()
+         print("end of control loop")
+         return render_template('tangerine.html', form = form)
 
 
 @app.route("/restart")
@@ -262,7 +310,7 @@ def startcoll():
      tcp_client.close()
      theDataStatus = "Started data collection"
      dataCollStatus = 1
-     return render_template('tangerine.html', result = theStatus, dataStat = theDataStatus)
+#     return render_template('tangerine.html', result = theStatus, dataStat = theDataStatus)
   return
 
 @app.route("/stopcollection")
@@ -292,7 +340,7 @@ def stopcoll():
      tcp_client.close()
      theDataStatus = "Stopped data collection"
      dataCollStat = 0
-     return render_template('tangerine.html', dataStat = theDataStatus)
+#     return render_template('tangerine.html', dataStat = theDataStatus)
   return
 
 
