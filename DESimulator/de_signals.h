@@ -16,5 +16,5 @@ Maps program mnemonics to 2-byte commands to be passed to DE
 #define START_FT8_COLL      "8S"
 #define STOP_FT8_COLL       "8X"
 #define LED_SET             "SB"  // in case we need to send a binary LED set byte
-
-
+#define UNLINK		    "UL"
+#define HALT_DE		    "XX"

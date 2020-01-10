@@ -1,2 +1,2 @@
 all:
-	gcc UDPsim.c -o UDPsim -luv -lpthread -lrt -lm
+	gcc DE4.c -o DE4 -lpthread -lm
