@@ -102,7 +102,7 @@ static struct sockaddr_in interface_addr={0};
 static struct sockaddr_in interface_netmask={0};
 static int interface_length;
 
-#define DISCOVERY_PORT 1024
+#define DISCOVERY_PORT 1023
 static int discovery_socket;
 static struct sockaddr_in discovery_addr;
 

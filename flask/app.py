@@ -92,8 +92,9 @@ def check_status_once():
      print("send query")
      tcp_client.sendall(data.encode())
      print("wait")
-     time.sleep(1)
+     time.sleep(3)
      print("try to receive response")
+     received = "NOTHING"
     # Read data from the TCP server and close the connection
      try:
 
@@ -101,6 +102,7 @@ def check_status_once():
 # 12/12/19 - mainctl tries to send NAK but we never get it
 
        received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
+       print("received data from DE: ", received)
      except Exception as e:
        print("exception on recv")
        theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
@@ -131,11 +133,14 @@ def members():
 def sdr():
    form = MainControlForm()
    global theStatus;
-   theStatus = check_status_once()
-   print("WEB status ", theStatus)
-   form.destatus = theStatus
-   if request.method == 'GET':   
+
+   if request.method == 'GET':  
+     form.destatus = theStatus 
      return render_template('tangerine.html',form = form)
+     print("TRY TO CHECK STATUS")
+     theStatus = check_status_once()
+     print("WEB status ", theStatus)
+     form.destatus = theStatus
    if request.method == 'POST':
       print("Main control POST")
       if form.validate() == False:
@@ -161,10 +166,10 @@ def restart():
    returned_value = os.system("killall -9 main")
    print("after killing mainctl, retcode=",returned_value)
    print("Trying to restart mainctl")
-   returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/main")
+   returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
    time.sleep(3)
    print("after restarting mainctl, retcode=",returned_value)
-   stopcoll()
+#   stopcoll()
    theStatus = check_status_once()
    return redirect('/')
 
@@ -331,9 +336,9 @@ def stopcoll():
      tcp_client.sendall(data.encode())
   except Exception as e: 
      print(e)
-     print("'" + e.errno + "'")
+#     print("'" + e.errno + "'")
      if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error " + e.errno +  "mainctl program not responding"
+       theStatus = "Error " + str(e.errno) +  "mainctl program not responding"
      else:
        theStatus = "Exception " + str(e)
   finally:

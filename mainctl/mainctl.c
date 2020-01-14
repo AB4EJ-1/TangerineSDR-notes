@@ -3,10 +3,8 @@
 * With funding from the Center for Advanced Public Safety and
 * The National Science Foundation.
 *
-* This program is free software; you can redistribute it and/or
 * modify it under the terms of the GNU General Public License
 * as published by the Free Software Foundation; either version 2
-* of the License, or (at your option) any later version.
 *
 * This program is distributed in the hope that it will be useful,
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,8 +21,6 @@
   Digital_RF
 */
 
-extern void UDPdiscover();
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <uv.h>
@@ -34,6 +30,18 @@ extern void UDPdiscover();
 #include <dirent.h>
 #include <errno.h>
 #include "de_signals.h"
+#include <unistd.h>
+
+#include "discovered.h"
+
+extern DISCOVERED UDPdiscover();
+//extern struct sockaddr_in() UDPdiscover();
+//static struct sockaddr_in() DEdevice;
+static uint16_t LH_port;   // port used on LH (local host) for sending to DE, and will listen on
+static uint16_t DE_port;   // port that DE will listen on
+static char DE_IP[16];
+//static char chosen_IP[16]; 
+#define DEVICE_TANGERINE 7  // TangerineSDR for now
 
 // Definitions for Digital_RF
 // length of random number buffer
@@ -103,12 +111,14 @@ uv_loop_t *loop;
 static uv_tcp_t* DEsocket; // socket to be used across multiple functions
 static uv_stream_t* DEsockethandle;
 
-// the following probably not necessart  (TODO)
+// the following probably not necessary  (TODO)
 static uv_tcp_t* websocket; // socket to be used for comm to web server
 //static uv_stream_t* websockethandle;
-
+static uv_udp_t send_socket;
 static uv_stream_t* webStream;
 
+struct sockaddr_in send_addr;  // used for sending to DE
+struct sockaddr_in recv_addr;
 
 static long packetCount;
 
@@ -136,6 +146,18 @@ static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* b
 
 //// *********************** Start of Code  *******************************//////
 
+/////////////////////////////////////////////////////////////////
+//  Callback after packet sent by UDP
+///////////////////////////////////////////////////////////////
+void on_UDP_send(uv_udp_send_t* req, int status)
+{
+  printf("UDP send complete, status: %d\n", status);
+ // free(req);   // not sure if this is right; may crash
+  //puts("free memory completed");
+  return;
+}
+
+
 //////////////////////////////////////////////////////////
 // callback routine for after write to webcontrol is complete
 ////////////////////////////////////////////////////////
@@ -161,6 +183,7 @@ void DE_write_cb(uv_write_t *req, int status) {
   free(req);
 }
 
+
 //////////////////////////////////////////////////////////////
 // callback for when TCP data is received from DE
 /////////////////////////////////////////////////////////////
@@ -173,6 +196,7 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   strncpy(reply,DEbuf->base, nread);
   fprintf(stderr,"DE sent %zd: bytes:\n", nread);
   puts(reply); 
+
 
 /////////////////////////////////////////////////////////////////
 //////////  forward a status message from DE to webcontrol
@@ -195,7 +219,7 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 /////////////////////////////////////////////////////////////////
 
 void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
-  puts("process_command routine triggered");
+  puts("process_command routine triggered\n");
   if(nread == -4095)  // TODO: this seems to be junk coming from flask app (?) - need to fix
 	{ puts("ignore 1 buffer"); return;
 	}
@@ -204,7 +228,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     {  // inform webcontrol that DE seems unresponsive
      uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
      puts("set up write_req");
-     uv_buf_t a[]={{.base="NAK", .len=2},{.base="\n",.len=1}};
+     uv_buf_t a[]={{.base="NAK", .len=3},{.base="\n",.len=1}};
      puts("Send NAK status to webcontrol");
   //   uv_write_t WBdata;
 
@@ -223,6 +247,66 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   strncpy(mybuf, buf->base, nread-1);   // subtract 1 to strip CR
 // NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
   puts("mybuf="); puts(mybuf);
+
+  if(strncmp(mybuf, START_DATA_COLL , 2)==0)
+	{
+
+    uv_udp_send_t send_req;
+
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+
+	strcpy(b, "SC");
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+
+
+    printf("Sending START DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+	}
+
+  if(strncmp(mybuf, STOP_DATA_COLL , 2)==0)
+	{
+
+    uv_udp_send_t send_req;
+
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+
+	strcpy(b, "XC");
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+
+    struct sockaddr_in send_addr;
+    printf("Sending STOP DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    int result = digital_rf_close_write_hdf5(DRFdata_object);
+    fprintf(stderr,"DRF close, result = %d \n",result);
+    return;
+	}
+
+
+  if(strncmp(mybuf, STATUS_INQUIRY, 2)==0)
+	{
+	puts("Forward status inquiry to DE");
+
+    uv_udp_send_t send_req;
+
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+  // status inquiry
+	strcpy(b, "S?");
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+
+    struct sockaddr_in send_addr;
+    printf("Sending STATUS INQUIRY to %s  port %u\n", DE_IP, DE_port);
+    printf("\t(Listening on port %d )\n", ntohs(recv_addr.sin_port));
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+	}
+
   if(strncmp(buf->base,"BYE",3)==0)
     {
     puts("halting");
@@ -232,8 +316,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     {
       buffers_received = 0;  // this lets us count buffers independently of counter in the buffer itself
     }
- 
-//TODO: if this is executed without a DRF file being open, it crashes program. Need to trap or otherwise detect
+
 
 // try to close DRF file, but only if one is open
   puts("check if DRF file open; if so, close it");
@@ -246,11 +329,17 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   puts("process_command triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
-  uv_buf_t a[]={{.base=mybuf,.len=nread},{.base="\n",.len=1}};
+  uv_buf_t a[]={{.base=mybuf,.len=nread},{.base="\n",.len=3}};
 // forward command to DE
   puts("write to DE");
+
+  
+/*
+This is original code for talking to DE using TCP
   uv_write(write_req, DEsockethandle, a, 1, DE_write_cb);
+*/
   }
+
 
 /////////////////////////////////////////////////////////////////
 // callback for when a connection from webcontroller is received
@@ -288,6 +377,7 @@ void on_DE_write(uv_write_t* req, int status)
 
 /////////////////////////////////////////////////////////////////
 // callback indicating client-type connection to DE complete
+///////////////////////////////////////////////////////////////
 void on_DE_CL_connect(uv_connect_t* connection, int status)
 {
     printf("Status = %d\n", status);
@@ -310,6 +400,28 @@ void on_DE_CL_connect(uv_connect_t* connection, int status)
     uv_read_start((uv_stream_t*) stream, alloc_buffer, handleDEdata);
 }
 
+
+/////////////////////////////////////////////////
+
+void statusInquiry() {
+    puts("called status inquiry");
+    uv_udp_send_t send_req;
+
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+  // status inquiry
+	strcpy(b, "S?");
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+
+    struct sockaddr_in send_addr;
+    printf("Sending STATUS INQUIRY to %s  port %u\n", DE_IP, DE_port);
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+
+}
+
+
 ///////////////////////////////////////////////////////////////
 //  Callback for when UDP data packets received from DE 
 //////////////////////////////////////////////////////////////
@@ -322,10 +434,36 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
       free(buf->base);
 	  return;
     }
+  printf("UDP data recvd\n");
+  if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B)  // oh man this is crude
+	{
+	puts("OK status message received from DE!  It's alive!!");
+    uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+    puts("set up write_req");
+    uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
+    puts("Send OK status to webcontrol");
+    uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+     return;
+	}
+
+
   buffers_received++;
   //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
   fprintf(stderr,"nread = %zd\n", nread);
+  fprintf(stderr,"Buffer starts with: %02x %02X \n",buf->base[0], buf->base[1]);
+  if (nread < 8000)  // discard this buffer for now 
+	{
+	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
+	}
   if (nread > 8000)  // looks like a valid databuffer, based on length
+	{
+	puts("DATA BUFFER RECEIVED");
+  fprintf(stderr," DataBuffer starts with: %02x %02X %02X %02X\n",
+	buf->base[0], buf->base[1],buf->base[2], buf->base[3]);
+	//return;
+	}
+
+
     {
     DATABUF *buf_ptr;
 
@@ -377,7 +515,11 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
-      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length); 
+	  {
+      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
+	  fprintf(stderr,"DRF write result = %d \n",result);
+	  }
+       
   //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
 
     hdf_i++;
@@ -389,19 +531,47 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   free(buf->base);
 
   //uv_udp_recv_stop(recv_handle);
+
   }
 
 
 
 /*  ************************************************************ */
 int main() {
+// Discover what devices are acessible and respond to discovery packet (preamble hex EF FE ) 
   puts("starting");
+  
   puts("UDPdiscovery    ******    *****");
-  //system("pwd");
-  int retval = system("./discover");
-  fprintf(stderr,"Discover return= %d\n",retval);
 
-// get the configuratin file
+  //DEdevice = UDPdiscoverNew();  // call UDP discovery rtn
+
+// here we look for compatible device
+  LH_port = 0;
+  discovered[0]= UDPdiscover(&LH_port);    // pass handle to outbound port
+  // discovery randomly selects an outbound port. DE will talk to that port.
+  // Here we find out what that port is, so we can listen on it.
+  printf("discovery selected LH port %d \n", LH_port); 
+  puts("Here's what we found:");
+  for(int i=0;i<MAX_DEVICES;i++)
+	{
+	 if(strlen(discovered[i].name) == 0 ) break;   // apparently the end of the list
+     fprintf(stderr,"  ^^^^^^^ Device %d is %s at %s port %u  \n",i, discovered[i].name,
+	   inet_ntoa(discovered[i].info.network.address.sin_addr),   
+       htons(discovered[i].info.network.address.sin_port));
+    // TODO: temporary way to pick device on the wire; 
+    // will need to have a way to select from multiple responding devices
+	if(discovered[i].device == DEVICE_TANGERINE) 
+	 {
+		strcpy(DE_IP, inet_ntoa(discovered[i].info.network.address.sin_addr));
+
+		DE_port = htons(discovered[i].info.network.address.sin_port);
+	
+		printf("selected Tangerine at port %u\n",DE_port);
+	  }
+	}
+
+
+// get the configuration file
   config_t cfg;
   config_setting_t *setting;
   const char *DE_ip_str;
@@ -448,8 +618,7 @@ int main() {
   loop = uv_default_loop();
 
 
-
-// set up to listen to incoming port for commands from web controller
+// Set up to listen to incoming TCP port for commands from web controller
   uv_tcp_t server;
   uv_tcp_init(loop, &server);
   struct sockaddr_in bind_addr;
@@ -462,29 +631,30 @@ int main() {
     return 1;
     }
   
-//      Connect to DE as client, using TCP
-
-// NOTE. If DE expects to be "discovered" a la HPSDR, this will have to be 
-// replaced with discovery code.  See pihpsdr old_protocol_N1.c
-
-  puts("Trying to connect to DE as client");
-  uv_tcp_t* socket = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
-  uv_tcp_init(loop, socket);
-  uv_connect_t* connect = (uv_connect_t*)malloc(sizeof(uv_connect_t));
-  struct sockaddr_in dest;
-  uv_ip4_addr(DE_ip_str, DE_port, &dest); 
-  uv_tcp_connect(connect, socket, (const struct sockaddr*)&dest, on_DE_CL_connect);
 
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
-  struct sockaddr_in recv_addr;
-  uv_ip4_addr("0.0.0.0", 1024, &recv_addr);
+
+
+ // here we will listen on that port broadcast earlier selected
+  uv_ip4_addr("192.168.1.90", LH_port, &recv_addr); 
+  printf("will listen on port %u \n", LH_port);
   uv_udp_bind(&recv_socket, (const struct sockaddr *)&recv_addr, UV_UDP_REUSEADDR);
   uv_udp_recv_start(&recv_socket, alloc_buffer, on_UDP_read);
 
+  // here we bind (for sending) to socket using same port as reeciving on
+  puts("prep to send UDP data (commands)");
 
-  puts("DE connection request done; awaiting response from DE..."); 
+  uv_udp_init(loop, &send_socket);
+
+  uv_ip4_addr(INADDR_ANY, LH_port, &send_addr);
+  uv_udp_bind(&send_socket, (const struct sockaddr *)&send_addr, 0);
+
+ // statusInquiry();  // test this new virtual connection
+
+
+//  puts("DE connection request done; awaiting response from DE..."); 
 
 /////////// Digital RF Setup //////////////////////////////////////
 
@@ -517,28 +687,6 @@ int main() {
 	pclose(fp1);
 	pclose(fp2);
 	}
-
-
-// do UDP discovery
- // puts("trying UDP discovery ********************");
- // UDPdiscover();
-
-/*
-	if(fp)
-		{
-		char buffer[128];
-		while (!feof(fp))
-			{
-			if(fgets(buffer, 128, fp) != NULL) {}
-			}
-		pclose(fp);
-		buffer[strlen(buffer)-1] = '\0';
-		char theResult[80];
-		strcpy(theResult, buffer);
-		printf("result of mkdir = %s",theResult);
-		}
-
-*/
 
 
 

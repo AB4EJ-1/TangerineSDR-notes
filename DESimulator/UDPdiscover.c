@@ -1,30 +1,4 @@
-/* Copyright (C) 2019 The University of Alabama
-* Author: William (Bill) Engelke, AB4EJ
-* With funding from the Center for Advanced Public Safety and
-* The National Science Foundation.
-*
-* Note: the majority f this code was written 
-* by John Melton, G0ORX/N6LYT, who made it available under the
-* GNU GPL mentioned below.
-*
-* This program is free software; you can redistribute it and/or
-* modify it under the terms of the GNU General Public License
-* as published by the Free Software Foundation; either version 2
-* of the License, or (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the Free Software
-* Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-*
-* This discovery section uses the "old" OpenHPSDR protocol, but can also
-* use the "new."  This section can have additional authentication and/or
-* security added to run at time of connection from Local Host to Data Engine.
-*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -44,6 +18,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+//#include "discovered.h"
+//#include "discovery.h"
 
 #define DEVICE_METIS 0
 #define DEVICE_HERMES 1
@@ -51,7 +27,6 @@
 #define DEVICE_ANGELIA 4
 #define DEVICE_ORION 5
 #define DEVICE_HERMES_LITE 6
-#define DEVICE_TANGERINE 7  // TangerineSDR for now
 // ANAN 7000DLE and 8000DLE uses 10 as the device type in old protocol
 #define DEVICE_ORION2 10 
 // Newer STEMlab hpsdr emulators use 100 instead of 1
@@ -88,7 +63,7 @@
 struct _DISCOVERED {
     int protocol;
     int device;
-    int use_tcp;    // if set, use TCP rather than UDP to connect to radio
+    int use_tcp;    // use TCP rather than UDP to connect to radio
     char name[64];
     int software_version;
     int status;
@@ -116,10 +91,8 @@ typedef struct _DISCOVERED DISCOVERED;
 int selected_device;
 int devices;
 
-static int selected_port;   // for outbound port
-
 DISCOVERED discovered[MAX_DEVICES];
-
+///////////// adapting to use pihpsdr discovery /////////////////////////////////////////
 
 pthread_t discover_thread_id;  // thread ID
 pthread_t discover_thread_id_o; 
@@ -127,6 +100,7 @@ pthread_t discover_thread_id_o;
 #define IPADDR_LEN 20
 static char ipaddr_tcp_buf[IPADDR_LEN] = "10.10.10.10";
 char *ipaddr_tcp = &ipaddr_tcp_buf[0];
+
 
 
 static char interface_name[64];
@@ -188,8 +162,7 @@ void* new_discover_receive_thread(void* arg) {
             break;
         }
         fprintf(stderr,"new_discover: received %d bytes\n",bytes_read);
-
-        for (int i=0; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
+        for (int i; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
         if(bytes_read==1444) {
             if(devices>0) {
                 break;
@@ -330,7 +303,7 @@ void new_discover(struct ifaddrs* iface) {
         fprintf(stderr,"thread creation failed on new_discover_receive_thread\n");
         exit( -1 );
     }
-    fprintf(stderr,"new_disovery: thread_id=%ld\n",discover_thread_id);
+    fprintf(stderr,"new_disovery: thread_id=%p\n",discover_thread_id);
 
 
     // send discovery packet
@@ -408,11 +381,6 @@ static void *discover_receive_thread_o(void* arg) {
     while(1) {
         bytes_read=recvfrom(discovery_socket,buffer,sizeof(buffer),1032,(struct sockaddr*)&addr,&len);
         fprintf(stderr,"Data received, bytes_read = %d \n",bytes_read);
-
-
-          printf("\tfound server IP is %s, Port is %d\n", inet_ntoa(addr.sin_addr),htons(addr.sin_port));
-
-
         if(bytes_read<0) {
             fprintf(stderr,"discovery: bytes read %d\n", bytes_read);
             perror("discovery: recvfrom socket failed for discover_receive_thread_o");
@@ -420,7 +388,7 @@ static void *discover_receive_thread_o(void* arg) {
         }
         if (bytes_read == 0) break;
         fprintf(stderr,"Old Protocol discovered: received %d bytes\n",bytes_read);
-        for (int i=0; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
+        for (int i; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
 
         if ((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
             int status = buffer[2] & 0xFF;
@@ -429,9 +397,6 @@ static void *discover_receive_thread_o(void* arg) {
                     discovered[devices].protocol=ORIGINAL_PROTOCOL;
                     discovered[devices].device=buffer[10]&0xFF;
                     switch(discovered[devices].device) {
-						case DEVICE_TANGERINE:
-							strcpy(discovered[devices].name,"Tangerine");
-							break;
                         case DEVICE_METIS:
                             strcpy(discovered[devices].name,"Metis");
                             break;
@@ -479,14 +444,13 @@ static void *discover_receive_thread_o(void* arg) {
                     discovered[devices].info.network.interface_length=sizeof(interface_addr);
                     strcpy(discovered[devices].info.network.interface_name,interface_name);
 		    discovered[devices].use_tcp=0;
-		    fprintf(stderr,"discovery %d: found radio %s device=%d software_version=%d status=%d address=%s port=%u  (%02X:%02X:%02X:%02X:%02X:%02X) on %s\n",
-                            devices,
+		    fprintf(stderr,"discovery: found radio %s device=%d software_version=%d status=%d address=%s port=%u  (%02X:%02X:%02X:%02X:%02X:%02X) on %s\n",
                             discovered[devices].name,
                             discovered[devices].device,
                             discovered[devices].software_version,
                             discovered[devices].status,
                             inet_ntoa(discovered[devices].info.network.address.sin_addr),
-							ntohs(discovered[devices].info.network.address.sin_port),
+							discovered[devices].info.network.address.sin_port,
                             discovered[devices].info.network.mac_address[0],
                             discovered[devices].info.network.mac_address[1],
                             discovered[devices].info.network.mac_address[2],
@@ -677,13 +641,6 @@ static void discover(struct ifaddrs* iface) {
         exit(-1);
     }
 
-    int theAddr = sizeof(to_addr);
-    int ret1 = getsockname(discovery_socket,  (struct sockaddr*) &to_addr, &theAddr);
-    printf("getsockname ret1 = %d \n", ret1);
-    
-          printf("getsockname returns IP for outbound addr %s, Port is %d\n", inet_ntoa(to_addr.sin_addr),htons(to_addr.sin_port));
-    selected_port = htons(to_addr.sin_port);
-
     // wait for receive thread to complete
     //g_thread_join(discover_thread_id);
     pthread_join(discover_thread_id_o, (void**)&(retval_ptr));
@@ -765,14 +722,12 @@ void old_discovery() {
 
 //////////////////////////////////////////////////////////////
 
-DISCOVERED UDPdiscover(int* LH_port) {
+void UPDdiscover() {
 
-  puts("LOOKING for old protocol **********************");
+  puts(" - - - - starting discovery with old protocol **********************");
   old_discovery();
-  *LH_port = selected_port;  // selected port back via reference
-  //puts("LOOKING for new protocol **********************");
-  //new_discovery();
-  return discovered[0];
+ // puts("LOOKING for new protocol **********************");
+ // new_discovery();
   }
 
 
