@@ -344,7 +344,7 @@ void new_discovery() {
     }
 }
 
-void main() {
+void UDPdiscover() {
 
   puts("start");
   new_discovery();

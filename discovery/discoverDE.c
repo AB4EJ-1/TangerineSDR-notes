@@ -157,12 +157,12 @@ void* new_discover_receive_thread(void* arg) {
         bytes_read=recvfrom(discovery_socket,buffer,sizeof(buffer),0,(struct sockaddr*)&addr,&len);
         if(bytes_read<0) {
             fprintf(stderr,"new_discover: bytes read %d\n", bytes_read);
-			for (int i; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
+			for (int i=0; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
             perror("new_discover: recvfrom socket failed for discover_receive_thread");
             break;
         }
         fprintf(stderr,"new_discover: received %d bytes\n",bytes_read);
-        for (int i; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
+        for (int i=0; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
         if(bytes_read==1444) {
             if(devices>0) {
                 break;
@@ -388,7 +388,7 @@ static void *discover_receive_thread_o(void* arg) {
         }
         if (bytes_read == 0) break;
         fprintf(stderr,"Old Protocol discovered: received %d bytes\n",bytes_read);
-        for (int i; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
+        for (int i=0; i<bytes_read;i++) {printf("%02X",buffer[i]); }; printf("\n");
 
         if ((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
             int status = buffer[2] & 0xFF;

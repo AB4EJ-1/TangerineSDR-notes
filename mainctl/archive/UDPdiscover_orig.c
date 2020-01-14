@@ -51,7 +51,6 @@
 #define DEVICE_ANGELIA 4
 #define DEVICE_ORION 5
 #define DEVICE_HERMES_LITE 6
-#define DEVICE_TANGERINE 7  // TangerineSDR for now
 // ANAN 7000DLE and 8000DLE uses 10 as the device type in old protocol
 #define DEVICE_ORION2 10 
 // Newer STEMlab hpsdr emulators use 100 instead of 1
@@ -115,8 +114,6 @@ typedef struct _DISCOVERED DISCOVERED;
 //extern int selected_device;
 int selected_device;
 int devices;
-
-static int selected_port;   // for outbound port
 
 DISCOVERED discovered[MAX_DEVICES];
 
@@ -408,11 +405,6 @@ static void *discover_receive_thread_o(void* arg) {
     while(1) {
         bytes_read=recvfrom(discovery_socket,buffer,sizeof(buffer),1032,(struct sockaddr*)&addr,&len);
         fprintf(stderr,"Data received, bytes_read = %d \n",bytes_read);
-
-
-          printf("\tfound server IP is %s, Port is %d\n", inet_ntoa(addr.sin_addr),htons(addr.sin_port));
-
-
         if(bytes_read<0) {
             fprintf(stderr,"discovery: bytes read %d\n", bytes_read);
             perror("discovery: recvfrom socket failed for discover_receive_thread_o");
@@ -429,9 +421,6 @@ static void *discover_receive_thread_o(void* arg) {
                     discovered[devices].protocol=ORIGINAL_PROTOCOL;
                     discovered[devices].device=buffer[10]&0xFF;
                     switch(discovered[devices].device) {
-						case DEVICE_TANGERINE:
-							strcpy(discovered[devices].name,"Tangerine");
-							break;
                         case DEVICE_METIS:
                             strcpy(discovered[devices].name,"Metis");
                             break;
@@ -486,7 +475,7 @@ static void *discover_receive_thread_o(void* arg) {
                             discovered[devices].software_version,
                             discovered[devices].status,
                             inet_ntoa(discovered[devices].info.network.address.sin_addr),
-							ntohs(discovered[devices].info.network.address.sin_port),
+							discovered[devices].info.network.address.sin_port,
                             discovered[devices].info.network.mac_address[0],
                             discovered[devices].info.network.mac_address[1],
                             discovered[devices].info.network.mac_address[2],
@@ -677,13 +666,6 @@ static void discover(struct ifaddrs* iface) {
         exit(-1);
     }
 
-    int theAddr = sizeof(to_addr);
-    int ret1 = getsockname(discovery_socket,  (struct sockaddr*) &to_addr, &theAddr);
-    printf("getsockname ret1 = %d \n", ret1);
-    
-          printf("getsockname returns IP for outbound addr %s, Port is %d\n", inet_ntoa(to_addr.sin_addr),htons(to_addr.sin_port));
-    selected_port = htons(to_addr.sin_port);
-
     // wait for receive thread to complete
     //g_thread_join(discover_thread_id);
     pthread_join(discover_thread_id_o, (void**)&(retval_ptr));
@@ -765,11 +747,10 @@ void old_discovery() {
 
 //////////////////////////////////////////////////////////////
 
-DISCOVERED UDPdiscover(int* LH_port) {
+DISCOVERED UPDdiscover() {
 
   puts("LOOKING for old protocol **********************");
   old_discovery();
-  *LH_port = selected_port;  // selected port back via reference
   //puts("LOOKING for new protocol **********************");
   //new_discovery();
   return discovered[0];
