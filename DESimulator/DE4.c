@@ -9,10 +9,13 @@
 #include <math.h>
 #include <stdbool.h>
 #include <fcntl.h>
-#include "de_signals.h"
 
+//#define IP_FOUND "IP_FOUND"
+//#define IP_FOUND_ACK "IP_FOUND_ACK"
 #define PORT 1024
 
+
+static int LH_port;
 struct sockaddr_in client_addr;
 struct sockaddr_in server_addr;
 int sock;
@@ -71,9 +74,9 @@ void *sendData(void *threadid) {
    // puts("passed wait");
     myBuffer.bufcount = bufcount++;
 
+    client_addr.sin_port = htons(LH_port);
     sentBytes = sendto(sock, (const struct dataBuf *)&myBuffer, sizeof(myBuffer), 0, 
-	(struct sockaddr*)&client_addr, sizeof(client_addr));
-
+	   (struct sockaddr*)&client_addr, sizeof(client_addr));
 
     fprintf(stderr,"UDP message sent from thread. bytes= %ld\n", sentBytes); 
     sleep(1);
@@ -95,18 +98,18 @@ void *sendData(void *threadid) {
 
 void discoveryReply(char buffer[1024]) {
   fprintf(stderr,"discovery packet detected\n"); 
-  cmdport = ntohs(client_addr.sin_port);
-  //client_addr.sin_port = htons(1025);  // temporary until we know how to find the on the LH side
-  printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
-      inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-  buffer[10] = 0x07;  //mark this as Tangerine 
+  buffer[10] = 0x07;
+  LH_port = ntohs(client_addr.sin_port);
+	 
+  printf("\nDiscovery 2, Client connection information:\n\t IP: %s, Port: %d\n", 
+             inet_ntoa(client_addr.sin_addr), LH_port);
   int count = sendto(sock, buffer, 60, 0, (struct sockaddr*)&client_addr,
 		 sizeof(client_addr));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
 int main() {
-  int optval;
+
   stoplink = 0;
   stopData = 0;
   int addr_len;
@@ -123,12 +126,9 @@ int main() {
   memset((void*)&server_addr, 0, addr_len);
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = htons(INADDR_ANY);
-  server_addr.sin_port = htons(PORT);  // PORT
-  optval = 1; 
-  // this is here but does not work; still have to kill previous process
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval,sizeof(optval));
-;
-
+  server_addr.sin_port = htons(PORT);
+  cmdport = PORT;  // this could be made to follow randomly chosen port
+  // bind to our port to listen on
   ret = bind(sock, (struct sockaddr*)&server_addr, addr_len);
   if (ret < 0) {
     perror("bind error\n");
@@ -136,7 +136,7 @@ int main() {
   }
   while (1) {
   
-  puts("Initialized; await discovery");
+  printf("Initialized; await discovery on port %d\n", PORT);
 
     FD_ZERO(&readfd);
     FD_SET(sock, &readfd);
@@ -144,27 +144,16 @@ int main() {
     ret = select(sock+1, &readfd, NULL, NULL, 0);
     if (ret > 0) {
       if (FD_ISSET(sock, &readfd)) {
-	client_addr.sin_port = htons(1024);  // temporary until we know how to find the on the LH side
         count = recvfrom(sock, buffer, 1024, 0, (struct sockaddr*)&client_addr, &addr_len);
-
-          printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
-            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-
         if((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
-	  fprintf(stderr,"discovery packet detected\n");
-	//  discoveryReply(buffer);
- 
-          cmdport = ntohs(client_addr.sin_port);
-	  client_addr.sin_port = htons(9999);  // temporary until we know how to find the on the LH side
+	      fprintf(stderr,"discovery packet detected at startup point\n"); 
+          LH_port = ntohs(client_addr.sin_port);
           printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
-            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+            inet_ntoa(client_addr.sin_addr), LH_port);
+	      buffer[10] = 0x07;
 
-	   buffer[10] = 0x07;  //mark this as Tangerine 
-		for(int i=0;i<60;i++) printf("%02X",buffer[i]);
-		printf("\n");
-	   count = sendto(sock, buffer, 60, 0, (struct sockaddr*)&client_addr,
-		 sizeof(client_addr));
-	   printf("sent %d bytes\n",count);
+	      count = sendto(sock, buffer, 60, 0, (struct sockaddr*)&client_addr,
+		            sizeof(client_addr));
         }
       }
     }
@@ -174,39 +163,45 @@ int main() {
   /////////////////////////////// control loop ////////////////////
   while(1)
     {
-        printf("awaiting command on port 1024\n");
-	cmdport = 1024;  // temporary
-        count = recvfrom(sock, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
-    printf("command recd %c%c \n",buffer[0],buffer[1]);
+    printf("awaiting command\n");
+    count = recvfrom(sock, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
+   // LH_port = ntohs(client_addr.sin_port);
+    printf("command recd %c%c %x02 %x02 from port %d\n",buffer[0],buffer[1],buffer[0],buffer[1], LH_port);
 
    // command processsing
 
-    if(strncmp(buffer, STATUS_INQUIRY,2) == 0 )
+    if(strncmp(buffer, "S?",2) == 0 )
 	{
+    
 	printf("STATUS INQUIRY\n");
-	  client_addr.sin_port = htons(1024);  // temporary until we know how to find the on the LH side
-        count = sendto(sock, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
-    	printf("response = %d\n",count);
+
+    client_addr.sin_port = htons(LH_port);  // this may wipe desired port
+
+
+    count = sendto(sock, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+    printf("response = %d  sent to ",count);
+    printf(" IP: %s, Port: %d\n", 
+    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 	continue;
 	}
-    if(strncmp(buffer, UNLINK,2) == 0)
+    if(strncmp(buffer, "UL",2) == 0)
 	{  // future function for allowing LH to drop its link to this DE
 	printf("stoplink\n");
 	stoplink = 1;
 	continue;
 	}
-    if(strncmp(buffer, STOP_DATA_COLL,2)==0)
+    if(strncmp(buffer, "XC",2)==0)
 	{
 	printf("Main loop stopping data acquisition\n");
 	stopData = 1;
 	continue;
 	}
-    if(strncmp(buffer, HALT_DE,2)==0)
+    if(strncmp(buffer, "XX",2)==0)
 	{
 	printf("HALTING\n");
 	return 0;
 	}
-    if(strncmp(buffer, START_DATA_COLL,2)==0)
+    if(strncmp(buffer, "SC",2)==0)
 	{
 	puts("starting sendData");
 	stopData = 0;
@@ -214,6 +209,7 @@ int main() {
   	pthread_t datathread;
   	int rc = pthread_create(&datathread, NULL, sendData, (void *)j);
   	printf("thread start rc = %d\n",rc);
+    continue;
 	}
   // in case we are running but get another discovery packet
   // This essentially switches DE simulator to talk to a different LH and/or port.
