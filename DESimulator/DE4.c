@@ -9,10 +9,9 @@
 #include <math.h>
 #include <stdbool.h>
 #include <fcntl.h>
-#include "<de_signals.h>"
+#include "de_signals.h"
 
-#define PORT 9999
-
+#define PORT 1024
 
 struct sockaddr_in client_addr;
 struct sockaddr_in server_addr;
@@ -97,16 +96,17 @@ void *sendData(void *threadid) {
 void discoveryReply(char buffer[1024]) {
   fprintf(stderr,"discovery packet detected\n"); 
   cmdport = ntohs(client_addr.sin_port);
+  //client_addr.sin_port = htons(1025);  // temporary until we know how to find the on the LH side
   printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-
-  int count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr,
+  buffer[10] = 0x07;  //mark this as Tangerine 
+  int count = sendto(sock, buffer, 60, 0, (struct sockaddr*)&client_addr,
 		 sizeof(client_addr));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
 int main() {
-
+  int optval;
   stoplink = 0;
   stopData = 0;
   int addr_len;
@@ -123,7 +123,11 @@ int main() {
   memset((void*)&server_addr, 0, addr_len);
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = htons(INADDR_ANY);
-  server_addr.sin_port = htons(PORT);
+  server_addr.sin_port = htons(PORT);  // PORT
+  optval = 1; 
+  // this is here but does not work; still have to kill previous process
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval,sizeof(optval));
+;
 
   ret = bind(sock, (struct sockaddr*)&server_addr, addr_len);
   if (ret < 0) {
@@ -140,15 +144,27 @@ int main() {
     ret = select(sock+1, &readfd, NULL, NULL, 0);
     if (ret > 0) {
       if (FD_ISSET(sock, &readfd)) {
+	client_addr.sin_port = htons(1024);  // temporary until we know how to find the on the LH side
         count = recvfrom(sock, buffer, 1024, 0, (struct sockaddr*)&client_addr, &addr_len);
-        if((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
-	  fprintf(stderr,"discovery packet detected\n"); 
-          cmdport = ntohs(client_addr.sin_port);
+
           printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
             inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
-	   count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr,
+        if((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
+	  fprintf(stderr,"discovery packet detected\n");
+	//  discoveryReply(buffer);
+ 
+          cmdport = ntohs(client_addr.sin_port);
+	  client_addr.sin_port = htons(9999);  // temporary until we know how to find the on the LH side
+          printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
+            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+	   buffer[10] = 0x07;  //mark this as Tangerine 
+		for(int i=0;i<60;i++) printf("%02X",buffer[i]);
+		printf("\n");
+	   count = sendto(sock, buffer, 60, 0, (struct sockaddr*)&client_addr,
 		 sizeof(client_addr));
+	   printf("sent %d bytes\n",count);
         }
       }
     }
@@ -158,7 +174,8 @@ int main() {
   /////////////////////////////// control loop ////////////////////
   while(1)
     {
-        printf("awaiting command\n");
+        printf("awaiting command on port 1024\n");
+	cmdport = 1024;  // temporary
         count = recvfrom(sock, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
     printf("command recd %c%c \n",buffer[0],buffer[1]);
 
@@ -167,6 +184,7 @@ int main() {
     if(strncmp(buffer, STATUS_INQUIRY,2) == 0 )
 	{
 	printf("STATUS INQUIRY\n");
+	  client_addr.sin_port = htons(1024);  // temporary until we know how to find the on the LH side
         count = sendto(sock, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
     	printf("response = %d\n",count);
 	continue;
