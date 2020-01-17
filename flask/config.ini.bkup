@@ -6,35 +6,33 @@ elevation = 100
 
 [settings]
 ringbuffer_path = /media/odroid/hamsci/hdf5
-de_ip = 192.168.1.206
-ant0 = 
-ch0f = 
-ch0b = 
-ant1 = 
+DE_IP = 192.168.1.206
+ant0 =  
+ch0f =  
+ch0b =     
+ant1 =  
 ch1f = 
 ch1b = 
-ant2 = 
+ant2 =  
 ch2f = 
-ch2b = 
-ant3 = 
-ch3f = 
+ch2b =  
+ant3 =  
+ch3f =   
 ch3b = 
 throttle = 1M
-
 [monitor]
-c0 = 
+c0 =
 c1 = 
 c2 = 
-c3 = 
-c4 = 
-c5 = 
-
+c3 =
+c4 =
+c5 =
 [email]
-smtpsvr = aaaa
-emailfrom = bb
-emailto = cc
-smtpport = dd
-smtptimeout = tttt
-smtpuid = ff
-smtppw = gg
+smtpsvr =   
+emailfrom= 
+emailto =     
+smtpport =   
+smtptimeout = 
+smtpuid =    
+smtppw =   
 

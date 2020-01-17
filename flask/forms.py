@@ -28,3 +28,14 @@ class SDRControlForm(Form):
      ('ringbuffer','Ringbuffer'), ('firehose','Firehose')])
   submit = SubmitField("Send")
   startDC = SubmitField("Start Data Collection")
+
+class ThrottleControlForm(Form):
+  throttle = SelectField('Bandwidth', choices =
+    [('Unlimited', 'Unlimited'),
+     ('10 kbps',  '10k'),
+     ('100 kbps', '100k'),
+     ('1 Mbps',   '1M'),
+     ('10 Mbps',  '10M'),
+     ('100 Mbps', '100M')])
+  submit = SubmitField("Set Bandwidth")
+  

@@ -1,13 +1,4 @@
 <html>
-<head>
-<style type=text/css">
-<!--
- .tab {margin-left: 40 px;}
--->
-</style>
-</head>
-
-<body>
 <table width="100%">
    <tbody><tr>
     <td width="5%">
@@ -19,8 +10,9 @@
    	    <div class="bgtangerine">
 	     <hr class="tanger">
 		    <b style="font-size: 60px">TangerineSDR</b><br> 
-		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
-            <p></p><div style="font-size: 24px">Main Control Panel</div>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project (version 0)</div>
+            <br></br>
+            <div style="font-size: 24px">Main Control Panel</div>
 	     <hr class="tanger">
 	    </div>
 	</td>
@@ -30,8 +22,6 @@
 	  </center> 
 	</td>
      </tr>
-
-	<br></br>
 
       </table>
 
@@ -46,12 +36,13 @@
 	   <td>{{ form.destatus }}</td>
 	 <tr>
 		<td>Data Collection</td>
-	   <td> {{ dataStat }} </td>
+	   <td>{{ form.dataStat }}</td>
 	  
 	  </table>
 
 		   <p style="margin-left:200px" class="links"><b><a href="/config">Configure System</a></b></p>
-           <p style="margin-left:200px" class="links"><b><a href="/restart">Restart Data Engine</a></b<</p>
+           <p style="margin-left:200px" class="links"><b><a href="/restart">Restart Data Engine</a> (Please allow 7 seconds)</b></p>
+		   <p style="margin-left:200px" class="links"><b><a href="/chkstat">Check DE status<a/></b></p>
 
     <form style="margin-left:200px" width = 75% action = "http://localhost:5000/" method = post>
        
@@ -61,7 +52,6 @@
             <div style = font-size:20px; font-weight:bold; margin-left:150px;>
                {{ form.mode.label }}<br>
                {{ form.mode }}
-               {{ form.submit }}
                <br><br>
                {{ form.startDC }}
                {{ form.stopDC  }}
@@ -72,11 +62,10 @@
       </form>
 
 
-		   <p style="margin-left:0px" class="links"><b><a href="/TangerineSDR_documents/">Central Control System</a></b></p>
-		   <p style="margin-left:0px"  class="links"><b><a href="/tsarchive/">Local Propagation Analyzer</a></b></p>
+		   <p style="margin-left:200px" class="links"><b><a href="/TangerineSDR_documents/">Central Control System</a></b></p>
+		   <p style="margin-left:200px"  class="links"><b><a href="/tsarchive/">Local Propagation Analyzer</a></b></p>
        </td>
    </table>
   </tbody>
 
-   </body>
 </html>

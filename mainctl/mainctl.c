@@ -40,7 +40,7 @@ extern DISCOVERED UDPdiscover();
 static uint16_t LH_port;   // port used on LH (local host) for sending to DE, and will listen on
 static uint16_t DE_port;   // port that DE will listen on
 static char DE_IP[16];
-//static char chosen_IP[16]; 
+
 #define DEVICE_TANGERINE 7  // TangerineSDR for now
 
 // Definitions for Digital_RF
@@ -95,6 +95,8 @@ static long buffers_received = 0;  // for counting UDP buffers rec'd in case any
 
 static char ringbuffer_path[50];
 const char *ringbufferPath;
+
+static     long packetCount;
 ////////////////////////////////////////////////
 
 // uncomment to enable specific tests
@@ -282,6 +284,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     int result = digital_rf_close_write_hdf5(DRFdata_object);
+    DRFdata_object = NULL;
     fprintf(stderr,"DRF close, result = %d \n",result);
     return;
 	}
@@ -406,19 +409,15 @@ void on_DE_CL_connect(uv_connect_t* connection, int status)
 void statusInquiry() {
     puts("called status inquiry");
     uv_udp_send_t send_req;
-
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
-  // status inquiry
 	strcpy(b, "S?");
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
-
     struct sockaddr_in send_addr;
     printf("Sending STATUS INQUIRY to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     return;
-
 }
 
 
@@ -435,6 +434,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 	  return;
     }
   printf("UDP data recvd\n");
+
+  // respond to STATUS INQUIRY
   if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B)  // oh man this is crude
 	{
 	puts("OK status message received from DE!  It's alive!!");
@@ -458,30 +459,32 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   if (nread > 8000)  // looks like a valid databuffer, based on length
 	{
 	puts("DATA BUFFER RECEIVED");
-  fprintf(stderr," DataBuffer starts with: %02x %02X %02X %02X\n",
+    fprintf(stderr," DataBuffer starts with: %02x %02X %02X %02X\n",
 	buf->base[0], buf->base[1],buf->base[2], buf->base[3]);
 	//return;
 	}
 
+////////////////////////////////////////////////////////////////////////////////////
+// handle I/Q buffers coming in for storage to Digital RF
 
     {
+    // set up memory and get a copy of the data (may be possible to eliminate this step)
     DATABUF *buf_ptr;
-
     buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
     memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
-    long packetCount = (long) buf_ptr->bufCount;
+    packetCount = (long) buf_ptr->bufCount;
     printf("bufcount = %ld\n", packetCount);
 
   /* local variables  for Digital RF */
     uint64_t vector_leading_edge_index = 0;
-
     uint64_t global_start_sample = 0;
 
 // if bufCount is zero, it is first data packet; create the Digital RF file
 // we also check buffers_received, so we can start recording even if we missed
 // one or more buffers at start-up.
 
-// TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running
+// TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running.
+// For now, just set to 1.
 
   global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR /  
                  SAMPLE_RATE_DENOMINATOR;
@@ -489,6 +492,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
     fprintf(stderr,"Create HDF5 file group, start time: %ld \n",global_start_sample);
     vector_leading_edge_index=0;
+    vector_sum = 0;
+    hdf_i= 0;
     DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
@@ -517,7 +522,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
       result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
-	  fprintf(stderr,"DRF write result = %d \n",result);
+	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
        
   //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
@@ -527,13 +532,9 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     free (buf_ptr);  // free the work buffer
     }
 
-
   free(buf->base);
 
-  //uv_udp_recv_stop(recv_handle);
-
   }
-
 
 
 /*  ************************************************************ */
@@ -559,7 +560,7 @@ int main() {
 	   inet_ntoa(discovered[i].info.network.address.sin_addr),   
        htons(discovered[i].info.network.address.sin_port));
     // TODO: temporary way to pick device on the wire; 
-    // will need to have a way to select from multiple responding devices
+    // will need to have a better way to select from multiple responding devices
 	if(discovered[i].device == DEVICE_TANGERINE) 
 	 {
 		strcpy(DE_IP, inet_ntoa(discovered[i].info.network.address.sin_addr));
@@ -591,6 +592,7 @@ int main() {
     return(EXIT_FAILURE);
   }
 
+
   if(config_lookup_string(&cfg, "DE_ip", &DE_ip_str))
     printf("Setting ip address of DE to: %s\n\n", DE_ip_str);
   else
@@ -600,6 +602,7 @@ int main() {
 	fprintf(stderr,"Setting DE port to: %d\n",DE_port);
   else
 	fprintf(stderr,"No DE_port setting in configuration file\n");
+
 
   if(config_lookup_int(&cfg, "controller_port", &controller_port))
     fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
@@ -631,14 +634,12 @@ int main() {
     return 1;
     }
   
-
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
 
-
  // here we will listen on that port broadcast earlier selected
-  uv_ip4_addr("192.168.1.90", LH_port, &recv_addr); 
+  uv_ip4_addr("localhost", LH_port, &recv_addr);   // TODO: should be localhost (?)
   printf("will listen on port %u \n", LH_port);
   uv_udp_bind(&recv_socket, (const struct sockaddr *)&recv_addr, UV_UDP_REUSEADDR);
   uv_udp_recv_start(&recv_socket, alloc_buffer, on_UDP_read);
@@ -647,7 +648,6 @@ int main() {
   puts("prep to send UDP data (commands)");
 
   uv_udp_init(loop, &send_socket);
-
   uv_ip4_addr(INADDR_ANY, LH_port, &send_addr);
   uv_udp_bind(&send_socket, (const struct sockaddr *)&send_addr, 0);
 

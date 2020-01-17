@@ -11,74 +11,24 @@ from flask_wtf import Form
 #from FlaskForm import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
 from flask import request, flash
-from forms import MainControlForm
+from forms import MainControlForm, ThrottleControlForm
 #from forms import ContactForm
 
 from wtforms import validators, ValidationError
 
 app = Flask(__name__)
 app.secret_key = 'development key'
-
+global theStatus, theDataStatus
 statusControl = 0
 dataCollStatus = 0;
 theStatus = "Not yet started"
+theDataStatus = ""
 
-
-
-#@app.route('/contact', methods = ['GET', 'POST'])
-#def contact():
-#   form = ContactForm()
-   
-#   if request.method == 'POST':
-#      result = request.form
-#      print('got:',result.get('email'))
-#      if form.validate() == False:
-#         flash('All fields are required.')
-#         return render_template('contact.html', form = form)
-#      else:
-#         return render_template('success.html')
-#   elif request.method == 'GET':
-#         return render_template('contact.html', form = form)
-
-
-
-# this thread can be scheduled for DE heartbeat check
-def check_status(threadName, delay):
-   print("Enter check_status")
-   statusControl = 1;
-   while (statusControl == 1):
-      print("Status inquiry to LH")
-      theCommand = 'S?'
-      host_ip, server_port = "127.0.0.1", 6100
-      data = theCommand + "\n"
-   
-    # Initialize a TCP client socket using SOCK_STREAM
-      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-      try:
-    # Establish connection to TCP server and exchange data
-        tcp_client.connect((host_ip, server_port))
-        tcp_client.sendall(data.encode())
-
-    # Read data from the TCP server and close the connection
-        received = tcp_client.recv(1024)
-        print("LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
-        if(received[0:2].decode("ASCII") == "OK"):
-          print("status is ON")
-          theStatus = "ON"
-      except Exception as e: 
-        print(e)
-        return
-      finally:
-        tcp_client.close() 
-      print("Thread sleep")     
-      time.sleep(delay)
-      print("exit sleep")
 
 def check_status_once():
   print(" *********** Status inquiry to LH *********")
-  global theStatus
-  theStatus = "DE is off or disconnected (did discovery run??)"
+  global theStatus, theDataStatus
+  theStatus = "DE is off or disconnected, or mainctl stopped"
   theCommand = 'S?'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
@@ -121,26 +71,26 @@ def check_status_once():
      tcp_client.close()
      return(theStatus)
 
-theStatus = "Off"
+theStatus = "Off or not connected. Needs restart."
 
 @app.route("/desetup2",methods=['POST','GET'])
 def members():
    return render_template('desetup.html')
-   return "Members"
+
 
 # Here is the home page
 @app.route("/", methods = ['GET', 'POST'])
 def sdr():
    form = MainControlForm()
-   global theStatus;
+   global theStatus, theDataStatus
 
    if request.method == 'GET':  
-     form.destatus = theStatus 
-     return render_template('tangerine.html',form = form)
-     print("TRY TO CHECK STATUS")
-     theStatus = check_status_once()
-     print("WEB status ", theStatus)
+
      form.destatus = theStatus
+     form.dataStat = theDataStatus
+     print("home page, status = ",theStatus)
+     return render_template('tangerine.html',form = form)
+
    if request.method == 'POST':
       print("Main control POST")
       if form.validate() == False:
@@ -155,13 +105,15 @@ def sdr():
             startcoll()
          if(form.stopDC.data ):
             stopcoll()
-         print("end of control loop")
+         print("end of control loop; theStatus=", theStatus)
+         form.destatus = theStatus
+         form.dataStat = theDataStatus
          return render_template('tangerine.html', form = form)
 
 
 @app.route("/restart")
 def restart():
-   global theStatus
+   global theStatus, theDataStatus
    print("restart")
    returned_value = os.system("killall -9 main")
    print("after killing mainctl, retcode=",returned_value)
@@ -173,10 +125,18 @@ def restart():
    theStatus = check_status_once()
    return redirect('/')
 
+
+@app.route("/chkstat")
+def chkstat():
+   global theStatus, theDatastatus
+   theStatus = check_status_once();
+   return redirect('/')
+
    
 @app.route("/config",methods=['POST','GET'])
 def config():
-   parser = configparser.ConfigParser()
+   global theStatus, theDataStatus
+   parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'POST':
      result = request.form
@@ -202,16 +162,19 @@ def config():
 
 @app.route("/clocksetup", methods = ['POST','GET'])
 def clocksetup():
+   global theStatus, theDataStatus
    return render_template('clock.html')
 
 @app.route("/channelantennasetup", methods = ['POST','GET'])
 def channelantennasetup():
-	return render_template('channelantennasetup.html')
+   global theStatus, theDataStatus
+   return render_template('channelantennasetup.html')
 
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
+   global theStatus, theDataStatus
    print("reached DE setup")
-   parser = configparser.ConfigParser()
+   parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'GET':
      ringbufferPath = parser['settings']['ringbuffer_path']
@@ -289,7 +252,8 @@ def desetup():
 
 @app.route("/startcollection")
 def startcoll():
-  global theStatus
+  form = MainControlForm()
+  global theStatus, theDataStatus
   print("Start Data Collection command")
   
   theCommand = 'SC'
@@ -315,12 +279,14 @@ def startcoll():
      tcp_client.close()
      theDataStatus = "Started data collection"
      dataCollStatus = 1
-#     return render_template('tangerine.html', result = theStatus, dataStat = theDataStatus)
-  return
+     form.dataStat = theDataStatus
+
+  return 
 
 @app.route("/stopcollection")
 def stopcoll():
-  global theStatus
+  form = MainControlForm()
+  global theStatus, theDataStatus
   print("Stop Data Collection command")
   theCommand = 'XC'
   host_ip, server_port = "127.0.0.1", 6100
@@ -345,10 +311,136 @@ def stopcoll():
      tcp_client.close()
      theDataStatus = "Stopped data collection"
      dataCollStat = 0
-#     return render_template('tangerine.html', dataStat = theDataStatus)
+
   return
 
 
+@app.route("/throttle", methods = ['POST','GET'])
+def throttle():
+   global theStatus, theDataStatus
+   form = ThrottleControlForm()
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+   if request.method == 'GET':
+     throttle = parser['settings']['throttle']
+     return render_template('throttle.html',
+	  throttle = throttle, form = form)
+
+   if request.method == 'POST':
+     result = request.form
+     print("result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("CANCEL")
+     else:
+       print("result of throttle post =")
+       throttle= ""
+       parser.set('settings', 'throttle', result.get('throttle'))
+       fp = open('config.ini','w')
+       parser.write(fp)
+       fp.close()
+
+   ringbufferPath = parser['settings']['throttle']
+
+   return render_template('throttle.html', throttle = throttle, form = form)
+
+@app.route("/callsign", methods = ['POST','GET'])
+def callsign():
+   global theStatus, theDataStatus
+#   form = CallsignForm()
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+   if request.method == 'GET':
+     c0 = parser['monitor']['c0']
+     c1 = parser['monitor']['c1']
+     c2 = parser['monitor']['c2']
+     c3 = parser['monitor']['c3']
+     c4 = parser['monitor']['c4']
+     c5 = parser['monitor']['c5']
+     return render_template('callsign.html',
+	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
+   if request.method == 'POST':
+     result = request.form
+     print("result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("CANCEL")
+     else:
+       print("result of callsign post =")
+       ringbufferPath = ""
+       DEIP = ""
+       parser.set('monitor', 'c0', result.get('c0'))
+       parser.set('monitor', 'c1', result.get('c1'))
+       parser.set('monitor', 'c2', result.get('c2'))
+       parser.set('monitor', 'c3', result.get('c3'))
+       parser.set('monitor', 'c4', result.get('c4'))
+       parser.set('monitor', 'c5', result.get('c5'))
+       fp = open('config.ini','w')
+       parser.write(fp)
+
+     c0 = parser['monitor']['c0']
+     c1 = parser['monitor']['c1']
+     c2 = parser['monitor']['c2']
+     c3 = parser['monitor']['c3']
+     c4 = parser['monitor']['c4']
+     c5 = parser['monitor']['c5']
+     
+     return render_template('callsign.html',
+	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
+
+@app.route("/notification", methods = ['POST','GET'])
+def notification():
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+   if request.method == 'GET':
+     print("smtpsvr = ", parser['email']['smtpsvr'])
+     smtpsvr =     parser['email']['smtpsvr']
+     emailfrom=    parser['email']['emailfrom']
+     emailto =     parser['email']['emailto']
+     smtpport =    parser['email']['smtpport']
+     smtptimeout = parser['email']['smtptimeout']
+     smtpuid =     parser['email']['smtpuid']
+     smtppw =      parser['email']['smtppw']
+     return render_template('notification.html',
+	  smtpsvr = smtpsvr, emailfrom = emailfrom,
+      emailto = emailto, smtpport = smtpport,
+      smtptimeout = smtptimeout, smtpuid = smtpuid,
+      smtppw = smtppw)
+
+   if request.method == 'POST':
+     result = request.form
+     print("result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("CANCEL")
+
+     else:
+        print("reached POST on notification;", result.get('smtpsvr'))
+        parser.set('email', 'smtpsvr', result.get('smtpsvr'))
+        parser.set('email', 'emailfrom', result.get('emailfrom'))
+        parser.set('email', 'emailto', result.get('emailto'))
+        parser.set('email', 'smtpport', result.get('smtpport'))
+        parser.set('email', 'smtptimeout', result.get('smtptimeout'))
+        parser.set('email', 'smtpuid', result.get('smtpuid'))
+        parser.set('email', 'smtppw', result.get('smtppw'))
+        fp = open('config.ini','w')
+        parser.write(fp)
+
+     smtpsvr =     parser['email']['smtpsvr']
+     emailfrom=    parser['email']['emailfrom']
+     emailto =     parser['email']['emailto']
+     smtpport =    parser['email']['smtpport']
+     smtptimeout = parser['email']['smtptimeout']
+     smtpuid =     parser['email']['smtpuid']
+     smtppw =      parser['email']['smtppw']
+     return render_template('notification.html',
+	  smtpsvr = smtpsvr, emailfrom = emailfrom,
+      emailto = emailto, smtpport = smtpport,
+      smtptimeout = smtptimeout, smtpuid = smtpuid,
+      smtppw = smtppw)
+
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template("notfound.html")
 
 
 if __name__ == "__main__":
