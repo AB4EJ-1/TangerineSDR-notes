@@ -16,8 +16,7 @@ function goBack() {
    	    <div class="bgtangerine">
 	     <hr class="tanger">
 		    <b style="font-size: 60px">TangerineSDR</b><br> 
-		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
-            <br></br>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio 
             <div style="font-size: 24px">Data Engine Setup</div>
 	     <hr class="tanger">
 	    </div>
@@ -33,6 +32,11 @@ function goBack() {
 	</td>
 
 	   <td class="bgtangerine" align = "left" width="10%" valign="top" >
+
+	  <table style="margin-left:1px" border = "1" width=70% > 
+ 	   <td style="width:50px">Ringbuffer path<input type="text" name="ringbufferPath" 
+            value={{ ringbufferPath }} /> </td>
+      </table>
 
 	  <table style="margin-left:1px" border = "1" width=70% > 
 	  <tr>
@@ -63,16 +67,74 @@ function goBack() {
 	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant3 }} /> </td>
 	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch3f }} /> </td>
 	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch3b }} /> </td>
+	 <tr>
+	   <td>4</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant4 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch4f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch4b }} /> </td>
+	 <tr>
+	   <td>5</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant5 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch5f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch5b }} /> </td>
+	 <tr>
+	   <td>6</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant6 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch6f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch6b }} /> </td>
+	 <tr>
+	   <td>7</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant7 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch7f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ c73b }} /> </td>
+	 <tr>
+	   <td>8</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant8 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch8f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch8b }} /> </td>
+	 <tr>
+	   <td>9</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant9 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch9f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch9b }} /> </td>
+	 <tr>
+	   <td>10</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant10 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch10f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch10b }} /> </td>
+	 <tr>
+	   <td>11</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant11 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch11f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch11b }} /> </td>
+	 <tr>
+	   <td>12</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant12 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch12f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch12b }} /> </td>
+	 <tr>
+	   <td>31</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant13 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch13f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch13b }} /> </td>
+	 <tr>
+	   <td>14</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant14 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch14f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch14b }} /> </td>
+	 <tr>
+	   <td>15</td>
+	   <td style="width:50px"><input type="text" name="ch3a" value={{ ant15 }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch15f }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch15b }} /> </td>
 
 	  </table>
 
+
+
+
+	
 	  <table style="margin-left:1px" border = "1" width=70% > 
- 	   <td style="width:50px">Ringbuffer path<input type="text" name="ringbufferPath" 
-            value={{ ringbufferPath }} /> </td>
-
-
-	</table>
-
       <form action = "http://localhost:5000/desetup" method = "POST">
          <p><input type = "submit" name = "csubmit" value = "Save Changes" /></p>         
          <p><input type = "submit" name = "csubmit" value = "Discard Changes" /></p>  

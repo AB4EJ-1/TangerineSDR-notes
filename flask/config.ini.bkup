@@ -1,38 +1,40 @@
 [profile]
-token_value = 3345sgd
+token_value = 3BD69855A8BAE408366C10002CF
 latitude = -37.123
 longitude = 87.432
 elevation = 100
 
 [settings]
-ringbuffer_path = /media/odroid/hamsci/hdf5
-DE_IP = 192.168.1.206
-ant0 =  
-ch0f =  
-ch0b =     
-ant1 =  
-ch1f = 
-ch1b = 
-ant2 =  
-ch2f = 
-ch2b =  
-ant3 =  
-ch3f =   
-ch3b = 
-throttle = 1M
+mode = /
+ringbuffer_path = 
+ant0 = 0
+ch0f = 10.0
+ch0b = 1
+ant1 = 0
+ch1f = 3.6
+ch1b = 2.5
+ant2 = 0
+ch2f = 7.125
+ch2b = 1.75
+ant3 = 1
+ch3f = 15.0
+ch3b = 0.05
+throttle = 1 Mbps
+
 [monitor]
-c0 =
-c1 = 
-c2 = 
-c3 =
-c4 =
-c5 =
+c0 = AB4EJ
+c1 = W2NAF
+c2 = KK5H
+c3 = K2TWS
+c4 = KG2DSA
+c5 = WO4V
+
 [email]
-smtpsvr =   
-emailfrom= 
-emailto =     
-smtpport =   
-smtptimeout = 
-smtpuid =    
-smtppw =   
+smtpsvr = smtp2go.com
+emailfrom = k2abc@gmail.com
+emailto = k2abc@gmail.com
+smtpport = 2500
+smtptimeout = 30
+smtpuid = k2abc@gmail.com
+smtppw = *********
 
