@@ -11,7 +11,7 @@ from flask_wtf import Form
 #from FlaskForm import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
 from flask import request, flash
-from forms import MainControlForm, ThrottleControlForm
+from forms import MainControlForm, ThrottleControlForm, ChannelControlForm
 #from forms import ContactForm
 
 from wtforms import validators, ValidationError
@@ -181,79 +181,97 @@ def channelantennasetup():
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
    global theStatus, theDataStatus
-   print("F: reached DE setup")
+   form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
+
    if request.method == 'GET':
      ringbufferPath = parser['settings']['ringbuffer_path']
 
-     ant0 =     parser['settings']['ant0']
+     form.antennaport0.data =     parser['settings']['ant0']
+     form.antennaport1.data =     parser['settings']['ant1']
+     form.antennaport2.data =     parser['settings']['ant2']
+     form.antennaport3.data =     parser['settings']['ant3']
+     form.antennaport4.data =     parser['settings']['ant4']
+     form.antennaport5.data =     parser['settings']['ant5']
+     form.antennaport6.data =     parser['settings']['ant6']
+     form.antennaport7.data =     parser['settings']['ant7']
+     form.antennaport8.data =     parser['settings']['ant8']
+     form.antennaport9.data =     parser['settings']['ant8']
+     form.antennaport10.data =     parser['settings']['ant10']
+     form.antennaport11.data =     parser['settings']['ant11']
+     form.antennaport12.data =     parser['settings']['ant12']
+     form.antennaport13.data =     parser['settings']['ant13']
+     form.antennaport14.data =     parser['settings']['ant14']
+     form.antennaport15.data =     parser['settings']['ant15']
+
      ch0f =     parser['settings']['ch0f']
      ch0b =     parser['settings']['ch0b']     
-     ant1 =     parser['settings']['ant1']
+
      ch1f =     parser['settings']['ch1f']
      ch1b =     parser['settings']['ch1b']
-     ant2 =     parser['settings']['ant2']
+
      ch2f =     parser['settings']['ch2f']
      ch2b =     parser['settings']['ch2b']
-     ant3 =     parser['settings']['ant3']
+
      ch3f =     parser['settings']['ch3f']
      ch3b =     parser['settings']['ch3b']
-     ant4 =     parser['settings']['ant4']
+
      ch4f =     parser['settings']['ch4f']
      ch4b =     parser['settings']['ch4b']
-     ant5 =     parser['settings']['ant5']
+
      ch5f =     parser['settings']['ch5f']
      ch5b =     parser['settings']['ch5b']
-     ant6 =     parser['settings']['ant6']
+
      ch6f =     parser['settings']['ch6f']
      ch6b =     parser['settings']['ch6b']
-     ant7 =     parser['settings']['ant7']
+
      ch7f =     parser['settings']['ch7f']
      ch7b =     parser['settings']['ch7b']
-     ant8 =     parser['settings']['ant8']
+
      ch8f =     parser['settings']['ch8f']
      ch8b =     parser['settings']['ch8b']
-     ant9 =     parser['settings']['ant9']
+
      ch9f =     parser['settings']['ch9f']
      ch9b =     parser['settings']['ch9b']
-     ant10 =     parser['settings']['ant10']
+
      ch10f =     parser['settings']['ch10f']
      ch10b =     parser['settings']['ch10b']
-     ant11 =     parser['settings']['ant11']
+
      ch11f =     parser['settings']['ch11f']
      ch11b =     parser['settings']['ch11b']
-     ant12 =     parser['settings']['ant12']
+
      ch12f =     parser['settings']['ch12f']
      ch12b =     parser['settings']['ch12b']
-     ant13 =     parser['settings']['ant13']
+
      ch13f =     parser['settings']['ch13f']
      ch13b =     parser['settings']['ch13b']
-     ant14 =     parser['settings']['ant14']
+
      ch14f =     parser['settings']['ch14f']
      ch14b =     parser['settings']['ch14b']
-     ant15 =     parser['settings']['ant15']
+
      ch15f =     parser['settings']['ch15f']
      ch15b =     parser['settings']['ch15b']
      print("F: ringbufferPath=",ringbufferPath)
      return render_template('desetup.html',
+      form = form,
 	  ringbufferPath = ringbufferPath,
-      ant0 = ant0 , ch0f = ch0f, ch0b = ch0b,
-	  ant1 = ant1 , ch1f = ch1f, ch1b = ch1b,
-      ant2 = ant2 , ch2f = ch2f, ch2b = ch2b,
-	  ant3 = ant3,  ch3f = ch3f, ch3b = ch3b,
-	  ant4 = ant4,  ch4f = ch4f, ch4b = ch4b,
-	  ant5 = ant5,  ch5f = ch5f, ch5b = ch5b,
-	  ant6 = ant6,  ch6f = ch6f, ch6b = ch6b,
-	  ant7 = ant7,  ch7f = ch7f, ch7b = ch7b,
-	  ant8 = ant7,  ch8f = ch8f, ch8b = ch8b,
-	  ant9 = ant9,  ch9f = ch9f, ch9b = ch9b,
-	  ant10 = ant10,  ch10f = ch10f, ch10b = ch10b,
-	  ant11 = ant11,  ch11f = ch11f, ch11b = ch11b,
-	  ant12 = ant12,  ch12f = ch12f, ch12b = ch12b,
-	  ant13 = ant13,  ch13f = ch13f, ch13b = ch13b,
-	  ant14 = ant14,  ch14f = ch14f, ch14b = ch14b,
-	  ant15 = ant15,  ch15f = ch15f, ch15b = ch15b )
+      ch0f = ch0f, ch0b = ch0b,
+	  ch1f = ch1f, ch1b = ch1b,
+      ch2f = ch2f, ch2b = ch2b,
+	  ch3f = ch3f, ch3b = ch3b,
+	  ch4f = ch4f, ch4b = ch4b,
+	  ch5f = ch5f, ch5b = ch5b,
+	  ch6f = ch6f, ch6b = ch6b,
+	  ch7f = ch7f, ch7b = ch7b,
+	  ch8f = ch8f, ch8b = ch8b,
+	  ch9f = ch9f, ch9b = ch9b,
+	  ch10f = ch10f, ch10b = ch10b,
+	  ch11f = ch11f, ch11b = ch11b,
+	  ch12f = ch12f, ch12b = ch12b,
+	  ch13f = ch13f, ch13b = ch13b,
+	  ch14f = ch14f, ch14b = ch14b,
+	  ch15f = ch15f, ch15b = ch15b )
 
    if request.method == 'POST':
      result = request.form
@@ -261,59 +279,57 @@ def desetup():
      if result.get('csubmit') == "Discard Changes":
        print("F: CANCEL")
      else:
-       print("F: result of DEsetup post =")
+       print("F: POST ringbufferPath =", result.get('ringbufferPath'))
        ringbufferPath = ""
-
        parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
-
-       parser.set('settings', 'ant0',            str(result.get('ch0a')))
+       parser.set('settings', 'ant0',            form.antennaport0.data)
        parser.set('settings', 'ch0f',            str(result.get('ch0f')))
        parser.set('settings', 'ch0b',            str(result.get('ch0b')))
-       parser.set('settings', 'ant1',            str(result.get('ch1a')))
+       parser.set('settings', 'ant1',            form.antennaport1.data)
        parser.set('settings', 'ch1f',            str(result.get('ch1f')))
        parser.set('settings', 'ch1b',            str(result.get('ch1b')))
-       parser.set('settings', 'ant2',            str(result.get('ch2a')))
+       parser.set('settings', 'ant2',            form.antennaport2.data)
        parser.set('settings', 'ch2f',            str(result.get('ch2f')))
        parser.set('settings', 'ch2b',            str(result.get('ch2b')))
-       parser.set('settings', 'ant3',            str(result.get('ch3a')))
+       parser.set('settings', 'ant3',            form.antennaport3.data)
        parser.set('settings', 'ch3f',            str(result.get('ch3f')))
        parser.set('settings', 'ch3b',            str(result.get('ch3b')))
-       parser.set('settings', 'ant4',            str(result.get('ch4a')))
+       parser.set('settings', 'ant4',            form.antennaport4.data)
        parser.set('settings', 'ch4f',            str(result.get('ch4f')))
        parser.set('settings', 'ch4b',            str(result.get('ch4b')))
-       parser.set('settings', 'ant5',            str(result.get('ch5a')))
+       parser.set('settings', 'ant5',            form.antennaport5.data)
        parser.set('settings', 'ch5f',            str(result.get('ch5f')))
        parser.set('settings', 'ch5b',            str(result.get('ch5b')))
-       parser.set('settings', 'ant6',            str(result.get('ch6a')))
+       parser.set('settings', 'ant6',            form.antennaport6.data)
        parser.set('settings', 'ch6f',            str(result.get('ch6f')))
        parser.set('settings', 'ch6b',            str(result.get('ch6b')))
-       parser.set('settings', 'ant7',            str(result.get('ch7a')))
+       parser.set('settings', 'ant7',            form.antennaport7.data)
        parser.set('settings', 'ch7f',            str(result.get('ch7f')))
        parser.set('settings', 'ch7b',            str(result.get('ch7b')))
-       parser.set('settings', 'ant8',            str(result.get('ch8a')))
+       parser.set('settings', 'ant8',            form.antennaport7.data)
        parser.set('settings', 'ch8f',            str(result.get('ch8f')))
        parser.set('settings', 'ch8b',            str(result.get('ch8b')))
-       parser.set('settings', 'ant9',            str(result.get('ch9a')))
+       parser.set('settings', 'ant9',            form.antennaport9.data)
        parser.set('settings', 'ch9f',            str(result.get('ch9f')))
        parser.set('settings', 'ch9b',            str(result.get('ch9b')))
-       parser.set('settings', 'ant10',            str(result.get('ch10a')))
-       parser.set('settings', 'ch10f',            str(result.get('ch10f')))
-       parser.set('settings', 'ch10b',            str(result.get('ch10b')))
-       parser.set('settings', 'ant11',            str(result.get('ch11a')))
-       parser.set('settings', 'ch11f',            str(result.get('ch11f')))
-       parser.set('settings', 'ch11b',            str(result.get('ch11b')))
-       parser.set('settings', 'ant12',            str(result.get('ch12a')))
-       parser.set('settings', 'ch12f',            str(result.get('ch12f')))
-       parser.set('settings', 'ch12b',            str(result.get('ch12b')))
-       parser.set('settings', 'ant13',            str(result.get('ch13a')))
-       parser.set('settings', 'ch13f',            str(result.get('ch13f')))
-       parser.set('settings', 'ch13b',            str(result.get('ch13b')))
-       parser.set('settings', 'ant14',            str(result.get('ch14a')))
-       parser.set('settings', 'ch14f',            str(result.get('ch14f')))
-       parser.set('settings', 'ch14b',            str(result.get('ch14b')))
-       parser.set('settings', 'ant15',            str(result.get('ch15a')))
-       parser.set('settings', 'ch15f',            str(result.get('ch15f')))
-       parser.set('settings', 'ch15b',            str(result.get('ch15b')))
+       parser.set('settings', 'ant10',           form.antennaport10.data)
+       parser.set('settings', 'ch10f',           str(result.get('ch10f')))
+       parser.set('settings', 'ch10b',           str(result.get('ch10b')))
+       parser.set('settings', 'ant11',           form.antennaport11.data)
+       parser.set('settings', 'ch11f',           str(result.get('ch11f')))
+       parser.set('settings', 'ch11b',           str(result.get('ch11b')))
+       parser.set('settings', 'ant12',           form.antennaport12.data)
+       parser.set('settings', 'ch12f',           str(result.get('ch12f')))
+       parser.set('settings', 'ch12b',           str(result.get('ch12b')))
+       parser.set('settings', 'ant13',           form.antennaport13.data)
+       parser.set('settings', 'ch13f',           str(result.get('ch13f')))
+       parser.set('settings', 'ch13b',           str(result.get('ch13b')))
+       parser.set('settings', 'ant14',           form.antennaport14.data)
+       parser.set('settings', 'ch14f',           str(result.get('ch14f')))
+       parser.set('settings', 'ch14b',           str(result.get('ch14b')))
+       parser.set('settings', 'ant15',           form.antennaport15.data)
+       parser.set('settings', 'ch15f',           str(result.get('ch15f')))
+       parser.set('settings', 'ch15b',           str(result.get('ch15b')))
      
        fp = open('config.ini','w')
        parser.write(fp)
@@ -321,73 +337,90 @@ def desetup():
 
      ringbufferPath = parser['settings']['ringbuffer_path']
 
-     ant0 =     parser['settings']['ant0']
+     form.antennaport0.data =     parser['settings']['ant0']
+     form.antennaport1.data =     parser['settings']['ant1']
+     form.antennaport2.data =     parser['settings']['ant2']
+     form.antennaport3.data =     parser['settings']['ant3']
+     form.antennaport4.data =     parser['settings']['ant4']
+     form.antennaport5.data =     parser['settings']['ant5']
+     form.antennaport6.data =     parser['settings']['ant6']
+     form.antennaport7.data =     parser['settings']['ant7']
+     form.antennaport8.data =     parser['settings']['ant8']
+     form.antennaport9.data =     parser['settings']['ant9']
+     form.antennaport10.data =     parser['settings']['ant10']
+     form.antennaport11.data =     parser['settings']['ant11']
+     form.antennaport12.data =     parser['settings']['ant12']
+     form.antennaport13.data =     parser['settings']['ant13']
+     form.antennaport14.data =     parser['settings']['ant14']
+     form.antennaport15.data =     parser['settings']['ant15']
+ 
      ch0f =     parser['settings']['ch0f']
      ch0b =     parser['settings']['ch0b']     
-     ant1 =     parser['settings']['ant1']
+
      ch1f =     parser['settings']['ch1f']
      ch1b =     parser['settings']['ch1b']
-     ant2 =     parser['settings']['ant2']
+
      ch2f =     parser['settings']['ch2f']
      ch2b =     parser['settings']['ch2b']
-     ant3 =     parser['settings']['ant3']
+
      ch3f =     parser['settings']['ch3f']
      ch3b =     parser['settings']['ch3b']
-     ant4 =     parser['settings']['ant4']
+
      ch4f =     parser['settings']['ch4f']
      ch4b =     parser['settings']['ch4b']
-     ant5 =     parser['settings']['ant5']
+
      ch5f =     parser['settings']['ch5f']
      ch5b =     parser['settings']['ch5b']
-     ant6 =     parser['settings']['ant6']
-     ch8f =     parser['settings']['ch6f']
+
+     ch6f =     parser['settings']['ch6f']
      ch6b =     parser['settings']['ch6b']
-     ant7 =     parser['settings']['ant7']
+
      ch7f =     parser['settings']['ch7f']
      ch7b =     parser['settings']['ch7b']
-     ant8 =     parser['settings']['ant8']
+
      ch8f =     parser['settings']['ch8f']
      ch8b =     parser['settings']['ch8b']
-     ant9 =     parser['settings']['ant9']
+
      ch9f =     parser['settings']['ch9f']
      ch9b =     parser['settings']['ch9b']
-     ant10 =     parser['settings']['ant10']
+
      ch10f =     parser['settings']['ch10f']
      ch10b =     parser['settings']['ch10b']
-     ant11 =     parser['settings']['ant11']
+
      ch11f =     parser['settings']['ch11f']
      ch11b =     parser['settings']['ch11b']
-     ant12 =     parser['settings']['ant12']
+
      ch12f =     parser['settings']['ch12f']
      ch12b =     parser['settings']['ch12b']
-     ant13 =     parser['settings']['ant13']
+
      ch13f =     parser['settings']['ch13f']
      ch13b =     parser['settings']['ch13b']
-     ant14 =     parser['settings']['ant14']
+
      ch14f =     parser['settings']['ch14f']
      ch14b =     parser['settings']['ch14b']
-     ant15 =     parser['settings']['ant15']
+
      ch15f =     parser['settings']['ch15f']
      ch15b =     parser['settings']['ch15b']
      print("F: ringbufferPath=",ringbufferPath)
      return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
-      ant0 = ant0 , ch0f = ch0f, ch0b = ch0b,
-	  ant1 = ant1 , ch1f = ch1f, ch1b = ch1b,
-      ant2 = ant2 , ch2f = ch2f, ch2b = ch2b,
-	  ant3 = ant3,  ch3f = ch3f, ch3b = ch3b,
-	  ant4 = ant4,  ch4f = ch4f, ch4b = ch4b,
-	  ant5 = ant5,  ch5f = ch5f, ch5b = ch5b,
-	  ant6 = ant6,  ch6f = ch6f, ch6b = ch6b,
-	  ant7 = ant7,  ch7f = ch7f, ch7b = ch7b,
-	  ant8 = ant7,  ch8f = ch8f, ch8b = ch8b,
-	  ant9 = ant9,  ch9f = ch9f, ch9b = ch9b,
-	  ant10 = ant10,  ch10f = ch10f, ch10b = ch10b,
-	  ant11 = ant11,  ch11f = ch11f, ch11b = ch11b,
-	  ant12 = ant12,  ch12f = ch12f, ch12b = ch12b,
-	  ant13 = ant13,  ch13f = ch13f, ch13b = ch13b,
-	  ant14 = ant14,  ch14f = ch14f, ch14b = ch14b,
-	  ant15 = ant15,  ch15f = ch15f, ch15b = ch15b )
+      form = form,
+      ch0f = ch0f, ch0b = ch0b,
+	  ch1f = ch1f, ch1b = ch1b,
+      ch2f = ch2f, ch2b = ch2b,
+	  ch3f = ch3f, ch3b = ch3b,
+	  ch4f = ch4f, ch4b = ch4b,
+	  ch5f = ch5f, ch5b = ch5b,
+	  ch6f = ch6f, ch6b = ch6b,
+	  ch7f = ch7f, ch7b = ch7b,
+	  ch8f = ch8f, ch8b = ch8b,
+	  ch9f = ch9f, ch9b = ch9b,
+	  ch10f = ch10f, ch10b = ch10b,
+	  ch11f = ch11f, ch11b = ch11b,
+	  ch12f = ch12f, ch12b = ch12b,
+	  ch13f = ch13f, ch13b = ch13b,
+	  ch14f = ch14f, ch14b = ch14b,
+	  ch15f = ch15f, ch15b = ch15b )
 
 @app.route("/startcollection")
 def startcoll():
@@ -574,8 +607,100 @@ def notification():
       smtptimeout = smtptimeout, smtpuid = smtpuid,
       smtppw = smtppw)
 
+@app.route("/propagation",methods=['POST','GET'])
+def propagation():
+   global theStatus, theDataStatus
+   form = ChannelControlForm()
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+
+   if request.method == 'GET':
+     form.antennaport0.data =     parser['settings']['ftant0']
+     form.antennaport1.data =     parser['settings']['ftant1']
+     form.antennaport2.data =     parser['settings']['ftant2']
+     form.antennaport3.data =     parser['settings']['ftant3']
+     form.antennaport4.data =     parser['settings']['ftant4']
+     form.antennaport5.data =     parser['settings']['ftant5']
+     form.antennaport6.data =     parser['settings']['ftant6']
+     form.antennaport7.data =     parser['settings']['ftant7']
+     ft80f =     parser['settings']['ft80f'] 
+     ft81f =     parser['settings']['ft81f'] 
+     ft82f =     parser['settings']['ft82f']
+     ft83f =     parser['settings']['ft83f']
+     ft84f =     parser['settings']['ft84f']
+     ft85f =     parser['settings']['ft85f']
+     ft86f =     parser['settings']['ft86f']
+     ft87f =     parser['settings']['ft87f']
+     return render_template('ft8setup.html',
+      form  = form,
+      ft80f = ft80f,
+	  ft81f = ft81f,
+      ft82f = ft82f,
+	  ft83f = ft83f, 
+	  ft84f = ft84f, 
+	  ft85f = ft85f,
+	  ft86f = ft86f, 
+	  ft87f = ft87f  )
+
+   if request.method == 'POST':
+     result = request.form
+     print("F: result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("F: CANCEL")
+     else:
+       print("F: POST ringbufferPath =", result.get('ringbufferPath'))
+       ringbufferPath = ""
+       parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
+       parser.set('settings', 'ftant0',            form.antennaport0.data)
+       parser.set('settings', 'ft80f',            str(result.get('ft80f')))
+       parser.set('settings', 'ftant1',            form.antennaport1.data)
+       parser.set('settings', 'ft81f',            str(result.get('ft81f')))
+       parser.set('settings', 'ftant2',            form.antennaport2.data)
+       parser.set('settings', 'ft82f',            str(result.get('ft82f')))
+       parser.set('settings', 'ftant3',            form.antennaport3.data)
+       parser.set('settings', 'ft83f',            str(result.get('ft83f')))
+       parser.set('settings', 'ftant4',            form.antennaport4.data)
+       parser.set('settings', 'ft84f',            str(result.get('ft84f')))
+       parser.set('settings', 'ftant5',            form.antennaport5.data)
+       parser.set('settings', 'ft85f',            str(result.get('ft85f')))
+       parser.set('settings', 'ftant6',            form.antennaport6.data)
+       parser.set('settings', 'ft86f',            str(result.get('ft86f')))
+       parser.set('settings', 'ftant7',            form.antennaport7.data)
+       parser.set('settings', 'ft87f',            str(result.get('ft87f')))  
+       fp = open('config.ini','w')
+       parser.write(fp)
+       fp.close()
+     ringbufferPath = parser['settings']['ringbuffer_path']
+     form.antennaport0.data =     parser['settings']['ftant0']
+     form.antennaport1.data =     parser['settings']['ftant1']
+     form.antennaport2.data =     parser['settings']['ftant2']
+     form.antennaport3.data =     parser['settings']['ftant3']
+     form.antennaport4.data =     parser['settings']['ftant4']
+     form.antennaport5.data =     parser['settings']['ftant5']
+     form.antennaport6.data =     parser['settings']['ftant6']
+     form.antennaport7.data =     parser['settings']['ftant7']
+     ft80f =     parser['settings']['ft80f']
+     ft81f =     parser['settings']['ft81f']
+     ft82f =     parser['settings']['ft82f']
+     ft83f =     parser['settings']['ft83f']
+     ft84f =     parser['settings']['ft84f']
+     ft85f =     parser['settings']['ft85f']
+     ft86f =     parser['settings']['ft86f']
+     ft87f =     parser['settings']['ft87f']
+     return render_template('ft8setup.html',
+	  ringbufferPath = ringbufferPath,
+      form = form,
+      ft80f = ft80f,
+	  ft81f = ft81f,
+      ft82f = ft82f, 
+	  ft83f = ft83f,
+	  ft84f = ft84f, 
+	  ft85f = ft85f, 
+	  ft86f = ft86f, 
+	  ft87f = ft87f  )
 
 
+######################################################################
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template("notfound.html")

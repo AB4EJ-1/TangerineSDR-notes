@@ -7,10 +7,28 @@ from wtforms import validators, ValidationError
 class MainControlForm(FlaskForm):
   mode = SelectField('Mode', choices = [('snapshotter','Snapshotter'),
      ('ringbuffer','Ringbuffer'), ('firehose','Firehose')])
-  submit = SubmitField("Set Mode")
+#  submit = SubmitField("Set Mode")
   startDC = SubmitField("Start Data Collection")
   stopDC = SubmitField("Stop Data Collection")
 
+class ChannelControlForm(FlaskForm):
+  antennaport0 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport1 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport2 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport3 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport4 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport5 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport6 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport7 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport8 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport9 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport10 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport11 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport12 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport13 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport14 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  antennaport15 = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  
 
 class ThrottleControlForm(FlaskForm):
   throttle = SelectField('Bandwidth (bits/sec)', choices =
