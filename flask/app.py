@@ -5,13 +5,16 @@ import time
 import os
 import subprocess
 import configparser
+import smtplib
+from email.mime.multipart import MIMEMultipart 
+from email.mime.text import MIMEText 
 
 from flask_wtf import Form
 # following is for future flask upgrade
 #from FlaskForm import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
 from flask import request, flash
-from forms import MainControlForm, ThrottleControlForm
+from forms import MainControlForm, ThrottleControlForm, ChannelControlForm
 #from forms import ContactForm
 
 from wtforms import validators, ValidationError
@@ -26,7 +29,7 @@ theDataStatus = ""
 
 
 def check_status_once():
-  print(" *********** Status inquiry to LH *********")
+  print("F: *********** Status inquiry to LH *********")
   global theStatus, theDataStatus
   theStatus = "DE is off or disconnected, or mainctl stopped"
   theCommand = 'S?'
@@ -34,35 +37,31 @@ def check_status_once():
   data = theCommand + "\n"  
     # Initialize a TCP client socket using SOCK_STREAM 
   try:
-     print("define socket")
+     print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("*** WC: *** connect to socket")
+     print("F: *** WC: *** connect to socket")
      tcp_client.connect((host_ip, server_port))
-     print("send query")
+     print("F: send query")
      tcp_client.sendall(data.encode())
-     print("wait")
-     time.sleep(3)
-     print("try to receive response")
+     print("F: wait for DE response")
+     time.sleep(4)
+     print("F: try to receive response")
      received = "NOTHING"
     # Read data from the TCP server and close the connection
      try:
-
-# we should receive a NAK from mainctl if mainctl is running but DE unresponsive
-# 12/12/19 - mainctl tries to send NAK but we never get it
-
        received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
-       print("received data from DE: ", received)
+       print("F: received data from DE: ", received)
      except Exception as e:
-       print("exception on recv")
+       print("F: exception on recv")
        theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
-     print("LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
+     print("F: LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
      if(received[0:2].decode("ASCII") == "OK"):
-       print("status is ON")
+       print("F: status is ON")
        theStatus = "ON"
   except Exception as e: 
      print(e)
-     print("'" + e.errno + "'")
+     print("F: '" + e.errno + "'")
      if(str(e.errno) == "111" or str(e.errno == "11")):
        theStatus = "Error " + e.errno +  "mainctl program not responding"
      else:
@@ -71,56 +70,68 @@ def check_status_once():
      tcp_client.close()
      return(theStatus)
 
-theStatus = "Off or not connected. Needs restart."
+  theStatus = "Off or not connected. Needs restart."
 
 @app.route("/desetup2",methods=['POST','GET'])
 def members():
    return render_template('desetup.html')
 
-
+#####################################################################
 # Here is the home page
 @app.route("/", methods = ['GET', 'POST'])
 def sdr():
    form = MainControlForm()
    global theStatus, theDataStatus
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
 
    if request.method == 'GET':  
-
+     form.mode.data = parser['settings']['mode']
      form.destatus = theStatus
      form.dataStat = theDataStatus
-     print("home page, status = ",theStatus)
+     print("F: home page, status = ",theStatus)
      return render_template('tangerine.html',form = form)
 
    if request.method == 'POST':
-      print("Main control POST")
+      print("F: Main control POST; mode set to ",form.mode.data)
+      form.errline = ""
       if form.validate() == False:
          flash('All fields are required.')
          return render_template('tangerine.html', form = form)
       else:
          result = request.form
-         print('mode set to:',form.mode.data)
-         print('start set to ',form.startDC.data)
-         print('stop set to ', form.stopDC.data)
+         print('F: mode set to:',form.mode.data)
+         parser.set('settings','mode',form.mode.data)
+         fp = open('config.ini','w')
+         parser.write(fp)
+         fp.close()
+         print('F: start set to ',form.startDC.data)
+         print('F: stop set to ', form.stopDC.data)
          if(form.startDC.data ):
-            startcoll()
+            if ( len(parser['settings']['ringbuffer_path']) < 1 
+                   and form.mode.data == 'ringbuffer') :
+              print("F: configured ringbuffer path='", parser['settings']['ringbuffer_path'],"'", len(parser['settings']['ringbuffer_path']))
+              form.errline = 'ERROR: Path to digital data storage not configured'
+            else:
+              startcoll()
          if(form.stopDC.data ):
             stopcoll()
-         print("end of control loop; theStatus=", theStatus)
+         print("F: end of control loop; theStatus=", theStatus)
          form.destatus = theStatus
          form.dataStat = theDataStatus
          return render_template('tangerine.html', form = form)
 
 
-@app.route("/restart")
+@app.route("/restart1")
 def restart():
    global theStatus, theDataStatus
-   print("restart")
-   returned_value = os.system("killall -9 main")
-   print("after killing mainctl, retcode=",returned_value)
-   print("Trying to restart mainctl")
+   print("F: restart")
+   returned_value = os.system("killall -9 mainctl")
+   print("F: after killing mainctl, retcode=",returned_value)
+   print("F: Trying to restart mainctl")
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
    time.sleep(3)
-   print("after restarting mainctl, retcode=",returned_value)
+   print("F: after restarting mainctl, retcode=",returned_value)
 #   stopcoll()
    theStatus = check_status_once()
    return redirect('/')
@@ -140,7 +151,7 @@ def config():
    parser.read('config.ini')
    if request.method == 'POST':
      result = request.form
-     print("result of config post =")
+     print("F: result of config post =")
      print(result.get('theToken'))
      parser.set('profile', 'token_value', result.get('theToken'))
      parser.set('profile', 'latitude',    result.get('theLatitude'))
@@ -155,7 +166,7 @@ def config():
    theLatitude =  parser['profile']['latitude']
    theLongitude = parser['profile']['longitude']
    theElevation = parser['profile']['elevation']
-   print("token = " + theToken)
+   print("F: token = " + theToken)
    return render_template('config.html', theToken = theToken,
      theLatitude = theLatitude, theLongitude = theLongitude,
      theElevation = theElevation )
@@ -173,106 +184,246 @@ def channelantennasetup():
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
    global theStatus, theDataStatus
-   print("reached DE setup")
+   form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'GET':
      ringbufferPath = parser['settings']['ringbuffer_path']
-     DEIP           = parser['settings']['de_ip']
-     ant0 =     parser['settings']['ant0']
+     form.antennaport0.data =     parser['settings']['ant0']
+     form.antennaport1.data =     parser['settings']['ant1']
+     form.antennaport2.data =     parser['settings']['ant2']
+     form.antennaport3.data =     parser['settings']['ant3']
+     form.antennaport4.data =     parser['settings']['ant4']
+     form.antennaport5.data =     parser['settings']['ant5']
+     form.antennaport6.data =     parser['settings']['ant6']
+     form.antennaport7.data =     parser['settings']['ant7']
+     form.antennaport8.data =     parser['settings']['ant8']
+     form.antennaport9.data =     parser['settings']['ant8']
+     form.antennaport10.data =     parser['settings']['ant10']
+     form.antennaport11.data =     parser['settings']['ant11']
+     form.antennaport12.data =     parser['settings']['ant12']
+     form.antennaport13.data =     parser['settings']['ant13']
+     form.antennaport14.data =     parser['settings']['ant14']
+     form.antennaport15.data =     parser['settings']['ant15']
      ch0f =     parser['settings']['ch0f']
      ch0b =     parser['settings']['ch0b']     
-     ant1 =     parser['settings']['ant1']
      ch1f =     parser['settings']['ch1f']
      ch1b =     parser['settings']['ch1b']
-     ant2 =     parser['settings']['ant2']
      ch2f =     parser['settings']['ch2f']
      ch2b =     parser['settings']['ch2b']
-     ant3 =     parser['settings']['ant3']
      ch3f =     parser['settings']['ch3f']
      ch3b =     parser['settings']['ch3b']
-     print("ringbufferPath=",ringbufferPath)
+     ch4f =     parser['settings']['ch4f']
+     ch4b =     parser['settings']['ch4b']
+     ch5f =     parser['settings']['ch5f']
+     ch5b =     parser['settings']['ch5b']
+     ch6f =     parser['settings']['ch6f']
+     ch6b =     parser['settings']['ch6b']
+     ch7f =     parser['settings']['ch7f']
+     ch7b =     parser['settings']['ch7b']
+     ch8f =     parser['settings']['ch8f']
+     ch8b =     parser['settings']['ch8b']
+     ch9f =     parser['settings']['ch9f']
+     ch9b =     parser['settings']['ch9b']
+     ch10f =     parser['settings']['ch10f']
+     ch10b =     parser['settings']['ch10b']
+     ch11f =     parser['settings']['ch11f']
+     ch11b =     parser['settings']['ch11b']
+     ch12f =     parser['settings']['ch12f']
+     ch12b =     parser['settings']['ch12b']
+     ch13f =     parser['settings']['ch13f']
+     ch13b =     parser['settings']['ch13b']
+     ch14f =     parser['settings']['ch14f']
+     ch14b =     parser['settings']['ch14b']
+     ch15f =     parser['settings']['ch15f']
+     ch15b =     parser['settings']['ch15b']
+     print("F: ringbufferPath=",ringbufferPath)
      return render_template('desetup.html',
+      form = form,
 	  ringbufferPath = ringbufferPath,
-      ant0 = ant0 , ch0f = ch0f, ch0b = ch0b,
-	  ant1 = ant1 , ch1f = ch1f, ch1b = ch1b,
-      ant2 = ant2 , ch2f = ch2f, ch2b = ch2b,
-	  ant3 = ant3,  ch3f = ch3f, ch3b = ch3b,
-      DEIP = DEIP)
+      ch0f = ch0f, ch0b = ch0b,
+	  ch1f = ch1f, ch1b = ch1b,
+      ch2f = ch2f, ch2b = ch2b,
+	  ch3f = ch3f, ch3b = ch3b,
+	  ch4f = ch4f, ch4b = ch4b,
+	  ch5f = ch5f, ch5b = ch5b,
+	  ch6f = ch6f, ch6b = ch6b,
+	  ch7f = ch7f, ch7b = ch7b,
+	  ch8f = ch8f, ch8b = ch8b,
+	  ch9f = ch9f, ch9b = ch9b,
+	  ch10f = ch10f, ch10b = ch10b,
+	  ch11f = ch11f, ch11b = ch11b,
+	  ch12f = ch12f, ch12b = ch12b,
+	  ch13f = ch13f, ch13b = ch13b,
+	  ch14f = ch14f, ch14b = ch14b,
+	  ch15f = ch15f, ch15b = ch15b )
 
    if request.method == 'POST':
      result = request.form
-     print("result=", result.get('csubmit'))
+     print("F: result=", result.get('csubmit'))
      if result.get('csubmit') == "Discard Changes":
-       print("CANCEL")
+       print("F: CANCEL")
      else:
-       print("result of DEsetup post =")
+       print("F: POST ringbufferPath =", result.get('ringbufferPath'))
        ringbufferPath = ""
-       DEIP = ""
        parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
-       parser.set('settings', 'DE_IP',           result.get('DEIP'))
-       parser.set('settings', 'ant0',            str(result.get('ch0a')))
+       parser.set('settings', 'ant0',            form.antennaport0.data)
        parser.set('settings', 'ch0f',            str(result.get('ch0f')))
        parser.set('settings', 'ch0b',            str(result.get('ch0b')))
-       parser.set('settings', 'ant1',            str(result.get('ch1a')))
+       parser.set('settings', 'ant1',            form.antennaport1.data)
        parser.set('settings', 'ch1f',            str(result.get('ch1f')))
        parser.set('settings', 'ch1b',            str(result.get('ch1b')))
-       parser.set('settings', 'ant2',            str(result.get('ch2a')))
+       parser.set('settings', 'ant2',            form.antennaport2.data)
        parser.set('settings', 'ch2f',            str(result.get('ch2f')))
        parser.set('settings', 'ch2b',            str(result.get('ch2b')))
-       parser.set('settings', 'ant3',            str(result.get('ch3a')))
+       parser.set('settings', 'ant3',            form.antennaport3.data)
        parser.set('settings', 'ch3f',            str(result.get('ch3f')))
        parser.set('settings', 'ch3b',            str(result.get('ch3b')))
+       parser.set('settings', 'ant4',            form.antennaport4.data)
+       parser.set('settings', 'ch4f',            str(result.get('ch4f')))
+       parser.set('settings', 'ch4b',            str(result.get('ch4b')))
+       parser.set('settings', 'ant5',            form.antennaport5.data)
+       parser.set('settings', 'ch5f',            str(result.get('ch5f')))
+       parser.set('settings', 'ch5b',            str(result.get('ch5b')))
+       parser.set('settings', 'ant6',            form.antennaport6.data)
+       parser.set('settings', 'ch6f',            str(result.get('ch6f')))
+       parser.set('settings', 'ch6b',            str(result.get('ch6b')))
+       parser.set('settings', 'ant7',            form.antennaport7.data)
+       parser.set('settings', 'ch7f',            str(result.get('ch7f')))
+       parser.set('settings', 'ch7b',            str(result.get('ch7b')))
+       parser.set('settings', 'ant8',            form.antennaport7.data)
+       parser.set('settings', 'ch8f',            str(result.get('ch8f')))
+       parser.set('settings', 'ch8b',            str(result.get('ch8b')))
+       parser.set('settings', 'ant9',            form.antennaport9.data)
+       parser.set('settings', 'ch9f',            str(result.get('ch9f')))
+       parser.set('settings', 'ch9b',            str(result.get('ch9b')))
+       parser.set('settings', 'ant10',           form.antennaport10.data)
+       parser.set('settings', 'ch10f',           str(result.get('ch10f')))
+       parser.set('settings', 'ch10b',           str(result.get('ch10b')))
+       parser.set('settings', 'ant11',           form.antennaport11.data)
+       parser.set('settings', 'ch11f',           str(result.get('ch11f')))
+       parser.set('settings', 'ch11b',           str(result.get('ch11b')))
+       parser.set('settings', 'ant12',           form.antennaport12.data)
+       parser.set('settings', 'ch12f',           str(result.get('ch12f')))
+       parser.set('settings', 'ch12b',           str(result.get('ch12b')))
+       parser.set('settings', 'ant13',           form.antennaport13.data)
+       parser.set('settings', 'ch13f',           str(result.get('ch13f')))
+       parser.set('settings', 'ch13b',           str(result.get('ch13b')))
+       parser.set('settings', 'ant14',           form.antennaport14.data)
+       parser.set('settings', 'ch14f',           str(result.get('ch14f')))
+       parser.set('settings', 'ch14b',           str(result.get('ch14b')))
+       parser.set('settings', 'ant15',           form.antennaport15.data)
+       parser.set('settings', 'ch15f',           str(result.get('ch15f')))
+       parser.set('settings', 'ch15b',           str(result.get('ch15b')))
      
        fp = open('config.ini','w')
        parser.write(fp)
        fp.close()
 
-   ringbufferPath = parser['settings']['ringbuffer_path']
-   DEIP           = parser['settings']['de_ip']
-   ant0 =     parser['settings']['ant0']
-   ch0f =     parser['settings']['ch0f']
-   ch0b =     parser['settings']['ch0b']     
-   ant1 =     parser['settings']['ant1']
-   ch1f =     parser['settings']['ch1f']
-   ch1b =     parser['settings']['ch1b']
-   ant2 =     parser['settings']['ant2']
-   ch2f =     parser['settings']['ch2f']
-   ch2b =     parser['settings']['ch2b']
-   ant3 =     parser['settings']['ant3']
-   ch3f =     parser['settings']['ch3f']
-   ch3b =     parser['settings']['ch3b']
-   return render_template('desetup.html',
-	ringbufferPath = ringbufferPath,
-    ant0 = ant0 , ch0f = ch0f, ch0b = ch0b,
-	ant1 = ant1 , ch1f = ch1f, ch1b = ch1b,
-    ant2 = ant2 , ch2f = ch2f, ch2b = ch2b,
-	ant3 = ant3,  ch3f = ch3f, ch3b = ch3b,
-    DEIP = DEIP)
+     ringbufferPath = parser['settings']['ringbuffer_path']
+
+     form.antennaport0.data =     parser['settings']['ant0']
+     form.antennaport1.data =     parser['settings']['ant1']
+     form.antennaport2.data =     parser['settings']['ant2']
+     form.antennaport3.data =     parser['settings']['ant3']
+     form.antennaport4.data =     parser['settings']['ant4']
+     form.antennaport5.data =     parser['settings']['ant5']
+     form.antennaport6.data =     parser['settings']['ant6']
+     form.antennaport7.data =     parser['settings']['ant7']
+     form.antennaport8.data =     parser['settings']['ant8']
+     form.antennaport9.data =     parser['settings']['ant9']
+     form.antennaport10.data =     parser['settings']['ant10']
+     form.antennaport11.data =     parser['settings']['ant11']
+     form.antennaport12.data =     parser['settings']['ant12']
+     form.antennaport13.data =     parser['settings']['ant13']
+     form.antennaport14.data =     parser['settings']['ant14']
+     form.antennaport15.data =     parser['settings']['ant15']
+     ch0f =     parser['settings']['ch0f']
+     ch0b =     parser['settings']['ch0b']     
+     ch1f =     parser['settings']['ch1f']
+     ch1b =     parser['settings']['ch1b']
+     ch2f =     parser['settings']['ch2f']
+     ch2b =     parser['settings']['ch2b']
+     ch3f =     parser['settings']['ch3f']
+     ch3b =     parser['settings']['ch3b']
+     ch4f =     parser['settings']['ch4f']
+     ch4b =     parser['settings']['ch4b']
+     ch5f =     parser['settings']['ch5f']
+     ch5b =     parser['settings']['ch5b']
+     ch6f =     parser['settings']['ch6f']
+     ch6b =     parser['settings']['ch6b']
+     ch7f =     parser['settings']['ch7f']
+     ch7b =     parser['settings']['ch7b']
+     ch8f =     parser['settings']['ch8f']
+     ch8b =     parser['settings']['ch8b']
+     ch9f =     parser['settings']['ch9f']
+     ch9b =     parser['settings']['ch9b']
+     ch10f =     parser['settings']['ch10f']
+     ch10b =     parser['settings']['ch10b']
+     ch11f =     parser['settings']['ch11f']
+     ch11b =     parser['settings']['ch11b']
+     ch12f =     parser['settings']['ch12f']
+     ch12b =     parser['settings']['ch12b']
+     ch13f =     parser['settings']['ch13f']
+     ch13b =     parser['settings']['ch13b']
+     ch14f =     parser['settings']['ch14f']
+     ch14b =     parser['settings']['ch14b']
+     ch15f =     parser['settings']['ch15f']
+     ch15b =     parser['settings']['ch15b']
+     print("F: ringbufferPath=",ringbufferPath)
+     return render_template('desetup.html',
+	  ringbufferPath = ringbufferPath,
+      form = form,
+      ch0f = ch0f, ch0b = ch0b,
+	  ch1f = ch1f, ch1b = ch1b,
+      ch2f = ch2f, ch2b = ch2b,
+	  ch3f = ch3f, ch3b = ch3b,
+	  ch4f = ch4f, ch4b = ch4b,
+	  ch5f = ch5f, ch5b = ch5b,
+	  ch6f = ch6f, ch6b = ch6b,
+	  ch7f = ch7f, ch7b = ch7b,
+	  ch8f = ch8f, ch8b = ch8b,
+	  ch9f = ch9f, ch9b = ch9b,
+	  ch10f = ch10f, ch10b = ch10b,
+	  ch11f = ch11f, ch11b = ch11b,
+	  ch12f = ch12f, ch12b = ch12b,
+	  ch13f = ch13f, ch13b = ch13b,
+	  ch14f = ch14f, ch14b = ch14b,
+	  ch15f = ch15f, ch15b = ch15b )
 
 @app.route("/startcollection")
 def startcoll():
   form = MainControlForm()
   global theStatus, theDataStatus
-  print("Start Data Collection command")
-  
+  print("F: Start Data Collection command")
+  parser = configparser.ConfigParser(allow_no_value=True)
+  parser.read('config.ini')
+  ringbufferPath = parser['settings']['ringbuffer_path']
+  try:
+    dlist = os.listdir(ringbufferPath)
+  except Exception as e: 
+     print(e)
+     theDataStatus = "Path for saving data nonexistent or invalid: '" + ringbufferPath + "'"
+     dataCollStatus = 0
+     form.dataStat = theDataStatus
+     return
+    
   theCommand = 'SC'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
     # Initialize a TCP client socket using SOCK_STREAM 
   try:
-     print("define socket")
+     print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("connect to socket")
+     print("F: connect to socket")
      tcp_client.connect((host_ip, server_port))
-     print("send command")
+     print("F: send command")
      tcp_client.sendall(data.encode())
   except Exception as e: 
      print(e)
-     print("'" + e.errno + "'")
      if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error " + e.errno +  "mainctl program not responding"
+       theStatus = "Error: mainctl program not responding; please restart it"
      else:
        theStatus = "Exception " + str(e)
   finally:
@@ -287,24 +438,24 @@ def startcoll():
 def stopcoll():
   form = MainControlForm()
   global theStatus, theDataStatus
-  print("Stop Data Collection command")
+  print("F: Stop Data Collection command")
   theCommand = 'XC'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
     # Initialize a TCP client socket using SOCK_STREAM 
   try:
-     print("define socket")
+     print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("connect to socket")
+     print("F: connect to socket")
      tcp_client.connect((host_ip, server_port))
-     print("send command")
+     print("F: send command")
      tcp_client.sendall(data.encode())
   except Exception as e: 
      print(e)
-#     print("'" + e.errno + "'")
+
      if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error " + str(e.errno) +  "mainctl program not responding"
+       theStatus = "Error-mainctl program not responding, please restart it"
      else:
        theStatus = "Exception " + str(e)
   finally:
@@ -322,17 +473,17 @@ def throttle():
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'GET':
-     throttle = parser['settings']['throttle']
+     form.throttle.data = parser['settings']['throttle']
      return render_template('throttle.html',
-	  throttle = throttle, form = form)
+	  form = form)
 
    if request.method == 'POST':
      result = request.form
-     print("result=", result.get('csubmit'))
+     print("F: result=", result.get('csubmit'))
      if result.get('csubmit') == "Discard Changes":
-       print("CANCEL")
+       print("F: CANCEL")
      else:
-       print("result of throttle post =")
+       print("F: result of throttle post =")
        throttle= ""
        parser.set('settings', 'throttle', result.get('throttle'))
        fp = open('config.ini','w')
@@ -360,13 +511,13 @@ def callsign():
 	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
    if request.method == 'POST':
      result = request.form
-     print("result=", result.get('csubmit'))
+     print("F: result=", result.get('csubmit'))
      if result.get('csubmit') == "Discard Changes":
-       print("CANCEL")
+       print("F: CANCEL")
      else:
-       print("result of callsign post =")
+       print("F: result of callsign post =")
        ringbufferPath = ""
-       DEIP = ""
+
        parser.set('monitor', 'c0', result.get('c0'))
        parser.set('monitor', 'c1', result.get('c1'))
        parser.set('monitor', 'c2', result.get('c2'))
@@ -391,7 +542,7 @@ def notification():
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'GET':
-     print("smtpsvr = ", parser['email']['smtpsvr'])
+     print("F: smtpsvr = ", parser['email']['smtpsvr'])
      smtpsvr =     parser['email']['smtpsvr']
      emailfrom=    parser['email']['emailfrom']
      emailto =     parser['email']['emailto']
@@ -407,12 +558,33 @@ def notification():
 
    if request.method == 'POST':
      result = request.form
-     print("result=", result.get('csubmit'))
+     print("F: result=", result.get('csubmit'))
      if result.get('csubmit') == "Discard Changes":
-       print("CANCEL")
+       print("F: CANCEL")
+     elif result.get('csubmit') == "Send test email" :
+        print("Send test email")
+        msg = MIMEMultipart()
+        smtpsvr =     parser['email']['smtpsvr']
+        msg['From'] = parser['email']['emailfrom']
+        msg['To'] =   parser['email']['emailto']
+        msg['Subject'] = "Test message from your TangerineSDR"
+        smtpport =    parser['email']['smtpport']
+        smtptimeout = parser['email']['smtptimeout']
+        smtpuid =     parser['email']['smtpuid']
+        smtppw =      parser['email']['smtppw']
+        body = "Test message from your TangerineSDR"
+        msg.attach(MIMEText(body,'plain'))
+        server = smtplib.SMTP(smtpsvr,smtpport)
+        server.ehlo()
+        server.starttls()
+        server.login(smtpuid,smtppw)
+        text = msg.as_string()
+        server.sendmail(parser['email']['emailfrom'],parser['email']['emailto'],text)
+        print("sendmail done")
+        
 
      else:
-        print("reached POST on notification;", result.get('smtpsvr'))
+        print("F: reached POST on notification;", result.get('smtpsvr'))
         parser.set('email', 'smtpsvr', result.get('smtpsvr'))
         parser.set('email', 'emailfrom', result.get('emailfrom'))
         parser.set('email', 'emailto', result.get('emailto'))
@@ -436,8 +608,99 @@ def notification():
       smtptimeout = smtptimeout, smtpuid = smtpuid,
       smtppw = smtppw)
 
+@app.route("/propagation",methods=['POST','GET'])
+def propagation():
+   global theStatus, theDataStatus
+   form = ChannelControlForm()
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+
+   if request.method == 'GET':
+     form.antennaport0.data =     parser['settings']['ftant0']
+     form.antennaport1.data =     parser['settings']['ftant1']
+     form.antennaport2.data =     parser['settings']['ftant2']
+     form.antennaport3.data =     parser['settings']['ftant3']
+     form.antennaport4.data =     parser['settings']['ftant4']
+     form.antennaport5.data =     parser['settings']['ftant5']
+     form.antennaport6.data =     parser['settings']['ftant6']
+     form.antennaport7.data =     parser['settings']['ftant7']
+     ft80f =     parser['settings']['ft80f'] 
+     ft81f =     parser['settings']['ft81f'] 
+     ft82f =     parser['settings']['ft82f']
+     ft83f =     parser['settings']['ft83f']
+     ft84f =     parser['settings']['ft84f']
+     ft85f =     parser['settings']['ft85f']
+     ft86f =     parser['settings']['ft86f']
+     ft87f =     parser['settings']['ft87f']
+     return render_template('ft8setup.html',
+      form  = form,
+      ft80f = ft80f,
+	  ft81f = ft81f,
+      ft82f = ft82f,
+	  ft83f = ft83f, 
+	  ft84f = ft84f, 
+	  ft85f = ft85f,
+	  ft86f = ft86f, 
+	  ft87f = ft87f  )
+
+   if request.method == 'POST':
+     result = request.form
+     print("F: result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("F: CANCEL")
+     else:
+       print("F: POST ringbufferPath =", result.get('ringbufferPath'))
+       ringbufferPath = ""
+       parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
+       parser.set('settings', 'ftant0',            form.antennaport0.data)
+       parser.set('settings', 'ft80f',            str(result.get('ft80f')))
+       parser.set('settings', 'ftant1',            form.antennaport1.data)
+       parser.set('settings', 'ft81f',            str(result.get('ft81f')))
+       parser.set('settings', 'ftant2',            form.antennaport2.data)
+       parser.set('settings', 'ft82f',            str(result.get('ft82f')))
+       parser.set('settings', 'ftant3',            form.antennaport3.data)
+       parser.set('settings', 'ft83f',            str(result.get('ft83f')))
+       parser.set('settings', 'ftant4',            form.antennaport4.data)
+       parser.set('settings', 'ft84f',            str(result.get('ft84f')))
+       parser.set('settings', 'ftant5',            form.antennaport5.data)
+       parser.set('settings', 'ft85f',            str(result.get('ft85f')))
+       parser.set('settings', 'ftant6',            form.antennaport6.data)
+       parser.set('settings', 'ft86f',            str(result.get('ft86f')))
+       parser.set('settings', 'ftant7',            form.antennaport7.data)
+       parser.set('settings', 'ft87f',            str(result.get('ft87f')))  
+       fp = open('config.ini','w')
+       parser.write(fp)
+       fp.close()
+     ringbufferPath = parser['settings']['ringbuffer_path']
+     form.antennaport0.data =     parser['settings']['ftant0']
+     form.antennaport1.data =     parser['settings']['ftant1']
+     form.antennaport2.data =     parser['settings']['ftant2']
+     form.antennaport3.data =     parser['settings']['ftant3']
+     form.antennaport4.data =     parser['settings']['ftant4']
+     form.antennaport5.data =     parser['settings']['ftant5']
+     form.antennaport6.data =     parser['settings']['ftant6']
+     form.antennaport7.data =     parser['settings']['ftant7']
+     ft80f =     parser['settings']['ft80f']
+     ft81f =     parser['settings']['ft81f']
+     ft82f =     parser['settings']['ft82f']
+     ft83f =     parser['settings']['ft83f']
+     ft84f =     parser['settings']['ft84f']
+     ft85f =     parser['settings']['ft85f']
+     ft86f =     parser['settings']['ft86f']
+     ft87f =     parser['settings']['ft87f']
+     return render_template('ft8setup.html',
+      form = form,
+      ft80f = ft80f,
+	  ft81f = ft81f,
+      ft82f = ft82f, 
+	  ft83f = ft83f,
+	  ft84f = ft84f, 
+	  ft85f = ft85f, 
+	  ft86f = ft86f, 
+	  ft87f = ft87f  )
 
 
+######################################################################
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template("notfound.html")

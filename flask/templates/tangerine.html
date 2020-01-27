@@ -1,4 +1,5 @@
 <html>
+
 <table width="100%">
    <tbody><tr>
     <td width="5%">
@@ -41,7 +42,7 @@
 	  </table>
 
 		   <p style="margin-left:200px" class="links"><b><a href="/config">Configure System</a></b></p>
-           <p style="margin-left:200px" class="links"><b><a href="/restart">Restart Data Engine</a> (Please allow 7 seconds)</b></p>
+           <p style="margin-left:200px" class="links"><b><a href="/restart1">Restart Data Engine</a> (Please allow 7 seconds)</b></p>
 		   <p style="margin-left:200px" class="links"><b><a href="/chkstat">Check DE status<a/></b></p>
 
     <form style="margin-left:200px" width = 75% action = "http://localhost:5000/" method = post>
@@ -56,14 +57,14 @@
                {{ form.startDC }}
                {{ form.stopDC  }}
             </div>
-            
+            <font color ="red">{{ form.errline }}</font>
          </fieldset>
         
       </form>
 
 
 		   <p style="margin-left:200px" class="links"><b><a href="/TangerineSDR_documents/">Central Control System</a></b></p>
-		   <p style="margin-left:200px"  class="links"><b><a href="/tsarchive/">Local Propagation Analyzer</a></b></p>
+		   <p style="margin-left:200px"  class="links"><b><a href="/propagation">Local Propagation Analyzer</a></b></p>
        </td>
    </table>
   </tbody>

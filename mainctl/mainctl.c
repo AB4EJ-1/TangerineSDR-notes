@@ -3,6 +3,7 @@
 * With funding from the Center for Advanced Public Safety and
 * The National Science Foundation.
 *
+* This program is free software; you can redistribute it and/or
 * modify it under the terms of the GNU General Public License
 * as published by the Free Software Foundation; either version 2
 *
@@ -436,7 +437,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   printf("UDP data recvd\n");
 
   // respond to STATUS INQUIRY
-  if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B)  // oh man this is crude
+  if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B && nread < 8000)  // oh man this is crude
 	{
 	puts("OK status message received from DE!  It's alive!!");
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
@@ -630,8 +631,8 @@ int main() {
   uv_tcp_bind(&server, (struct sockaddr *)&bind_addr, 0);
   int r = uv_listen((uv_stream_t*) &server, 128, on_new_connection);
   if (r) {
-    fprintf(stderr, "Listen error!\n");
-    return 1;
+    fprintf(stderr, "TCP Listen error!\n");
+  //  return 1;
     }
   
   puts("prep to receive UDP data");
