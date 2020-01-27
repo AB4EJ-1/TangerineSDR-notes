@@ -79,8 +79,8 @@ void *sendData(void *threadid) {
 	   (struct sockaddr*)&client_addr, sizeof(client_addr));
 
     fprintf(stderr,"UDP message sent from thread. bytes= %ld\n", sentBytes); 
-    sleep(1);
-   // usleep(528);  // wait for this many microseconds
+    // sleep(1);
+    usleep(528);  // wait for this many microseconds
     if(stopData)
 	{
          puts("UDP thread end");
