@@ -5,6 +5,9 @@ import time
 import os
 import subprocess
 import configparser
+import smtplib
+from email.mime.multipart import MIMEMultipart 
+from email.mime.text import MIMEText 
 
 from flask_wtf import Form
 # following is for future flask upgrade
@@ -67,7 +70,7 @@ def check_status_once():
      tcp_client.close()
      return(theStatus)
 
-theStatus = "Off or not connected. Needs restart."
+  theStatus = "Off or not connected. Needs restart."
 
 @app.route("/desetup2",methods=['POST','GET'])
 def members():
@@ -119,11 +122,11 @@ def sdr():
          return render_template('tangerine.html', form = form)
 
 
-@app.route("/restart")
+@app.route("/restart1")
 def restart():
    global theStatus, theDataStatus
    print("F: restart")
-   returned_value = os.system("killall -9 main")
+   returned_value = os.system("killall -9 mainctl")
    print("F: after killing mainctl, retcode=",returned_value)
    print("F: Trying to restart mainctl")
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
@@ -184,10 +187,8 @@ def desetup():
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
-
    if request.method == 'GET':
      ringbufferPath = parser['settings']['ringbuffer_path']
-
      form.antennaport0.data =     parser['settings']['ant0']
      form.antennaport1.data =     parser['settings']['ant1']
      form.antennaport2.data =     parser['settings']['ant2']
@@ -204,52 +205,36 @@ def desetup():
      form.antennaport13.data =     parser['settings']['ant13']
      form.antennaport14.data =     parser['settings']['ant14']
      form.antennaport15.data =     parser['settings']['ant15']
-
      ch0f =     parser['settings']['ch0f']
      ch0b =     parser['settings']['ch0b']     
-
      ch1f =     parser['settings']['ch1f']
      ch1b =     parser['settings']['ch1b']
-
      ch2f =     parser['settings']['ch2f']
      ch2b =     parser['settings']['ch2b']
-
      ch3f =     parser['settings']['ch3f']
      ch3b =     parser['settings']['ch3b']
-
      ch4f =     parser['settings']['ch4f']
      ch4b =     parser['settings']['ch4b']
-
      ch5f =     parser['settings']['ch5f']
      ch5b =     parser['settings']['ch5b']
-
      ch6f =     parser['settings']['ch6f']
      ch6b =     parser['settings']['ch6b']
-
      ch7f =     parser['settings']['ch7f']
      ch7b =     parser['settings']['ch7b']
-
      ch8f =     parser['settings']['ch8f']
      ch8b =     parser['settings']['ch8b']
-
      ch9f =     parser['settings']['ch9f']
      ch9b =     parser['settings']['ch9b']
-
      ch10f =     parser['settings']['ch10f']
      ch10b =     parser['settings']['ch10b']
-
      ch11f =     parser['settings']['ch11f']
      ch11b =     parser['settings']['ch11b']
-
      ch12f =     parser['settings']['ch12f']
      ch12b =     parser['settings']['ch12b']
-
      ch13f =     parser['settings']['ch13f']
      ch13b =     parser['settings']['ch13b']
-
      ch14f =     parser['settings']['ch14f']
      ch14b =     parser['settings']['ch14b']
-
      ch15f =     parser['settings']['ch15f']
      ch15b =     parser['settings']['ch15b']
      print("F: ringbufferPath=",ringbufferPath)
@@ -353,52 +338,36 @@ def desetup():
      form.antennaport13.data =     parser['settings']['ant13']
      form.antennaport14.data =     parser['settings']['ant14']
      form.antennaport15.data =     parser['settings']['ant15']
- 
      ch0f =     parser['settings']['ch0f']
      ch0b =     parser['settings']['ch0b']     
-
      ch1f =     parser['settings']['ch1f']
      ch1b =     parser['settings']['ch1b']
-
      ch2f =     parser['settings']['ch2f']
      ch2b =     parser['settings']['ch2b']
-
      ch3f =     parser['settings']['ch3f']
      ch3b =     parser['settings']['ch3b']
-
      ch4f =     parser['settings']['ch4f']
      ch4b =     parser['settings']['ch4b']
-
      ch5f =     parser['settings']['ch5f']
      ch5b =     parser['settings']['ch5b']
-
      ch6f =     parser['settings']['ch6f']
      ch6b =     parser['settings']['ch6b']
-
      ch7f =     parser['settings']['ch7f']
      ch7b =     parser['settings']['ch7b']
-
      ch8f =     parser['settings']['ch8f']
      ch8b =     parser['settings']['ch8b']
-
      ch9f =     parser['settings']['ch9f']
      ch9b =     parser['settings']['ch9b']
-
      ch10f =     parser['settings']['ch10f']
      ch10b =     parser['settings']['ch10b']
-
      ch11f =     parser['settings']['ch11f']
      ch11b =     parser['settings']['ch11b']
-
      ch12f =     parser['settings']['ch12f']
      ch12b =     parser['settings']['ch12b']
-
      ch13f =     parser['settings']['ch13f']
      ch13b =     parser['settings']['ch13b']
-
      ch14f =     parser['settings']['ch14f']
      ch14b =     parser['settings']['ch14b']
-
      ch15f =     parser['settings']['ch15f']
      ch15b =     parser['settings']['ch15b']
      print("F: ringbufferPath=",ringbufferPath)
@@ -427,7 +396,18 @@ def startcoll():
   form = MainControlForm()
   global theStatus, theDataStatus
   print("F: Start Data Collection command")
-  
+  parser = configparser.ConfigParser(allow_no_value=True)
+  parser.read('config.ini')
+  ringbufferPath = parser['settings']['ringbuffer_path']
+  try:
+    dlist = os.listdir(ringbufferPath)
+  except Exception as e: 
+     print(e)
+     theDataStatus = "Path for saving data nonexistent or invalid: '" + ringbufferPath + "'"
+     dataCollStatus = 0
+     form.dataStat = theDataStatus
+     return
+    
   theCommand = 'SC'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
@@ -581,6 +561,27 @@ def notification():
      print("F: result=", result.get('csubmit'))
      if result.get('csubmit') == "Discard Changes":
        print("F: CANCEL")
+     elif result.get('csubmit') == "Send test email" :
+        print("Send test email")
+        msg = MIMEMultipart()
+        smtpsvr =     parser['email']['smtpsvr']
+        msg['From'] = parser['email']['emailfrom']
+        msg['To'] =   parser['email']['emailto']
+        msg['Subject'] = "Test message from your TangerineSDR"
+        smtpport =    parser['email']['smtpport']
+        smtptimeout = parser['email']['smtptimeout']
+        smtpuid =     parser['email']['smtpuid']
+        smtppw =      parser['email']['smtppw']
+        body = "Test message from your TangerineSDR"
+        msg.attach(MIMEText(body,'plain'))
+        server = smtplib.SMTP(smtpsvr,smtpport)
+        server.ehlo()
+        server.starttls()
+        server.login(smtpuid,smtppw)
+        text = msg.as_string()
+        server.sendmail(parser['email']['emailfrom'],parser['email']['emailto'],text)
+        print("sendmail done")
+        
 
      else:
         print("F: reached POST on notification;", result.get('smtpsvr'))
@@ -688,7 +689,6 @@ def propagation():
      ft86f =     parser['settings']['ft86f']
      ft87f =     parser['settings']['ft87f']
      return render_template('ft8setup.html',
-	  ringbufferPath = ringbufferPath,
       form = form,
       ft80f = ft80f,
 	  ft81f = ft81f,
