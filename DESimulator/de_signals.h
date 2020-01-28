@@ -13,8 +13,27 @@ Maps program mnemonics to 2-byte commands to be passed to DE
 #define START_DATA_COLL     "SC"
 #define STOP_DATA_COLL      "XC"
 #define DEFINE_FT8_CHAN     "FT"
-#define START_FT8_COLL      "8S"
-#define STOP_FT8_COLL       "8X"
+#define START_FT8_COLL      "SF"
+#define STOP_FT8_COLL       "XF"
 #define LED_SET             "SB"  // in case we need to send a binary LED set byte
-#define UNLINK		    "UL"
-#define HALT_DE		    "XX"
+#define UNLINK              "UL"
+#define HALT_DE             "XX"
+
+// buffer for A/D data from DE
+struct dataSample
+	{
+	float I_val;
+	float Q_val;
+	};
+typedef struct dataBuf
+	{
+    char bufType[2];
+	long bufCount;
+	long timeStamp;
+	//struct dataSample myDataSample[1024]; this is the logical layout using dataSample.
+    //    Below is what Digital RF reequires to be able to understand the samples.
+    //    In the array, starting at zero, sample[j] = I, sample[j+1] = Q (complex data)
+    struct dataSample theDataSample[2048];  // should be double the number of samples
+	} DATABUF ;
+
+

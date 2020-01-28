@@ -30,7 +30,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <fcntl.h>
-
+#include "de_signals.h"
 //#define IP_FOUND "IP_FOUND"
 //#define IP_FOUND_ACK "IP_FOUND_ACK"
 #define PORT 1024
@@ -45,6 +45,7 @@ int cmdport;
 int stoplink;
 int stopData;
 
+/*
 // notional buffer for DE A/D output. Will update with the real thing later...
 struct dataSample
 	{
@@ -58,6 +59,7 @@ struct dataBuf
 	long timeStamp;
 	struct dataSample myDataSample[1024];
 	};
+*/
 
 
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
@@ -75,13 +77,13 @@ void *sendData(void *threadid) {
 	struct dataSample mySample;
 	time_t epoch = time(NULL);
 	printf("unix time = %ld\n", epoch);
-
+    strncpy(myBuffer.bufType,"RG",2);
+	myBuffer.timeStamp = (double) epoch;
 	for (int i = 0; i < 1024; i++) {
 	  I =  sin ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
 	  Q =  cos ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
-	  myBuffer.timeStamp = (double) epoch;
-	  myBuffer.myDataSample[i].I_val = I;
-	  myBuffer.myDataSample[i].Q_val = Q;
+	  myBuffer.theDataSample[i].I_val = I;
+	  myBuffer.theDataSample[i].Q_val = Q;
            }
 
   ssize_t sentBytes;
@@ -93,7 +95,7 @@ void *sendData(void *threadid) {
    // puts("UDP thread start; hit sem_wait");
     //sem_wait(&mutex);
    // puts("passed wait");
-    myBuffer.bufcount = bufcount++;
+    myBuffer.bufCount = bufcount++;
 
     client_addr.sin_port = htons(LH_port);
     sentBytes = sendto(sock, (const struct dataBuf *)&myBuffer, sizeof(myBuffer), 0, 
@@ -192,45 +194,52 @@ int main() {
    // command processsing
 
     if(strncmp(buffer, "S?",2) == 0 )
-	{
-    
-	printf("STATUS INQUIRY\n");
+	  { 
+	  printf("STATUS INQUIRY\n");
+      client_addr.sin_port = htons(LH_port);  // this may wipe desired port
 
-    client_addr.sin_port = htons(LH_port);  // this may wipe desired port
-
-
-    count = sendto(sock, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
-    printf("response = %d  sent to ",count);
-    printf(" IP: %s, Port: %d\n", 
-    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-	continue;
-	}
+      count = sendto(sock, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("response = %d  sent to ",count);
+      printf(" IP: %s, Port: %d\n", 
+      inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+	  continue;
+	  }
     if(strncmp(buffer, "UL",2) == 0)
-	{  // future function for allowing LH to drop its link to this DE
-	printf("stoplink\n");
-	stoplink = 1;
-	continue;
-	}
+	  {  // future function for allowing LH to drop its link to this DE
+	  printf("stoplink\n");
+	  stoplink = 1;
+	  continue;
+	  }
     if(strncmp(buffer, "XC",2)==0)
-	{
-	printf("Main loop stopping data acquisition\n");
-	stopData = 1;
-	continue;
-	}
+	  {
+	  printf("Main loop stopping data acquisition\n");
+	  stopData = 1;
+	  continue;
+	  }
+    if(strncmp(buffer, "SF",2)==0)
+      {
+      printf("Start FT8 command received\n");
+      continue;
+      }
+    if(strncmp(buffer, "XF",2)==0)
+      {
+      printf("Stop FT8 command received\n");
+      continue;
+      }
     if(strncmp(buffer, "XX",2)==0)
-	{
-	printf("HALTING\n");
-	return 0;
-	}
+	  {
+	  printf("HALTING\n");
+	  return 0;
+	  }
     if(strncmp(buffer, "SC",2)==0)
 	{
-	puts("starting sendData");
-	stopData = 0;
-  	int j = 1;
-  	pthread_t datathread;
-  	int rc = pthread_create(&datathread, NULL, sendData, (void *)j);
-  	printf("thread start rc = %d\n",rc);
-    continue;
+	  puts("starting sendData");
+	  stopData = 0;
+  	  int j = 1;
+  	  pthread_t datathread;
+  	  int rc = pthread_create(&datathread, NULL, sendData, (void *)j);
+  	  printf("thread start rc = %d\n",rc);
+      continue;
 	}
   // in case we are running but get another discovery packet
   // This essentially switches DE simulator to talk to a different LH and/or port.
