@@ -10,6 +10,9 @@ class MainControlForm(FlaskForm):
 #  submit = SubmitField("Set Mode")
   startDC = SubmitField("Start Data Collection")
   stopDC = SubmitField("Stop Data Collection")
+  prop = SelectField('Type', choices = [('FT8','FT8'),('WSPR','WSPR')])
+  startprop = SubmitField("Start Monitoring")
+  stopprop  = SubmitField("Stop Monitoring")
 
 class ChannelControlForm(FlaskForm):
   antennaport0 = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])

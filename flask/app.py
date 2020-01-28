@@ -27,11 +27,12 @@ app = Flask(__name__)
 app.config.from_object(Config)
 csrf.init_app(app)
 #CsrfProtect(app)
-global theStatus, theDataStatus
+global theStatus, theDataStatus, thePropStatus
 statusControl = 0
 dataCollStatus = 0;
 theStatus = "Not yet started"
 theDataStatus = ""
+thePropStatus = 0
 
 
 def check_status_once():
@@ -122,6 +123,10 @@ def sdr():
               startcoll()
          if(form.stopDC.data ):
             stopcoll()
+         if(form.startprop.data):
+            startprop()
+         if(form.stopprop.data) :
+            stopprop()
          print("F: end of control loop; theStatus=", theStatus)
          form.destatus = theStatus
          form.dataStat = theDataStatus
@@ -455,7 +460,62 @@ def desetup():
 	  ch14f = ch14f, ch14b = ch14b,
 	  ch15f = ch15f, ch15b = ch15b )
 
-@app.route("/startcollection")
+# start propagation monitoring for FT8
+def startprop():
+  global thePropStatus
+  theCommand = 'SF'
+  print("start FT8 monitoring")
+  host_ip, server_port = "127.0.0.1", 6100
+  data = theCommand + "\n"  
+    # Initialize a TCP client socket using SOCK_STREAM 
+  try:
+     print("F: define socket")
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Establish connection to TCP server and exchange data
+     print("F: connect to socket")
+     tcp_client.connect((host_ip, server_port))
+     print("F: send command")
+     tcp_client.sendall(data.encode())
+  except Exception as e: 
+     print(e)
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error: mainctl program not responding; please restart it"
+     else:
+       theStatus = "Exception " + str(e)
+  finally:
+     tcp_client.close()
+     thePropStatus = 1
+  return 
+
+# stop propagation monitoring for FT8
+def stopprop():
+  global thePropStatus
+  theCommand = 'XF'
+  print("stop FT8 monitoring")
+  host_ip, server_port = "127.0.0.1", 6100
+  data = theCommand + "\n"  
+    # Initialize a TCP client socket using SOCK_STREAM 
+  try:
+     print("F: define socket")
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Establish connection to TCP server and exchange data
+     print("F: connect to socket")
+     tcp_client.connect((host_ip, server_port))
+     print("F: send command")
+     tcp_client.sendall(data.encode())
+  except Exception as e: 
+     print(e)
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error: mainctl program not responding; please restart it"
+     else:
+       theStatus = "Exception " + str(e)
+  finally:
+     tcp_client.close()
+     thePropStatus = 0
+  return 
+
+
+#@app.route("/startcollection")
 def startcoll():
   form = MainControlForm()
   global theStatus, theDataStatus
@@ -470,8 +530,7 @@ def startcoll():
      theDataStatus = "Path for saving data nonexistent or invalid: '" + ringbufferPath + "'"
      dataCollStatus = 0
      form.dataStat = theDataStatus
-     return
-    
+     return   
   theCommand = 'SC'
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
@@ -495,10 +554,11 @@ def startcoll():
      theDataStatus = "Started data collection"
      dataCollStatus = 1
      form.dataStat = theDataStatus
-
   return 
 
-@app.route("/stopcollection")
+
+
+#@app.route("/stopcollection")
 def stopcoll():
   form = MainControlForm()
   global theStatus, theDataStatus
