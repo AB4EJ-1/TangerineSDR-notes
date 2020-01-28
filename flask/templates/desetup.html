@@ -39,16 +39,15 @@
 	<form action = "http://localhost:5000/desetup" method = "post">
 	  <table style="margin-left:200px" border = "1" width=70% > 
 
- 	   <td style="width:50px">Ringbuffer path<input type="text" name="ringbufferPath" 
+ 	   <td style="width:75px">Ringbuffer path<input type="text" name="ringbufferPath" 
             value={{ ringbufferPath }} /> </td>
-
+<td>Status:   {{ status }} </td>
       </table> 
-
-
+ 
 	  <table style="margin-left:200px" border = "1" width=70% > 
 
 	  <tr><font color="white">
-
+      
        <th style="width:50px" >Channel</th>
 	   <th style="width:50px" >Antenna Port</th>
 	   <th>Center Frequency (MHz)</th>
@@ -58,83 +57,83 @@
 
 	   <td>0</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport0 }} </td>
-	   <td style="width:50px"><input type="text" name="ch0f" value={{ ch0f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch0b" value={{ ch0b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch0f" value={{ ch0f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch0b" value={{ ch0b }} > </td>
 	 <tr>
 	   <td>1</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport1 }} </td>
-	   <td style="width:50px"><input type="text" name="ch1f" value={{ ch1f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch1b" value={{ ch1b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch1f" value={{ ch1f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch1b" value={{ ch1b }} > </td>
 	 <tr>
 	   <td>2</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport2 }} </td>
-	   <td style="width:50px"><input type="text" name="ch2f" value={{ ch2f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch2b" value={{ ch2b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch2f" value={{ ch2f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch2b" value={{ ch2b }} > </td>
 	 <tr>
 	   <td>3</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport3 }} </td>>
-	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch3f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch3b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch3f" value={{ ch3f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch3b" value={{ ch3b }} > </td>
 	 <tr>
 	   <td>4</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport4 }} </td>>
-	   <td style="width:50px"><input type="text" name="ch4f" value={{ ch4f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch4b" value={{ ch4b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch4f" value={{ ch4f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch4b" value={{ ch4b }} > </td>
 	 <tr>
 	   <td>5</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport5 }} </td>
-	   <td style="width:50px"><input type="text" name="ch5f" value={{ ch5f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch5b" value={{ ch5b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch5f" value={{ ch5f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch5b" value={{ ch5b }} > </td>
 	 <tr>
 	   <td>6</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport6 }} </td>td>
-	   <td style="width:50px"><input type="text" name="ch6f" value={{ ch6f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch6b" value={{ ch6b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch6f" value={{ ch6f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch6b" value={{ ch6b }} > </td>
 	 <tr>
 	   <td>7</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport7 }} </td>
-	   <td style="width:50px"><input type="text" name="ch7f" value={{ ch7f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch7b" value={{ ch7b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch7f" value={{ ch7f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch7b" value={{ ch7b }} > </td>
 	 <tr>
 	   <td>8</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport8 }} </td>
-	   <td style="width:50px"><input type="text" name="ch8f" value={{ ch8f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch8b" value={{ ch8b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch8f" value={{ ch8f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch8b" value={{ ch8b }} > </td>
 	 <tr>
 	   <td>9</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport9 }} </td>
-	   <td style="width:50px"><input type="text" name="ch9f" value={{ ch9f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch9b" value={{ ch9b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch9f" value={{ ch9f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch9b" value={{ ch9b }} > </td>
 	 <tr>
 	   <td>10</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport10 }} </td>
-	   <td style="width:50px"><input type="text" name="ch10f" value={{ ch10f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch10b" value={{ ch10b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch10f" value={{ ch10f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch10b" value={{ ch10b }} > </td>
 	 <tr>
 	   <td>11</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport11 }} </td>
-	   <td style="width:50px"><input type="text" name="ch11f" value={{ ch11f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch11b" value={{ ch11b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch11f" value={{ ch11f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch11b" value={{ ch11b }} > </td>
 	 <tr>
 	   <td>12</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport12 }} </td>
-	   <td style="width:50px"><input type="text" name="ch12f" value={{ ch12f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch12b" value={{ ch12b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch12f" value={{ ch12f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch12b" value={{ ch12b }} > </td>
 	 <tr>
 	   <td>13</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport13 }} </td>>
-	   <td style="width:50px"><input type="text" name="ch13f" value={{ ch13f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch13b" value={{ ch13b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch13f" value={{ ch13f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch13b" value={{ ch13b }} > </td>
 	 <tr>
 	   <td>14</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport14 }} </td>
-	   <td style="width:50px"><input type="text" name="ch14f" value={{ ch14f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch14b" value={{ ch14b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch14f" value={{ ch14f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch14b" value={{ ch14b }} > </td>
 	 <tr>
 	   <td>15</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport15 }} </td></td>
-	   <td style="width:50px"><input type="text" name="ch15f" value={{ ch15f }} /> </td>
-	   <td style="width:50px"><input type="text" name="ch15b" value={{ ch15b }} /> </td>
+	   <td style="width:50px"><input type="text" name="ch15f" value={{ ch15f }} > </td>
+	   <td style="width:50px"><input type="text" name="ch15b" value={{ ch15b }} > </td>
 	  </table>   
 
 

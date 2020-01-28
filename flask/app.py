@@ -8,19 +8,25 @@ import configparser
 import smtplib
 from email.mime.multipart import MIMEMultipart 
 from email.mime.text import MIMEText 
-
+from extensions import csrf
+from config import Config
 from flask_wtf import Form
 # following is for future flask upgrade
 #from FlaskForm import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
 from flask import request, flash
-from forms import MainControlForm, ThrottleControlForm, ChannelControlForm
+from forms import MainControlForm, ThrottleControlForm, ChannelControlForm, ServerControlForm
 #from forms import ContactForm
 
 from wtforms import validators, ValidationError
+from flask_wtf import CSRFProtect
 
 app = Flask(__name__)
-app.secret_key = 'development key'
+#app.config['SECRET_KEY'] = 'this-is-really-secret'
+#app.secret_key = 'development key'
+app.config.from_object(Config)
+csrf.init_app(app)
+#CsrfProtect(app)
 global theStatus, theDataStatus
 statusControl = 0
 dataCollStatus = 0;
@@ -72,9 +78,9 @@ def check_status_once():
 
   theStatus = "Off or not connected. Needs restart."
 
-@app.route("/desetup2",methods=['POST','GET'])
-def members():
-   return render_template('desetup.html')
+#@app.route("/desetup2",methods=['POST','GET'])
+#def members():
+#   return render_template('desetup.html')
 
 #####################################################################
 # Here is the home page
@@ -187,6 +193,7 @@ def desetup():
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
+   theStatus = ""
    if request.method == 'GET':
      ringbufferPath = parser['settings']['ringbuffer_path']
      form.antennaport0.data =     parser['settings']['ant0']
@@ -214,6 +221,7 @@ def desetup():
      ch3f =     parser['settings']['ch3f']
      ch3b =     parser['settings']['ch3b']
      ch4f =     parser['settings']['ch4f']
+     print("ch4f='"+ch4f+"'")
      ch4b =     parser['settings']['ch4b']
      ch5f =     parser['settings']['ch5f']
      ch5b =     parser['settings']['ch5b']
@@ -239,7 +247,7 @@ def desetup():
      ch15b =     parser['settings']['ch15b']
      print("F: ringbufferPath=",ringbufferPath)
      return render_template('desetup.html',
-      form = form,
+      form = form, status = theStatus,
 	  ringbufferPath = ringbufferPath,
       ch0f = ch0f, ch0b = ch0b,
 	  ch1f = ch1f, ch1b = ch1b,
@@ -258,7 +266,64 @@ def desetup():
 	  ch14f = ch14f, ch14b = ch14b,
 	  ch15f = ch15f, ch15b = ch15b )
 
-   if request.method == 'POST':
+   if not form.validate():
+     theStatus = form.errors
+#     ringbufferPath = result.get('ringbufferPath'))
+     result = request.form
+     ringbufferPath = result.get('ringbufferPath')
+     ch0f =     str(result.get('ch0f'))
+     ch0b =     str(result.get('ch0b'))     
+     ch1f =     str(result.get('ch1f'))
+     ch1b =     str(result.get('ch1b'))
+     ch2f =     str(result.get('ch2f'))
+     ch2b =     str(result.get('ch2b'))
+     ch3f =     str(result.get('ch3f'))
+     ch3b =     str(result.get('ch3b'))
+     ch4f =     str(result.get('ch4f'))
+     ch4b =     str(result.get('ch4b'))
+     ch5f =     str(result.get('ch5f'))
+     ch5b =     str(result.get('ch5b'))
+     ch6f =     str(result.get('ch6f'))
+     ch6b =     str(result.get('ch6b'))
+     ch7f =     str(result.get('ch7f'))
+     ch7b =     str(result.get('ch7b'))
+     ch8f =     str(result.get('ch8f'))
+     ch8b =     str(result.get('ch8b'))
+     ch9f =     str(result.get('ch9f'))
+     ch9b =     str(result.get('ch9b'))
+     ch10f =    str(result.get('ch10f'))
+     ch10b =    str(result.get('ch10b'))
+     ch11f =    str(result.get('ch11f'))
+     ch11b =    str(result.get('ch11b'))
+     ch12f =    str(result.get('ch12f'))
+     ch12b =    str(result.get('ch12b'))
+     ch13f =    str(result.get('ch13f'))
+     ch13b =    str(result.get('ch13b'))
+     ch14f =    str(result.get('ch14f'))
+     ch14b =    str(result.get('ch14b'))
+     ch15f =    str(result.get('ch15f'))
+     ch15b =    str(result.get('ch15b'))
+     return render_template('desetup.html',
+	  ringbufferPath = ringbufferPath,
+      form = form, status = theStatus,
+      ch0f = ch0f, ch0b = ch0b,
+	  ch1f = ch1f, ch1b = ch1b,
+      ch2f = ch2f, ch2b = ch2b,
+	  ch3f = ch3f, ch3b = ch3b,
+	  ch4f = ch4f, ch4b = ch4b,
+	  ch5f = ch5f, ch5b = ch5b,
+	  ch6f = ch6f, ch6b = ch6b,
+	  ch7f = ch7f, ch7b = ch7b,
+	  ch8f = ch8f, ch8b = ch8b,
+	  ch9f = ch9f, ch9b = ch9b,
+	  ch10f = ch10f, ch10b = ch10b,
+	  ch11f = ch11f, ch11b = ch11b,
+	  ch12f = ch12f, ch12b = ch12b,
+	  ch13f = ch13f, ch13b = ch13b,
+	  ch14f = ch14f, ch14b = ch14b,
+	  ch15f = ch15f, ch15b = ch15b )
+   
+   if request.method == 'POST' and form.validate() :
      result = request.form
      print("F: result=", result.get('csubmit'))
      if result.get('csubmit') == "Discard Changes":
@@ -320,60 +385,59 @@ def desetup():
        parser.write(fp)
        fp.close()
 
-     ringbufferPath = parser['settings']['ringbuffer_path']
-
-     form.antennaport0.data =     parser['settings']['ant0']
-     form.antennaport1.data =     parser['settings']['ant1']
-     form.antennaport2.data =     parser['settings']['ant2']
-     form.antennaport3.data =     parser['settings']['ant3']
-     form.antennaport4.data =     parser['settings']['ant4']
-     form.antennaport5.data =     parser['settings']['ant5']
-     form.antennaport6.data =     parser['settings']['ant6']
-     form.antennaport7.data =     parser['settings']['ant7']
-     form.antennaport8.data =     parser['settings']['ant8']
-     form.antennaport9.data =     parser['settings']['ant9']
-     form.antennaport10.data =     parser['settings']['ant10']
-     form.antennaport11.data =     parser['settings']['ant11']
-     form.antennaport12.data =     parser['settings']['ant12']
-     form.antennaport13.data =     parser['settings']['ant13']
-     form.antennaport14.data =     parser['settings']['ant14']
-     form.antennaport15.data =     parser['settings']['ant15']
-     ch0f =     parser['settings']['ch0f']
-     ch0b =     parser['settings']['ch0b']     
-     ch1f =     parser['settings']['ch1f']
-     ch1b =     parser['settings']['ch1b']
-     ch2f =     parser['settings']['ch2f']
-     ch2b =     parser['settings']['ch2b']
-     ch3f =     parser['settings']['ch3f']
-     ch3b =     parser['settings']['ch3b']
-     ch4f =     parser['settings']['ch4f']
-     ch4b =     parser['settings']['ch4b']
-     ch5f =     parser['settings']['ch5f']
-     ch5b =     parser['settings']['ch5b']
-     ch6f =     parser['settings']['ch6f']
-     ch6b =     parser['settings']['ch6b']
-     ch7f =     parser['settings']['ch7f']
-     ch7b =     parser['settings']['ch7b']
-     ch8f =     parser['settings']['ch8f']
-     ch8b =     parser['settings']['ch8b']
-     ch9f =     parser['settings']['ch9f']
-     ch9b =     parser['settings']['ch9b']
-     ch10f =     parser['settings']['ch10f']
-     ch10b =     parser['settings']['ch10b']
-     ch11f =     parser['settings']['ch11f']
-     ch11b =     parser['settings']['ch11b']
-     ch12f =     parser['settings']['ch12f']
-     ch12b =     parser['settings']['ch12b']
-     ch13f =     parser['settings']['ch13f']
-     ch13b =     parser['settings']['ch13b']
-     ch14f =     parser['settings']['ch14f']
-     ch14b =     parser['settings']['ch14b']
-     ch15f =     parser['settings']['ch15f']
-     ch15b =     parser['settings']['ch15b']
-     print("F: ringbufferPath=",ringbufferPath)
-     return render_template('desetup.html',
+   ringbufferPath = parser['settings']['ringbuffer_path']
+   form.antennaport0.data =     parser['settings']['ant0']
+   form.antennaport1.data =     parser['settings']['ant1']
+   form.antennaport2.data =     parser['settings']['ant2']
+   form.antennaport3.data =     parser['settings']['ant3']
+   form.antennaport4.data =     parser['settings']['ant4']
+   form.antennaport5.data =     parser['settings']['ant5']
+   form.antennaport6.data =     parser['settings']['ant6']
+   form.antennaport7.data =     parser['settings']['ant7']
+   form.antennaport8.data =     parser['settings']['ant8']
+   form.antennaport9.data =     parser['settings']['ant9']
+   form.antennaport10.data =     parser['settings']['ant10']
+   form.antennaport11.data =     parser['settings']['ant11']
+   form.antennaport12.data =     parser['settings']['ant12']
+   form.antennaport13.data =     parser['settings']['ant13']
+   form.antennaport14.data =     parser['settings']['ant14']
+   form.antennaport15.data =     parser['settings']['ant15']
+   ch0f =     parser['settings']['ch0f']
+   ch0b =     parser['settings']['ch0b']     
+   ch1f =     parser['settings']['ch1f']
+   ch1b =     parser['settings']['ch1b']
+   ch2f =     parser['settings']['ch2f']
+   ch2b =     parser['settings']['ch2b']
+   ch3f =     parser['settings']['ch3f']
+   ch3b =     parser['settings']['ch3b']
+   ch4f =     parser['settings']['ch4f']
+   ch4b =     parser['settings']['ch4b']
+   ch5f =     parser['settings']['ch5f']
+   ch5b =     parser['settings']['ch5b']
+   ch6f =     parser['settings']['ch6f']
+   ch6b =     parser['settings']['ch6b']
+   ch7f =     parser['settings']['ch7f']
+   ch7b =     parser['settings']['ch7b']
+   ch8f =     parser['settings']['ch8f']
+   ch8b =     parser['settings']['ch8b']
+   ch9f =     parser['settings']['ch9f']
+   ch9b =     parser['settings']['ch9b']
+   ch10f =     parser['settings']['ch10f']
+   ch10b =     parser['settings']['ch10b']
+   ch11f =     parser['settings']['ch11f']
+   ch11b =     parser['settings']['ch11b']
+   ch12f =     parser['settings']['ch12f']
+   ch12b =     parser['settings']['ch12b']
+   ch13f =     parser['settings']['ch13f']
+   ch13b =     parser['settings']['ch13b']
+   ch14f =     parser['settings']['ch14f']
+   ch14b =     parser['settings']['ch14b']
+   ch15f =     parser['settings']['ch15f']
+   ch15b =     parser['settings']['ch15b']
+   print("F: ringbufferPath=",ringbufferPath)
+   return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
-      form = form,
+      form = form, status = theStatus,
       ch0f = ch0f, ch0b = ch0b,
 	  ch1f = ch1f, ch1b = ch1b,
       ch2f = ch2f, ch2b = ch2b,
@@ -539,8 +603,10 @@ def callsign():
 
 @app.route("/notification", methods = ['POST','GET'])
 def notification():
+   form = ServerControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
+   theStatus = ""
    if request.method == 'GET':
      print("F: smtpsvr = ", parser['email']['smtpsvr'])
      smtpsvr =     parser['email']['smtpsvr']
@@ -554,7 +620,32 @@ def notification():
 	  smtpsvr = smtpsvr, emailfrom = emailfrom,
       emailto = emailto, smtpport = smtpport,
       smtptimeout = smtptimeout, smtpuid = smtpuid,
-      smtppw = smtppw)
+      smtppw = smtppw, status = theStatus, form = form)
+
+
+   form = ServerControlForm()
+   if not form.validate():
+     result = request.form
+     emailto = result.get('emailto')
+     smtpsvr = result.get('smtpsvr')
+     emailfrom = result.get('emailfrom')
+     smtpport = result.get('smtpport')
+     smtptimeout = result.get('smtptimeout')
+     smtppw = result.get('smtppw')
+     smtpuid = result.get('smtpuid')
+     print("email to="+emailto)
+     print("smtpsvr="+smtpsvr)
+     theStatus = form.errors
+
+     result = request.form   
+
+
+     return render_template('notification.html',
+	  smtpsvr = smtpsvr, emailfrom = emailfrom,
+     emailto = emailto, smtpport = smtpport,
+      smtptimeout = smtptimeout, smtpuid = smtpuid,
+      smtppw = smtppw, status = theStatus, form=form)
+
 
    if request.method == 'POST':
      result = request.form
@@ -563,26 +654,30 @@ def notification():
        print("F: CANCEL")
      elif result.get('csubmit') == "Send test email" :
         print("Send test email")
-        msg = MIMEMultipart()
-        smtpsvr =     parser['email']['smtpsvr']
-        msg['From'] = parser['email']['emailfrom']
-        msg['To'] =   parser['email']['emailto']
-        msg['Subject'] = "Test message from your TangerineSDR"
-        smtpport =    parser['email']['smtpport']
-        smtptimeout = parser['email']['smtptimeout']
-        smtpuid =     parser['email']['smtpuid']
-        smtppw =      parser['email']['smtppw']
-        body = "Test message from your TangerineSDR"
-        msg.attach(MIMEText(body,'plain'))
-        server = smtplib.SMTP(smtpsvr,smtpport)
-        server.ehlo()
-        server.starttls()
-        server.login(smtpuid,smtppw)
-        text = msg.as_string()
-        server.sendmail(parser['email']['emailfrom'],parser['email']['emailto'],text)
-        print("sendmail done")
+        try:
+          msg = MIMEMultipart()
+          smtpsvr =     parser['email']['smtpsvr']
+          msg['From'] = parser['email']['emailfrom']
+          msg['To'] =   parser['email']['emailto']
+          msg['Subject'] = "Test message from your TangerineSDR"
+          smtpport =    parser['email']['smtpport']
+          smtptimeout = parser['email']['smtptimeout']
+          smtpuid =     parser['email']['smtpuid']
+          smtppw =      parser['email']['smtppw']
+          body = "Test message from your TangerineSDR"
+          msg.attach(MIMEText(body,'plain'))
+          server = smtplib.SMTP(smtpsvr,smtpport,'None',int(smtptimeout))
+          server.ehlo()
+          server.starttls()
+          server.login(smtpuid,smtppw)
+          text = msg.as_string()
+          server.sendmail(parser['email']['emailfrom'],parser['email']['emailto'],text)
+          print("sendmail done")
+          theStatus = "Test mail sent."
+        except Exception as e: 
+         print(e)
+         theStatus = e
         
-
      else:
         print("F: reached POST on notification;", result.get('smtpsvr'))
         parser.set('email', 'smtpsvr', result.get('smtpsvr'))
@@ -606,7 +701,7 @@ def notification():
 	  smtpsvr = smtpsvr, emailfrom = emailfrom,
       emailto = emailto, smtpport = smtpport,
       smtptimeout = smtptimeout, smtpuid = smtpuid,
-      smtppw = smtppw)
+      smtppw = smtppw, status = theStatus)
 
 @app.route("/propagation",methods=['POST','GET'])
 def propagation():
