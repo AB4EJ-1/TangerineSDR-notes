@@ -251,6 +251,35 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 // NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
   puts("mybuf="); puts(mybuf);
 
+  if(strncmp(mybuf, START_FT8_COLL , 2)==0)
+    {
+    uv_udp_send_t send_req;
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+
+	strcpy(b, START_FT8_COLL );
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+
+
+    printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+	}
+
+  if(strncmp(mybuf, STOP_FT8_COLL , 2)==0)
+    {
+    uv_udp_send_t send_req;
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+	strcpy(b, STOP_FT8_COLL );
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+    printf("Sending STOP FT8  to %s  port %u\n", DE_IP, DE_port);
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+	}
+
   if(strncmp(mybuf, START_DATA_COLL , 2)==0)
 	{
 
