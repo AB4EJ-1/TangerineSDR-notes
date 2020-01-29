@@ -44,6 +44,12 @@ long cmdthreadID;
 int cmdport;
 int stoplink;
 int stopData;
+int stopft8;
+int ft8active;
+struct iqpair {
+  float ival; 
+  float qval;
+};
 
 /*
 // notional buffer for DE A/D output. Will update with the real thing later...
@@ -61,6 +67,70 @@ struct dataBuf
 	};
 */
 
+void *sendFT8(void *threadid) {
+   struct iqpair iqpairdat[240000];
+   FILE *fp;
+   char name[64];
+   double dialfreq;
+   struct dataBuf ft8Buffer;
+   struct dataSample ft8Sample;
+   ft8active = 1;
+   long bufcount = 0;
+   ssize_t sentBytes;
+   puts("starting ft8 data transfer");
+  
+   printf("starting\n");
+   strcpy(name,"ft8_0_7075500_1_191106_2236.c2");
+   if((fp = fopen(name, "r")) == NULL)
+    {
+      fprintf(stderr, "Cannot open ft8 input file %s.\n", name);
+      return 1;
+    }
+   fread(&dialfreq, 1, 8, fp);
+   printf("%f\n",dialfreq);
+   size_t s = fread(iqpairdat,sizeof(iqpairdat),1,fp);
+   printf("read done, bytes = %ld\n", s);
+   time_t epoch = time(NULL);
+   printf("unix time = %ld\n", epoch);
+   strncpy(ft8Buffer.bufType,"FT",2);
+   ft8Buffer.timeStamp = (double) epoch;
+   client_addr.sin_port = htons(LH_port);
+   ft8Buffer.centerFreq = dialfreq;
+//   while(1)
+   {
+     long inputCounter = 0;
+     for(int i=0; i< 60; i++)  // once per second
+     {
+       for(int j=0; j < 4; j++)  // send 4 buffers, each containing 1000 complex samples
+       {
+         for (int k=0; k < 1000; k++)  
+         {
+         ft8Buffer.theDataSample[k].I_val = iqpairdat[inputCounter].ival;
+         ft8Buffer.theDataSample[k].Q_val = iqpairdat[inputCounter].qval;
+         inputCounter++;
+         }
+         printf("i = %d, j = %d, inputCounter = %ld\n", i, j,  inputCounter);
+         ft8Buffer.bufCount = bufcount++;
+
+         sentBytes = sendto(sock, (const struct dataBuf *)&ft8Buffer, sizeof(ft8Buffer), 0, 
+	      (struct sockaddr*)&client_addr, sizeof(client_addr));
+
+         fprintf(stderr,"UDP message sent from thread. bytes= %ld\n", sentBytes); 
+    // sleep(1);
+         usleep(250000);  // wait for this many microseconds
+         if(stopft8)
+	       {
+           puts("UDP thread end");
+           ft8active = 0;
+	       pthread_exit(NULL);
+	       }
+       }
+     }
+
+   }
+   
+ 
+}
 
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
 void *sendData(void *threadid) {
@@ -135,6 +205,8 @@ int main() {
 
   stoplink = 0;
   stopData = 0;
+  stopft8 = 0;
+  ft8active = 0;
   int addr_len;
   int count;
   int ret;
@@ -218,12 +290,22 @@ int main() {
 	  }
     if(strncmp(buffer, "SF",2)==0)
       {
+      if (ft8active)
+        {
+        puts("FT8 already running");
+        continue;
+        }
       printf("Start FT8 command received\n");
+      stopft8 = 0;
+      int j = 2;
+      pthread_t ft8thread;
+      int rc = pthread_create(&ft8thread, NULL, sendFT8, (void*)j);
       continue;
       }
     if(strncmp(buffer, "XF",2)==0)
       {
       printf("Stop FT8 command received\n");
+      stopft8 = 1;
       continue;
       }
     if(strncmp(buffer, "XX",2)==0)
@@ -232,7 +314,7 @@ int main() {
 	  return 0;
 	  }
     if(strncmp(buffer, "SC",2)==0)
-	{
+	  {
 	  puts("starting sendData");
 	  stopData = 0;
   	  int j = 1;
@@ -240,7 +322,8 @@ int main() {
   	  int rc = pthread_create(&datathread, NULL, sendData, (void *)j);
   	  printf("thread start rc = %d\n",rc);
       continue;
-	}
+	  }
+
   // in case we are running but get another discovery packet
   // This essentially switches DE simulator to talk to a different LH and/or port.
   // TODO: Need to keep track of multiple LH devices, allow link & unlink
