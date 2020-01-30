@@ -125,22 +125,12 @@ struct sockaddr_in recv_addr;
 
 static long packetCount;
 
-// buffer for A/D data from DE
-struct dataSample
-	{
-	float I_val;
-	float Q_val;
-	};
-typedef struct databBuf
-	{
-	long bufCount;
-	long timeStamp;
-	//struct dataSample myDataSample[1024]; this is the logical layout using dataSample.
-    //    Below is what Digital RF reequires to be able to understand the samples.
-    //    In the array, starting at zero, sample[j] = I, sample[j+1] = Q (complex data)
-        float theDataSample[2048];  // should be double the number of samples
-	} DATABUF ;
-
+// variables for FT8 reception
+char date[12];
+char name[64];
+time_t t;
+struct tm *gmt;
+FILE *fp;
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
@@ -259,7 +249,6 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
 	strcpy(b, START_FT8_COLL );
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
-
 
     printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
@@ -465,8 +454,18 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     }
   printf("UDP data recvd\n");
 
+    DATABUF *buf_ptr;
+    buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
+    memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
+  //  packetCount = (long) buf_ptr1->bufCount;
+  //  printf("bufcount = %ld\n", packetCount);
+    printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+ //   if(strncmp(buf_ptr1->bufType, "OK" ,2) ==0) puts ("STATUS INQUIRY.");
+  
+
   // respond to STATUS INQUIRY
-  if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B && nread < 8000)  // oh man this is crude
+ // if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B && nread < 8000) 
+    if(strncmp(buf_ptr->bufType, "OK" ,2) ==0)
 	{
 	puts("OK status message received from DE!  It's alive!!");
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
@@ -476,6 +475,40 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
      return;
 	}
+
+    if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
+    {
+       double dialfreq = buf_ptr->centerFreq;
+       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->bufCount);
+       if(buf_ptr->bufCount == 0 )   // this is the first buffer of the minute
+       {
+        t = time(NULL);
+        if((gmt = gmtime(&t)) == NULL)
+          { fprintf(stderr,"Could not convert time\n"); }
+        strftime(date, 12, "%y%m%d_%H%M", gmt);
+        sprintf(name, "ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
+       if((fp = fopen(name, "wb")) == NULL)
+        { fprintf(stderr,"Could not open file %s \n",name);
+          return;
+        }
+       fwrite(&dialfreq, 1, 8, fp);
+      }
+      fwrite(buf_ptr->theDataSample, 1, 8000, fp);
+      if (buf_ptr->bufCount == 239 )   // was this the last buffer?
+        {
+        fclose(fp);
+        char mycmd[100];
+        strcpy(mycmd, "/mnt/RAM_disk/FT8/ft8d ");
+        strcat(mycmd,name);
+        strcat(mycmd, " > decoded.txt");
+        printf("%s\n",mycmd);
+        int ret = system(mycmd);
+        puts("ft8 decode ran");
+        }
+
+      return;
+
+    }
 
 
   buffers_received++;
@@ -499,9 +532,9 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
     {
     // set up memory and get a copy of the data (may be possible to eliminate this step)
-    DATABUF *buf_ptr;
-    buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-    memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
+  //  DATABUF *buf_ptr;
+  //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
+  //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
     packetCount = (long) buf_ptr->bufCount;
     printf("bufcount = %ld\n", packetCount);
 
