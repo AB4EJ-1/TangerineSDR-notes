@@ -77,10 +77,26 @@ void *sendFT8(void *threadid) {
    ft8active = 1;
    long bufcount = 0;
    ssize_t sentBytes;
-   puts("starting ft8 data transfer");
-  
+
+   printf("stating ft8 data transfer; thread id = %d \n",threadid);
+
    printf("starting\n");
-   strcpy(name,"ft8_0_7075500_1_191106_2236.c2");
+   if(threadid == 0)
+      strcpy(name, "ft8_0_7075500_1_191106_2236.c2");
+   if((int)threadid == 1)
+      strcpy(name, "ft8_1_10137500_1_191106_2236.c2");
+   if(threadid == 2)
+      strcpy(name, "ft8_2_14075500_1_191106_2236.c2");
+   if(threadid == 3)
+      strcpy(name, "ft8_3_18101500_1_191106_2236.c2");
+   if(threadid == 4)
+      strcpy(name, "ft8_4_21075500_1_191106_2236.c2");
+   if(threadid == 5)
+     strcpy(name, "ft8_5_24916500_1_191106_2236.c2");
+   if(threadid == 6)
+     strcpy(name, "ft8_6_28075500_1_191106_2236.c2");
+   if(threadid == 7)
+     strcpy(name, "ft8_7_50314500_1_191106_2236.c2");
    if((fp = fopen(name, "r")) == NULL)
     {
       fprintf(stderr, "Cannot open ft8 input file %s.\n", name);
@@ -96,6 +112,7 @@ void *sendFT8(void *threadid) {
    ft8Buffer.timeStamp = (double) epoch;
    client_addr.sin_port = htons(LH_port);
    ft8Buffer.centerFreq = dialfreq;
+   ft8Buffer.channelNo = (int)threadid;
 //   while(1)
    {
      long inputCounter = 0;
@@ -122,13 +139,14 @@ void *sendFT8(void *threadid) {
 	       {
            puts("UDP thread end");
            ft8active = 0;
+           stopft8 = 0;
 	       pthread_exit(NULL);
 	       }
        }
      }
 
    }
-   
+   ft8active = 0;  // done here
  
 }
 
@@ -296,10 +314,38 @@ int main() {
         continue;
         }
       printf("Start FT8 command received\n");
+      char cmdline[200];
+      strncpy(cmdline, buffer, count);  // get command info 
+      printf("cmdline = %s\n",cmdline);
+      char *pch;
+      char thecmd[2];
+      int channel[8];
+      float ft8freq[8];
+      sscanf(cmdline,"%s %d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f",
+         thecmd, &channel[0],&channel[1],&channel[2],&channel[3],
+         &channel[4],&channel[5],&channel[6],&channel[7],
+         &ft8freq[0],&ft8freq[1],&ft8freq[2],&ft8freq[3],
+         &ft8freq[4],&ft8freq[5],&ft8freq[6],&ft8freq[7]);
+      printf("conversion = %s %d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f \n",
+         thecmd, channel[0],channel[1],channel[2],channel[3],
+         channel[4],channel[5],channel[6],channel[7],
+         ft8freq[0],ft8freq[1],ft8freq[2],ft8freq[3],
+         ft8freq[4],ft8freq[5],ft8freq[6],ft8freq[7]);
+
+      pthread_t ft8nthread[8];  
+      int k;
+      int rc;    // create one thread for each ft8 channel to run
+      for(int ft8chan = 0; ft8chan < 8; ft8chan++)
+       {
+         if(channel[ft8chan] == -1) continue;  // bypass any channels turned off
+         k = ft8chan;
+         rc = pthread_create(&ft8nthread[ft8chan], NULL, sendFT8, (void*)k);
+         printf("startng ft8 channel %d %d \n",ft8chan,rc);
+       }
       stopft8 = 0;
-      int j = 2;
-      pthread_t ft8thread;
-      int rc = pthread_create(&ft8thread, NULL, sendFT8, (void*)j);
+   //   int j = 2;
+  //    pthread_t ft8thread;
+   //   int rc = pthread_create(&ft8thread, NULL, sendFT8, (void*)j);
       continue;
       }
     if(strncmp(buffer, "XF",2)==0)
