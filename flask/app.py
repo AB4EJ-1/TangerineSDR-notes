@@ -463,8 +463,48 @@ def desetup():
 # start propagation monitoring for FT8
 def startprop():
   global thePropStatus
-  theCommand = 'SF'
-  print("start FT8 monitoring")
+  parser = configparser.ConfigParser(allow_no_value=True)
+  parser.read('config.ini')
+  ft80f  =     parser['settings']['ft80f'] 
+  ftant0 =     parser['settings']['ftant0']
+  if (ftant0 == 'Off'): 
+    ftant0 = '-1'
+  ft81f  =     parser['settings']['ft81f'] 
+  ftant1 =     parser['settings']['ftant1']
+  if (ftant1 == 'Off'): 
+    ftant1 = '-1'
+  ft82f  =     parser['settings']['ft82f']
+  ftant2 =     parser['settings']['ftant2']
+  if (ftant2 == 'Off'): 
+    ftant2 = '-1'
+  ft83f  =     parser['settings']['ft83f']
+  ftant3 =     parser['settings']['ftant3']  
+  if (ftant3 == 'Off'): 
+    ftant3 = '-1'
+  ft84f  =     parser['settings']['ft84f']
+  ftant4 =     parser['settings']['ftant4']
+  if (ftant4 == 'Off'): 
+    ftant4 = '-1'
+  ft85f  =     parser['settings']['ft85f']
+  ftant5 =     parser['settings']['ftant5']  
+  if (ftant5 == 'Off'): 
+    ftant5 = '-1'
+  ft86f  =     parser['settings']['ft86f']
+  ftant6 =     parser['settings']['ftant6']
+  if (ftant6 == 'Off'): 
+    ftant6 = '-1'
+  ft87f  =     parser['settings']['ft87f']
+  ftant7 =     parser['settings']['ftant7']
+  if (ftant7 == 'Off'): 
+    ftant7 = '-1'
+
+  theCommand = 'SF' + ' ' + ftant0 + ' ' + ftant1 + ' ' + ftant2 + ' ' + \
+                            ftant3 + ' ' + ftant4 + ' ' + ftant5 + ' ' + \
+                            ftant6 + ' ' + ftant7 + ' ' + \
+                            ft80f  + ' ' + ft81f  + ' ' + ft82f + ' ' + \
+                            ft83f  + ' ' + ft84f  + ' ' + ft85f + ' ' + \
+                            ft86f  + ' ' + ft87f
+  print("start FT8 monitoring " + theCommand)
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
     # Initialize a TCP client socket using SOCK_STREAM 
@@ -557,7 +597,6 @@ def startcoll():
   return 
 
 
-
 #@app.route("/stopcollection")
 def stopcoll():
   form = MainControlForm()
@@ -586,9 +625,7 @@ def stopcoll():
      tcp_client.close()
      theDataStatus = "Stopped data collection"
      dataCollStat = 0
-
   return
-
 
 @app.route("/throttle", methods = ['POST','GET'])
 def throttle():
@@ -682,7 +719,6 @@ def notification():
       smtptimeout = smtptimeout, smtpuid = smtpuid,
       smtppw = smtppw, status = theStatus, form = form)
 
-
    form = ServerControlForm()
    if not form.validate():
      result = request.form
@@ -699,13 +735,11 @@ def notification():
 
      result = request.form   
 
-
      return render_template('notification.html',
 	  smtpsvr = smtpsvr, emailfrom = emailfrom,
      emailto = emailto, smtpport = smtpport,
       smtptimeout = smtptimeout, smtpuid = smtpuid,
       smtppw = smtppw, status = theStatus, form=form)
-
 
    if request.method == 'POST':
      result = request.form

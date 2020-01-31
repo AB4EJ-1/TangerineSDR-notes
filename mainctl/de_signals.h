@@ -30,6 +30,8 @@ typedef struct databBuf
     char bufType[2];
 	long bufCount;
 	long timeStamp;
+    int channelNo;
+    double centerFreq;
 	//struct dataSample myDataSample[1024]; this is the logical layout using dataSample.
     //    Below is what Digital RF reequires to be able to understand the samples.
     //    In the array, starting at zero, sample[j] = I, sample[j+1] = Q (complex data)
