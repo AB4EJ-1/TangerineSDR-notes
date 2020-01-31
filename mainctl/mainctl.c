@@ -127,10 +127,10 @@ static long packetCount;
 
 // variables for FT8 reception
 char date[12];
-char name[64];
+char name[8][64];
 time_t t;
 struct tm *gmt;
-FILE *fp;
+FILE *fp[8];
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
@@ -235,7 +235,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     }
   puts("Command received from web control");
   printf("nread = %zd\n",nread);
-  char mybuf[80];
+  char mybuf[100];
   memset(&mybuf, 0, sizeof(mybuf));
   strncpy(mybuf, buf->base, nread-1);   // subtract 1 to strip CR
 // NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
@@ -244,12 +244,13 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   if(strncmp(mybuf, START_FT8_COLL , 2)==0)
     {
     uv_udp_send_t send_req;
-	char b[60];
-	for(int i=0; i< 60; i++) { b[i] = 0; }
+	char b[100];
+	for(int i=0; i< 100; i++) { b[i] = 0; }
 
-	strcpy(b, START_FT8_COLL );
-	const uv_buf_t a[] = {{.base = b, .len = 2}};
-
+	strncpy(b, mybuf, nread-1 );
+	const uv_buf_t a[] = {{.base = b, .len = nread-1}};
+    int rt =     system("mkdir /mnt/RAM_disk/FT8");
+    rt = system("rm /mnt/RAM_disk/FT8/*.*");
     printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
@@ -446,6 +447,7 @@ void statusInquiry() {
 void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
   {
+  int channelPtr;
   if(nread == 0 )
     { 
       puts("received UDP zero");
@@ -479,29 +481,36 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
     {
        double dialfreq = buf_ptr->centerFreq;
+       channelPtr = buf_ptr-> channelNo;
        printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->bufCount);
        if(buf_ptr->bufCount == 0 )   // this is the first buffer of the minute
        {
         t = time(NULL);
+
+
         if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
         strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name, "ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
-       if((fp = fopen(name, "wb")) == NULL)
-        { fprintf(stderr,"Could not open file %s \n",name);
+        sprintf(name[channelPtr], "/mnt/RAM_disk/FT8/ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
+       if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
+        { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
           return;
         }
-       fwrite(&dialfreq, 1, 8, fp);
+       fwrite(&dialfreq, 1, 8, fp[channelPtr]);
       }
-      fwrite(buf_ptr->theDataSample, 1, 8000, fp);
+      fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
       if (buf_ptr->bufCount == 239 )   // was this the last buffer?
         {
-        fclose(fp);
+        fclose(fp[channelPtr]);
+        char chstr[2];
+        sprintf(chstr,"%d",channelPtr);
         char mycmd[100];
-        strcpy(mycmd, "/mnt/RAM_disk/FT8/ft8d ");
-        strcat(mycmd,name);
-        strcat(mycmd, " > decoded.txt");
-        printf("%s\n",mycmd);
+        strcpy(mycmd, "./ft8d ");
+        strcat(mycmd,name[channelPtr]);
+        strcat(mycmd, "  > /mnt/RAM_disk/FT8/decoded");
+        strcat(mycmd, chstr);
+        strcat(mycmd, ".txt &");
+        printf("the command: %s\n",mycmd);
         int ret = system(mycmd);
         puts("ft8 decode ran");
         }
