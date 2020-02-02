@@ -1,4 +1,19 @@
 <html>
+<script type=text/javascript src="{{
+  url_for('static', filename='jquery.js') }}"></script>
+<script type=text/javascript>
+$.getJSON( "/_ft8list", function( data ) {
+  var items = [];
+  $.each( data, function( key, val ) {
+    items.push( "<li id='" + key + "'>" + val + "</li>" );
+  });
+  $( "<ul/>", {
+    "class": "my-new-list",
+    html: items.join( "" )
+  }).appendTo( "#result" );
+});
+</script>
+<body>
 
 <table width="100%">
    <tbody><tr>
@@ -50,9 +65,8 @@
 
     <form style="margin-left:200px" width = 75% action = "http://localhost:5000/" method = post>
        <table>
-        <td>
-         
-         <fieldset style="width:50%" align="center" >
+        <td> 
+         <fieldset style="width:40%" align="center" >
             <legend>Data Collection</legend>
             {{ form.hidden_tag() }}    
             <div style = font-size:20px; font-weight:bold; margin-left:150px;>
@@ -66,7 +80,7 @@
          </fieldset>
          </td>
          <td>
-         <fieldset style="width:50%" align = "right">
+         <fieldset style="width:40%" align = "right">
           <legend>Watch Propagation</legend>
              <div style = font-size:20px; font-weight:bold; margin-left:150px;>
                {{ form.prop.label }}<br>
@@ -77,18 +91,24 @@
             </div>
            </fieldset>
            </td>
+         <td>
+<!--          <fieldset style="width:50%" align = "left">  -->
+         <fieldset style="width:350px;margin-right:100px;" align = "left">
+          <legend>FT8 results</legend>
+             <div style = "font-size:15px;margin-left:10px;
+               height:150px;width:300px;overflow:auto;" >
+                  <span id=result></span>  
+<!--               id=result>?  -->
+               <br><br>
+
+            </div>
+           </fieldset>
+           </td>
               
       </form>
 
-<!--
-		   <p style="margin-left:200px" class="links"><b><a href="/TangerineSDR_documents/">Central Control System</a></b></p>
-
-
-		   <p style="margin-left:200px"  class="links"><b><a href="/propagation">Local Propagation Analyzer</a></b></p>
-
--->
        </td>
    </table>
   </tbody>
-
+</body>
 </html>

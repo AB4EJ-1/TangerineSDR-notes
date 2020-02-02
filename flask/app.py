@@ -1,4 +1,5 @@
-from flask import Flask, flash, redirect, render_template, request, session, abort
+from flask import Flask, flash, redirect, render_template, request, session, abort, jsonify
+import simplejson as json
 import socket
 import _thread
 import time
@@ -803,7 +804,7 @@ def propagation():
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
-
+   psk = False
    if request.method == 'GET':
      form.antennaport0.data =     parser['settings']['ftant0']
      form.antennaport1.data =     parser['settings']['ftant1']
@@ -822,6 +823,7 @@ def propagation():
      ft86f =     parser['settings']['ft86f']
      ft87f =     parser['settings']['ft87f']
      return render_template('ft8setup.html',
+      pskindicator = psk,
       form  = form,
       ft80f = ft80f,
 	  ft81f = ft81f,
@@ -888,6 +890,26 @@ def propagation():
 	  ft86f = ft86f, 
 	  ft87f = ft87f  )
 
+@app.route('/_ft8list')
+def ft8list():
+
+  linelist = []
+  for i in range(0,3):
+   ed = { 'line': 'this is a line' }
+   linelist.append(ed)
+
+  jsonStr = json.dumps(linelist)
+
+#  linelist ={"line": [
+#    "now is the time for all", "good men to come to the aid",
+#     "of their country" ] }
+
+  print("send to page:" , linelist)
+  a = ['result1 is here - now is the time for all good men to come to the aid',
+  'result2 is... here!', 'result3 is here']
+
+
+  return jsonify(a='halkjsdfhkaljsfhakljsdhfakjsdhfkaljsdf',b='agfuaslidfuahysdlifuhsaidufa',c='rsalegt;fsdlkgvjn;fksdlgj;slgjs;lkskfd',d='4',e='5',f='6',g='7',h='8',i='9')
 
 ######################################################################
 @app.errorhandler(404)
