@@ -1,4 +1,4 @@
-from flask import Flask, flash, redirect, render_template, request, session, abort, jsonify
+from flask import Flask, flash, redirect, render_template, request, session, abort, jsonify, Response
 import simplejson as json
 import socket
 import _thread
@@ -871,7 +871,7 @@ def propagation():
      form.antennaport5.data =     parser['settings']['ftant5']
      form.antennaport6.data =     parser['settings']['ftant6']
      form.antennaport7.data =     parser['settings']['ftant7']
-     ft80f =     parser['settings']['ft80f']
+     ft80f =     parser['settings']['ft80f']/media/odroid/hamsci/hdf5
      ft81f =     parser['settings']['ft81f']
      ft82f =     parser['settings']['ft82f']
      ft83f =     parser['settings']['ft83f']
@@ -893,23 +893,29 @@ def propagation():
 @app.route('/_ft8list')
 def ft8list():
 
-  linelist = []
-  for i in range(0,3):
-   ed = { 'line': 'this is a line' }
-   linelist.append(ed)
+  f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
+  x = f.readlines()
+  f.close()
 
-  jsonStr = json.dumps(linelist)
+  ft8string = '{'
 
-#  linelist ={"line": [
-#    "now is the time for all", "good men to come to the aid",
-#     "of their country" ] }
-
-  print("send to page:" , linelist)
-  a = ['result1 is here - now is the time for all good men to come to the aid',
-  'result2 is... here!', 'result3 is here']
+#  for i in range(0,len(x)):
+  for i in range(0,len(x)):
+   ft8string = ft8string + '"' + str(i) + '":"' + x[i][0:len(x)-2] + '",'
 
 
-  return jsonify(a='halkjsdfhkaljsfhakljsdhfakjsdhfkaljsdf',b='agfuaslidfuahysdlifuhsaidufa',c='rsalegt;fsdlkgvjn;fksdlgj;slgjs;lkskfd',d='4',e='5',f='6',g='7',h='8',i='9')
+  ft8string = ft8string + '"end":"end"}'
+  print("string= " , ft8string)
+
+
+
+#  print(json.dumps(x))
+  
+#  return jsonify(a=a,b=b,c=c,d=d,e=e,f=f)
+#  return Response(json.dumps(a), mimetype='application/json')
+
+#  myjson = '{"1":"a_here", "2":"b_here"}'
+  return Response(ft8string, mimetype='application/json')
 
 ######################################################################
 @app.errorhandler(404)
