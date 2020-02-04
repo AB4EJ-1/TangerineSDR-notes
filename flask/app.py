@@ -871,7 +871,7 @@ def propagation():
      form.antennaport5.data =     parser['settings']['ftant5']
      form.antennaport6.data =     parser['settings']['ftant6']
      form.antennaport7.data =     parser['settings']['ftant7']
-     ft80f =     parser['settings']['ft80f']/media/odroid/hamsci/hdf5
+     ft80f =     parser['settings']['ft80f']
      ft81f =     parser['settings']['ft81f']
      ft82f =     parser['settings']['ft82f']
      ft83f =     parser['settings']['ft83f']
@@ -892,29 +892,23 @@ def propagation():
 
 @app.route('/_ft8list')
 def ft8list():
+  ft8string = ""
+  try:
+   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
+   x = f.readlines()
+   f.close()
 
-  f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
-  x = f.readlines()
-  f.close()
+# here we build a JSON string to populate the FT8 panel
+   ft8string = '{'
+   for i in range(0,len(x)):
+    ft8string = ft8string + '"' + str(i) + '":"' +  \
+      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
 
-  ft8string = '{'
+   ft8string = ft8string + '"end":" "}'
+   print("string= " , ft8string)
+  except:
+   print("ft8 file not found")
 
-#  for i in range(0,len(x)):
-  for i in range(0,len(x)):
-   ft8string = ft8string + '"' + str(i) + '":"' + x[i][0:len(x)-2] + '",'
-
-
-  ft8string = ft8string + '"end":"end"}'
-  print("string= " , ft8string)
-
-
-
-#  print(json.dumps(x))
-  
-#  return jsonify(a=a,b=b,c=c,d=d,e=e,f=f)
-#  return Response(json.dumps(a), mimetype='application/json')
-
-#  myjson = '{"1":"a_here", "2":"b_here"}'
   return Response(ft8string, mimetype='application/json')
 
 ######################################################################
