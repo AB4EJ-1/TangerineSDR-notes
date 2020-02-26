@@ -51,21 +51,15 @@ struct iqpair {
   float qval;
 };
 
-/*
-// notional buffer for DE A/D output. Will update with the real thing later...
-struct dataSample
-	{
-	float I_val;
-	float Q_val;
-	};
 
-struct dataBuf
-	{
-	long bufcount;
-	long timeStamp;
-	struct dataSample myDataSample[1024];
-	};
-*/
+
+static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
+static uint16_t LH_CONF_OUT_port; // for sending (outbound) config request to DE
+static uint16_t DE_CONF_IN_port;  // port D; DE listens for config request on this port
+static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
+static uint16_t DE_DATA_IN_port;  // port E; DE listens for xmit data on this port
+static uint16_t LH_DATA_OUT_port; // for sending (outbound) data (e.g., mic audio) to DE
+
 
 void *sendFT8(void *threadid) {
    struct iqpair iqpairdat[240000];
@@ -78,24 +72,24 @@ void *sendFT8(void *threadid) {
    long bufcount = 0;
    ssize_t sentBytes;
 
-   printf("stating ft8 data transfer; thread id = %d \n",threadid);
+   printf("stating ft8 data transfer; thread id = %p \n",threadid);
 
    printf("starting\n");
    if(threadid == 0)
       strcpy(name, "ft8_0_7075500_1_191106_2236.c2");
-   if((int)threadid == 1)
+   if((long)threadid == 1)
       strcpy(name, "ft8_1_10137500_1_191106_2236.c2");
-   if(threadid == 2)
+   if((long)threadid == 2)
       strcpy(name, "ft8_2_14075500_1_191106_2236.c2");
-   if(threadid == 3)
+   if((long)threadid == 3)
       strcpy(name, "ft8_3_18101500_1_191106_2236.c2");
-   if(threadid == 4)
+   if((long)threadid == 4)
       strcpy(name, "ft8_4_21075500_1_191106_2236.c2");
-   if(threadid == 5)
+   if((long)threadid == 5)
      strcpy(name, "ft8_5_24916500_1_191106_2236.c2");
-   if(threadid == 6)
+   if((long)threadid == 6)
      strcpy(name, "ft8_6_28075500_1_191106_2236.c2");
-   if(threadid == 7)
+   if((long)threadid == 7)
      strcpy(name, "ft8_7_50314500_1_191106_2236.c2");
    if((fp = fopen(name, "r")) == NULL)
     {
@@ -112,7 +106,7 @@ void *sendFT8(void *threadid) {
    ft8Buffer.timeStamp = (double) epoch;
    client_addr.sin_port = htons(LH_port);
    ft8Buffer.centerFreq = dialfreq;
-   ft8Buffer.channelNo = (int)threadid;
+   ft8Buffer.channelNo = (long)threadid;
 //   while(1)
    {
      long inputCounter = 0;
@@ -228,6 +222,8 @@ int main() {
   int addr_len;
   int count;
   int ret;
+  DE_CONF_IN_port = 50001;  //fixed port on which to receive config request
+  DE_DATA_IN_port = 50002; 
   fd_set readfd;
   char buffer[1024];
   sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -280,7 +276,9 @@ int main() {
     count = recvfrom(sock, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
    // LH_port = ntohs(client_addr.sin_port);
     printf("command recd %c%c %x02 %x02 from port %d\n",buffer[0],buffer[1],buffer[0],buffer[1], LH_port);
-
+    char bufstr[50];
+    strncpy(bufstr, buffer, count);
+    printf("Raw buf= %s\n",bufstr);
    // command processsing
 
     if(strncmp(buffer, "S?",2) == 0 )
@@ -294,6 +292,34 @@ int main() {
       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 	  continue;
 	  }
+    if(strncmp(buffer, CREATE_CHANNEL ,2) == 0)
+      {
+
+  //    CONFIGBUF myConfigBuf;
+      union {
+       char mybuf1[100];
+       CONFIGBUF myConfigBuf;
+             } d;
+      memcpy(d.mybuf1, buffer, sizeof(buffer));
+
+      printf("CREATE CHANNEL RECD, cmd = %s, port C = %hu, port F = %hu \n",
+          d.myConfigBuf.cmd, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+      LH_CONF_IN_port = d.myConfigBuf.configPort;
+      LH_DATA_IN_port = d.myConfigBuf.dataPort;
+      client_addr.sin_port = htons(LH_port);  // this may wipe desired port
+
+      strncpy(d.myConfigBuf.cmd, "AK", 2);
+      d.myConfigBuf.configPort = DE_CONF_IN_port;
+      d.myConfigBuf.dataPort = DE_DATA_IN_port;
+
+
+      count = sendto(sock, d.mybuf1, sizeof(d.myConfigBuf), 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("response = %d  sent to ",count);
+      printf(" IP: %s, Port: %d\n", 
+      inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+	  continue;
+
+      }
     if(strncmp(buffer, "UL",2) == 0)
 	  {  // future function for allowing LH to drop its link to this DE
 	  printf("stoplink\n");

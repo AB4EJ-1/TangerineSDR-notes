@@ -26,7 +26,7 @@ struct dataSample
 	float I_val;
 	float Q_val;
 	};
-typedef struct databBuf
+typedef struct dataBuf
 	{
     char bufType[2];
 	long bufCount;
@@ -36,7 +36,7 @@ typedef struct databBuf
 	//struct dataSample myDataSample[1024]; this is the logical layout using dataSample.
     //    Below is what Digital RF reequires to be able to understand the samples.
     //    In the array, starting at zero, sample[j] = I, sample[j+1] = Q (complex data)
-        float theDataSample[2048];  // should be double the number of samples
+    struct dataSample theDataSample[1024];  // should be double the number of samples
 	} DATABUF ;
 
 typedef struct configChannelRequest
