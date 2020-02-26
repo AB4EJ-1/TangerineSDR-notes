@@ -35,6 +35,55 @@ theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
 
+def send_to_mainctl(cmdToSend):
+  print("F: sending:" + cmdToSend)
+  host_ip, server_port = "127.0.0.1", 6100
+  data = cmdToSend + "\n"  
+    # Initialize a TCP client socket using SOCK_STREAM 
+  try:
+     print("F: define socket")
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Establish connection to TCP server and exchange data
+     print("F: *** WC: *** connect to socket")
+     tcp_client.connect((host_ip, server_port))
+     print("F: send query")
+     tcp_client.sendall(data.encode())
+     print("F: wait for DE response")
+     time.sleep(4)
+     print("F: try to receive response")
+     received = "NOTHING"
+    # Read data from the TCP server and close the connection
+     try:
+       received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
+       print("F: received data from DE: ", received)
+     except Exception as e:
+       print("F: exception on recv")
+       theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
+     print("F: mainctl answered ", received)
+#     print("F: LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
+#     if(received[0:3].decode("ASCII") == "ACK"):
+#       print("F: received ACK")
+#       theStatus = "ON"
+  except Exception as e: 
+     print(e)
+     print("F: '" + e.errno + "'")
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error " + e.errno +  "mainctl program not responding"
+     else:
+       theStatus = "Exception " + str(e)
+  finally:
+     tcp_client.close()
+
+
+def channel_request():
+  print("Send channel creation request")   
+  parser = configparser.ConfigParser(allow_no_value=True)
+  parser.read('config.ini')
+# ports that mainctl will listen on for traffic from DE
+  configPort =  parser['settings']['configport']
+  dataPort   =  parser['settings']['dataport']
+  send_to_mainctl("CC," + configPort + "," + dataPort )
+  
 
 def check_status_once():
   print("F: *********** Status inquiry to LH *********")
@@ -134,7 +183,7 @@ def sdr():
          return render_template('tangerine.html', form = form)
 
 
-@app.route("/restart1")
+@app.route("/restart3")
 def restart():
    global theStatus, theDataStatus
    print("F: restart")
@@ -152,7 +201,10 @@ def restart():
 @app.route("/chkstat")
 def chkstat():
    global theStatus, theDatastatus
-   theStatus = check_status_once();
+#   print("Checking status...")
+#   theStatus = check_status_once();
+   print("Sending channel req")
+   channel_request()
    return redirect('/')
 
    
@@ -274,7 +326,6 @@ def desetup():
 
    if not form.validate():
      theStatus = form.errors
-#     ringbufferPath = result.get('ringbufferPath'))
      result = request.form
      ringbufferPath = result.get('ringbufferPath')
      ch0f =     str(result.get('ch0f'))
@@ -440,7 +491,10 @@ def desetup():
    ch14b =     parser['settings']['ch14b']
    ch15f =     parser['settings']['ch15f']
    ch15b =     parser['settings']['ch15b']
+   configport =parser['settings']['configport']
+   dataport =  parser['settings']['dataport']
    print("F: ringbufferPath=",ringbufferPath)
+# TODO: add code here to send the combined channel definition to mainctl
    return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
       form = form, status = theStatus,

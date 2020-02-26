@@ -7,7 +7,8 @@ Maps program mnemonics to 2-byte commands to be passed to DE
 #define LED1_OFF            "N1"
 #define TIME_INQUIRY        "T?"
 #define TIME_STAMP          "TS"
-#define DEFINE_CHANNEL      "CH"
+#define CREATE_CHANNEL      "CC"
+#define CONFIG_CHANNELS     "CH"
 #define UNDEFINE_CHANNEL    "UC"
 #define FIREHOSE_SERVER     "FH"
 #define START_DATA_COLL     "SC"
@@ -38,4 +39,23 @@ typedef struct databBuf
         float theDataSample[2048];  // should be double the number of samples
 	} DATABUF ;
 
+typedef struct configChannelRequest
+	{
+    char cmd[2];
+	uint16_t configPort;
+	uint16_t dataPort;
+	} CONFIGBUF;
+
+struct channelBlock
+	{
+	int channelNo;
+    int antennaPort;
+    double channelFreq;
+    double channelBandwidth;
+    };
+typedef struct channelBuf
+	{
+    char chCommand[2];
+    struct channelBlock channelDef[16];
+    } CHANNELBUF;
 
