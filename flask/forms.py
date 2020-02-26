@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, DecimalField
+from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, DecimalField, BooleanField
 
 from wtforms import validators, ValidationError
 
@@ -15,6 +15,7 @@ class MainControlForm(FlaskForm):
   stopprop  = SubmitField("Stop Monitoring")
 
 class ChannelControlForm(FlaskForm):
+  pskindicator = BooleanField('Active')
   antennaport0 = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])
   antennaport1 = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])
   antennaport2 = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])

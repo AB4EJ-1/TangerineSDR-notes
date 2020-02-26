@@ -1,4 +1,5 @@
-from flask import Flask, flash, redirect, render_template, request, session, abort
+from flask import Flask, flash, redirect, render_template, request, session, abort, jsonify, Response
+import simplejson as json
 import socket
 import _thread
 import time
@@ -34,6 +35,55 @@ theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
 
+def send_to_mainctl(cmdToSend):
+  print("F: sending:" + cmdToSend)
+  host_ip, server_port = "127.0.0.1", 6100
+  data = cmdToSend + "\n"  
+    # Initialize a TCP client socket using SOCK_STREAM 
+  try:
+     print("F: define socket")
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Establish connection to TCP server and exchange data
+     print("F: *** WC: *** connect to socket")
+     tcp_client.connect((host_ip, server_port))
+     print("F: send query")
+     tcp_client.sendall(data.encode())
+     print("F: wait for DE response")
+     time.sleep(4)
+     print("F: try to receive response")
+     received = "NOTHING"
+    # Read data from the TCP server and close the connection
+     try:
+       received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
+       print("F: received data from DE: ", received)
+     except Exception as e:
+       print("F: exception on recv")
+       theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
+     print("F: mainctl answered ", received)
+#     print("F: LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
+#     if(received[0:3].decode("ASCII") == "ACK"):
+#       print("F: received ACK")
+#       theStatus = "ON"
+  except Exception as e: 
+     print(e)
+     print("F: '" + e.errno + "'")
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error " + e.errno +  "mainctl program not responding"
+     else:
+       theStatus = "Exception " + str(e)
+  finally:
+     tcp_client.close()
+
+
+def channel_request():
+  print("Send channel creation request")   
+  parser = configparser.ConfigParser(allow_no_value=True)
+  parser.read('config.ini')
+# ports that mainctl will listen on for traffic from DE
+  configPort =  parser['settings']['configport']
+  dataPort   =  parser['settings']['dataport']
+  send_to_mainctl("CC," + configPort + "," + dataPort )
+  
 
 def check_status_once():
   print("F: *********** Status inquiry to LH *********")
@@ -133,7 +183,7 @@ def sdr():
          return render_template('tangerine.html', form = form)
 
 
-@app.route("/restart1")
+@app.route("/restart3")
 def restart():
    global theStatus, theDataStatus
    print("F: restart")
@@ -151,7 +201,10 @@ def restart():
 @app.route("/chkstat")
 def chkstat():
    global theStatus, theDatastatus
-   theStatus = check_status_once();
+#   print("Checking status...")
+#   theStatus = check_status_once();
+   print("Sending channel req")
+   channel_request()
    return redirect('/')
 
    
@@ -273,7 +326,6 @@ def desetup():
 
    if not form.validate():
      theStatus = form.errors
-#     ringbufferPath = result.get('ringbufferPath'))
      result = request.form
      ringbufferPath = result.get('ringbufferPath')
      ch0f =     str(result.get('ch0f'))
@@ -439,7 +491,10 @@ def desetup():
    ch14b =     parser['settings']['ch14b']
    ch15f =     parser['settings']['ch15f']
    ch15b =     parser['settings']['ch15b']
+   configport =parser['settings']['configport']
+   dataport =  parser['settings']['dataport']
    print("F: ringbufferPath=",ringbufferPath)
+# TODO: add code here to send the combined channel definition to mainctl
    return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
       form = form, status = theStatus,
@@ -803,7 +858,7 @@ def propagation():
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
-
+   psk = False
    if request.method == 'GET':
      form.antennaport0.data =     parser['settings']['ftant0']
      form.antennaport1.data =     parser['settings']['ftant1']
@@ -822,6 +877,7 @@ def propagation():
      ft86f =     parser['settings']['ft86f']
      ft87f =     parser['settings']['ft87f']
      return render_template('ft8setup.html',
+      pskindicator = psk,
       form  = form,
       ft80f = ft80f,
 	  ft81f = ft81f,
@@ -888,6 +944,26 @@ def propagation():
 	  ft86f = ft86f, 
 	  ft87f = ft87f  )
 
+@app.route('/_ft8list')
+def ft8list():
+  ft8string = ""
+  try:
+   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
+   x = f.readlines()
+   f.close()
+
+# here we build a JSON string to populate the FT8 panel
+   ft8string = '{'
+   for i in range(0,len(x)):
+    ft8string = ft8string + '"' + str(i) + '":"' +  \
+      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
+
+   ft8string = ft8string + '"end":" "}'
+   print("string= " , ft8string)
+  except:
+   print("ft8 file not found")
+
+  return Response(ft8string, mimetype='application/json')
 
 ######################################################################
 @app.errorhandler(404)
