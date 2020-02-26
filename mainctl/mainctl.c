@@ -298,7 +298,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     
     printf("third token = %s\n", token);
 
-    ret = sscanf(token,"%5hu",&LH_CONF_IN_port );
+    ret = sscanf(token,"%5hu",&LH_DATA_IN_port );
     printf("port conversion done, ret= %d\n",ret);
     printf("Port F assigned as %d \n",LH_DATA_IN_port);
 //    memcpy(configBuf_ptr->dataPort,LH_DATA_IN_port,2);
@@ -306,7 +306,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     memcpy(b,configBuf_ptr,sizeof(CONFIGBUF));
     puts("port C print done");
 //	strncpy(b, mybuf, nread-1 );
-	const uv_buf_t a[] = {{.base = b, .len = nread-1}};
+	const uv_buf_t a[] = {{.base = b, .len = sizeof(CONFIGBUF)}};
 
     printf("Sending CREATE CHANNEL to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
@@ -558,9 +558,15 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
      return;
 	}
 
-    if(strncmp(buf_ptr->bufType, "ACK" ,3) ==0)
+    if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)
     {
-    puts("ACK received from last command");
+    union {
+      char mybuf1[100];
+      CONFIGBUF myConfigBuf;
+          } d;
+    memcpy(d.mybuf1, buf->base, 6);
+    printf("AK received from last command:  %s ,", d.myConfigBuf.cmd);
+    printf("DE reecive ports = %hu  %hu \n", d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
  //   puts("set up write_req");
     uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
