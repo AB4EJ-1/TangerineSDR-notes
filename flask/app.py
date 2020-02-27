@@ -7,6 +7,7 @@ import os
 import subprocess
 import configparser
 import smtplib
+#from array import *
 from email.mime.multipart import MIMEMultipart 
 from email.mime.text import MIMEText 
 from extensions import csrf
@@ -129,9 +130,6 @@ def check_status_once():
 
   theStatus = "Off or not connected. Needs restart."
 
-#@app.route("/desetup2",methods=['POST','GET'])
-#def members():
-#   return render_template('desetup.html')
 
 #####################################################################
 # Here is the home page
@@ -459,6 +457,7 @@ def desetup():
    form.antennaport13.data =     parser['settings']['ant13']
    form.antennaport14.data =     parser['settings']['ant14']
    form.antennaport15.data =     parser['settings']['ant15']
+    
    ch0f =     parser['settings']['ch0f']
    ch0b =     parser['settings']['ch0b']     
    ch1f =     parser['settings']['ch1f']
@@ -494,7 +493,33 @@ def desetup():
    configport =parser['settings']['configport']
    dataport =  parser['settings']['dataport']
    print("F: ringbufferPath=",ringbufferPath)
-# TODO: add code here to send the combined channel definition to mainctl
+
+# build & send combined channel definition to mainctl
+
+   a = [form.antennaport0.data, form.antennaport1.data, 
+        form.antennaport2.data,  form.antennaport3.data,
+        form.antennaport4.data,  form.antennaport5.data,
+        form.antennaport6.data,  form.antennaport7.data,
+        form.antennaport8.data,  form.antennaport9.data,
+        form.antennaport10.data, form.antennaport11.data,
+        form.antennaport12.data, form.antennaport13.data,
+        form.antennaport14.data, form.antennaport15.data ]
+
+   f = [ ch0f, ch1f, ch2f, ch3f, ch4f,
+                    ch5f, ch6f, ch7f, ch8f, ch9f,
+                    ch10f, ch11f, ch12f, ch13f, ch14f, ch15f]
+
+   b = [ch0b, ch1b, ch2b, ch3b, ch4b, ch5b,
+                   ch6b, ch7b, ch8b, ch9b, ch10b, ch11b,
+                   ch12b, ch13b, ch14b, ch15b ]
+
+   configCmd = 'CH'
+   for i in list(range(16)):
+     configCmd = configCmd + ',' + str(i) + ',' + a[i] + ',' + f[i] + ',' + b[i]
+
+   print("configcmd=" + configCmd)
+   send_to_mainctl(configCmd);
+
    return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
       form = form, status = theStatus,

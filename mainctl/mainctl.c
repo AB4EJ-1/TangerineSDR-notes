@@ -36,8 +36,6 @@
 #include "discovered.h"
 
 extern DISCOVERED UDPdiscover();
-//extern struct sockaddr_in() UDPdiscover();
-//static struct sockaddr_in() DEdevice;
 static uint16_t LH_port;   // port A, used on LH (local host) for sending to DE, and will listen on
 static uint16_t DE_port;   // port B, that DE will listen on
 static char DE_IP[16];
@@ -48,6 +46,18 @@ static uint16_t DE_CONF_IN_port;  // port D; DE listens for config request on th
 static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
 static uint16_t DE_DATA_IN_port;  // port E; DE listens for xmit data on this port
 static uint16_t LH_DATA_OUT_port; // for sending (outbound) data (e.g., mic audio) to DE
+
+union {
+      char mybuf1[100];
+      CONFIGBUF myConfigBuf;
+          } d;
+union {
+      char mybuf2[sizeof(CHANNELBUF)];
+      CHANNELBUF channelBuffer;
+          } h;
+
+CONFIGBUF configRequest;
+      
 
 #define DEVICE_TANGERINE 7  // TangerineSDR for now
 
@@ -139,8 +149,7 @@ time_t t;
 struct tm *gmt;
 FILE *fp[8];
 
-CHANNELBUF channelBuffer;
-CONFIGBUF configRequest;
+
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
@@ -243,24 +252,10 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     free(buf->base);  // release memory allocated to read buffer
     return ;
     }
-  puts("Command received from web control");
-  printf("nread = %zd\n",nread);
-  char mybuf[100];
+  printf("Command received from web control: %c%c len= %zd\n", buf->base[0], buf->base[1], nread);
 
-/*
- // char mybuf1[100];
-  typedef struct {
-      char thecmd[2];
-      char c1[2];
-      char port1[5];
-      char c2[3];
-      char port2[5];
-     } mmap;
-  union {
-    char mybuf1[100];
-    mmap c;
-         } d;
- */
+  char mybuf[200];
+
   memset(&mybuf, 0, sizeof(mybuf));
   strncpy(mybuf, buf->base, nread-1);   // subtract 1 to strip CR
 //  strncpy(d.mybuf1,buf->base, nread-1);  // get a copy se we can dissect it
@@ -271,15 +266,11 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 	{
  //   printf("Create Channel received at maintcl; port1=%s \n",d.c.port1);
     uv_udp_send_t send_req;
-	char b[100];
+	char b[200];
 //	for(int i=0; i< 100; i++) { b[i] = 0; }
     CONFIGBUF *configBuf_ptr;
     configBuf_ptr = (CONFIGBUF *)malloc(sizeof(CONFIGBUF));  // TODO: free this later
     memcpy(configBuf_ptr->cmd, mybuf,2);
-//char* str1;
- //   puts("Convert port ##");
-  //  memcpy(str1,d.c.port1,5);
- //   printf("str1 = %s\n",str1);
 
     const char comma[2] = ",";
     char *token;
@@ -301,11 +292,11 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     ret = sscanf(token,"%5hu",&LH_DATA_IN_port );
     printf("port conversion done, ret= %d\n",ret);
     printf("Port F assigned as %d \n",LH_DATA_IN_port);
-//    memcpy(configBuf_ptr->dataPort,LH_DATA_IN_port,2);
+
     configBuf_ptr->dataPort = LH_DATA_IN_port;
     memcpy(b,configBuf_ptr,sizeof(CONFIGBUF));
     puts("port C print done");
-//	strncpy(b, mybuf, nread-1 );
+
 	const uv_buf_t a[] = {{.base = b, .len = sizeof(CONFIGBUF)}};
 
     printf("Sending CREATE CHANNEL to %s  port %u\n", DE_IP, DE_port);
@@ -314,11 +305,54 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     return;
 	}
 
-
+////////////////////////////////////////////////////////////////////
   if(strncmp(mybuf, CONFIG_CHANNELS, 2)==0) 
     {
-	memcpy(channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
+//    CHANNELBUF *channelBuf_ptr;
+//channelBuf_ptr = (CHANNELBUF *)malloc(sizeof(CHANNELBUF));  // TODO: free this later
+    uv_udp_send_t send_req;
+    char b[400];
+    printf("Config channels received\n");
+	memcpy(h.channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
+    const char comma[2] = ",";
+    char *token;
+    token = strtok(mybuf, comma);
+    printf("initial token = %s\n", token);
+   // token = strtok(NULL, comma);
 
+    for (int i=0; i < 16; i++)
+      {
+      printf("Channel# %i :\n",i);
+      token = strtok(NULL, comma);
+      printf("next token = %s\n", token);
+      int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].channelNo );
+      printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
+      token = strtok(NULL, comma);
+      printf("next token = %s\n", token);
+      ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
+      printf("converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
+      token = strtok(NULL, comma);
+      printf("next token = %s\n", token);
+      ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelFreq);
+      printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelFreq);
+      token = strtok(NULL, comma);
+      printf("next token = %s\n", token);
+      ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelBandwidth);
+      printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelBandwidth);
+
+      }
+    puts("done with conversion");
+ //   memcpy(&channelBuf_ptr, &channelBuffer, sizeof(channelBuffer));
+
+    memcpy(b,h.mybuf2,sizeof(CHANNELBUF));
+    puts("port C print done");
+
+	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
+//	const uv_buf_t a[] = {{.base = channelBuffer, .len = sizeof(CHANNELBUF)}}
+
+    printf("Sending CONFIG REQUEST to %s  port %u\n", DE_IP, d.myConfigBuf.configPort);
+    uv_ip4_addr(DE_IP, d.myConfigBuf.configPort, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     }
 
   if(strncmp(mybuf, START_FT8_COLL , 2)==0)
@@ -539,14 +573,11 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     DATABUF *buf_ptr;
     buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
     memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
-  //  packetCount = (long) buf_ptr1->bufCount;
-  //  printf("bufcount = %ld\n", packetCount);
+
     printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
- //   if(strncmp(buf_ptr1->bufType, "OK" ,2) ==0) puts ("STATUS INQUIRY.");
-  
 
   // respond to STATUS INQUIRY
- // if( buf-> base[0] == 0x4f && buf->base[1] == 0x4B && nread < 8000) 
+
     if(strncmp(buf_ptr->bufType, "OK" ,2) ==0)
 	{
 	puts("OK status message received from DE!  It's alive!!");
@@ -560,15 +591,12 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
     if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)
     {
-    union {
-      char mybuf1[100];
-      CONFIGBUF myConfigBuf;
-          } d;
+
     memcpy(d.mybuf1, buf->base, 6);
     printf("AK received from last command:  %s ,", d.myConfigBuf.cmd);
-    printf("DE reecive ports = %hu  %hu \n", d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+    printf("DE receive ports = %hu  %hu \n", d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
- //   puts("set up write_req");
+
     uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
     puts("Forward the ACK");
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
