@@ -35,11 +35,13 @@
 //#define IP_FOUND_ACK "IP_FOUND_ACK"
 #define PORT 1024
 
-
 static int LH_port;
 struct sockaddr_in client_addr;
 struct sockaddr_in server_addr;
+struct sockaddr_in config_in_addr;
+
 int sock;
+int sock2;
 long cmdthreadID;
 int cmdport;
 int stoplink;
@@ -50,7 +52,6 @@ struct iqpair {
   float ival; 
   float qval;
 };
-
 
 
 static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
@@ -141,7 +142,35 @@ void *sendFT8(void *threadid) {
 
    }
    ft8active = 0;  // done here
- 
+}
+
+void *awaitConfig(void *threadid) {
+  puts("Starting await-config thread");
+  char configBuffer[1024];
+  int addr_len;
+  int ret;
+  int count;
+// create & bind socket for inbound config packets
+  fd_set readcfg;
+  sock2 = socket(AF_INET,SOCK_DGRAM,0);
+  if(sock2 < 0 ) { perror("sock2 error\n"); return -1; }
+  addr_len = sizeof(struct sockaddr_in);
+  memset((void*)&config_in_addr,0,addr_len);
+  config_in_addr.sin_family = AF_INET;
+  config_in_addr.sin_addr.s_addr = htons(INADDR_ANY);
+  config_in_addr.sin_port = htons(DE_CONF_IN_port);
+  ret = bind(sock2,(struct sockaddr *)&config_in_addr,addr_len);
+  if(ret < 0) { perror("sock2 bind error\n"); return -1; }
+  
+  while(1)
+    {
+    count = recvfrom(sock2, configBuffer, LH_CONF_IN_port , 0, 
+        (struct sockaddr*)&config_in_addr, &addr_len);
+   // LH_port = ntohs(client_addr.sin_port);
+    printf("config command recd %c%c %x02 %x02 from port %d\n",
+         configBuffer[0],configBuffer[1],configBuffer[0],configBuffer[1], LH_port);
+
+    }
 }
 
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
@@ -312,6 +341,9 @@ int main() {
       d.myConfigBuf.configPort = DE_CONF_IN_port;
       d.myConfigBuf.dataPort = DE_DATA_IN_port;
 
+      int c = 100;   // thread ID for config thread
+      pthread_t configthread;
+      int rc = pthread_create(&configthread, NULL, awaitConfig, (void *)c);
 
       count = sendto(sock, d.mybuf1, sizeof(d.myConfigBuf), 0, (struct sockaddr*)&client_addr, addr_len);
       printf("response = %d  sent to ",count);
