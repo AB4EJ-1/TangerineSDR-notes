@@ -14,7 +14,7 @@ function goBack() {
    </td>
 	<td width="78%">
    	    <div class="bgtangerine">
-	     <hr class="tanger"><a href="http://localhost:5000">
+	     <hr class="tanger"><a href="/">
 		    <b style="font-size: 60px">TangerineSDR</b><br> </a>
 		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
             <div style="font-size: 24px">Configure User Notification</div>
@@ -34,7 +34,7 @@ function goBack() {
 		Configure how you will be notified when monitored station is heard
 
 
-     <form action = "http://localhost:5000/notification" method = "POST" action="">
+     <form action = "/notification" method = "POST" action="">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
          <fieldset style="width:85%" align="center" >
             <legend>Email Parameters</legend>

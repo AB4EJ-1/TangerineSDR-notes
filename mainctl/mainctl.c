@@ -32,7 +32,8 @@
 #include <errno.h>
 #include "de_signals.h"
 #include <unistd.h>
-
+#include "CUnit/CUnit.h"
+#include "CUnit/Basic.h"
 #include "discovered.h"
 
 extern DISCOVERED UDPdiscover();
@@ -56,8 +57,7 @@ union {
       CHANNELBUF channelBuffer;
           } h;
 
-CONFIGBUF configRequest;
-      
+CONFIGBUF configRequest;   
 
 #define DEVICE_TANGERINE 7  // TangerineSDR for now
 
@@ -99,7 +99,7 @@ static	int is_continuous = 1; /* continuous data written */
 static	int num_subchannels = 1; /* subchannels */
 static	int marching_periods = 1; /*  marching periods when writing */
 static	char uuid[100] = "DE output";
-static  char hdf5File[50] = "/media/odroid/hamsci/hdf5";
+static  char hdf5File[50];   // = "/media/odroid/416BFA3A615ACF0E/hamsci/hdf5";  // TODO: set based on python config
 //static  char hdf5File1[50] = "/tmp/RAM_disk/ch4_7";
 static uint64_t theUnixTime = 0;
 //static  char hdf5File[50] = "/tmp/ramdisk";
@@ -112,9 +112,10 @@ static  uint64_t vector_sum = 0;
 static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
 
 static char ringbuffer_path[50];
-const char *ringbufferPath;
+const  char *ringbufferPath;
 
-static     long packetCount;
+static long packetCount;
+static int recv_port_status = 0;
 ////////////////////////////////////////////////
 
 // uncomment to enable specific tests
@@ -135,10 +136,17 @@ static uv_stream_t* DEsockethandle;
 static uv_tcp_t* websocket; // socket to be used for comm to web server
 //static uv_stream_t* websockethandle;
 static uv_udp_t send_socket;
+static uv_udp_t data_socket;
+static uv_udp_t send_config_socket;
 static uv_stream_t* webStream;
 
-struct sockaddr_in send_addr;  // used for sending to DE
-struct sockaddr_in recv_addr;
+struct sockaddr_in send_addr;  // used for sending commands to DE
+struct sockaddr_in recv_addr;  // for command replies from DE (ACK, NAK)
+
+struct sockaddr_in send_config_addr;  //used for sending config req (CH) to DE
+struct sockaddr_in recv_config_addr;  // for config replies from DE
+
+struct sockaddr_in recv_data_addr;   // for data coming from DE
 
 static long packetCount;
 
@@ -149,9 +157,17 @@ time_t t;
 struct tm *gmt;
 FILE *fp[8];
 
-
-
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
+  buf->base = malloc(suggested_size);
+  buf->len = suggested_size;
+}
+
+static void alloc_config_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
+  buf->base = malloc(suggested_size);
+  buf->len = suggested_size;
+}
+
+static void alloc_data_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
 }
@@ -224,6 +240,177 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 
   puts("free the DE buffer");
   free(DEbuf->base);    
+}
+
+/////////////////////////////////////////////////////////////
+//  Callback for when UDP I/Q data packets received from DE 
+//  A separate callback handles incoming ACK data.
+/////////////////////////////////////////////////////////////
+void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
+		const struct sockaddr * addr, unsigned flags)
+  {
+  int channelPtr;
+  if(nread == 0 )
+    { 
+      puts("received UDP zero");
+      free(buf->base);
+	  return;
+    }
+  printf("UDP I/Q data recvd, bytes = %ld\n", nread);
+
+  DATABUF *buf_ptr;
+  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
+  memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
+  printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+
+
+////  start of handling incoming I/Q data //////////////
+
+  if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
+    {
+       double dialfreq = buf_ptr->centerFreq;
+       channelPtr = buf_ptr-> channelNo;
+       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->bufCount);
+       if(buf_ptr->bufCount == 0 )   // this is the first buffer of the minute
+       {
+        t = time(NULL);
+
+        if((gmt = gmtime(&t)) == NULL)
+          { fprintf(stderr,"Could not convert time\n"); }
+        strftime(date, 12, "%y%m%d_%H%M", gmt);
+        sprintf(name[channelPtr], "/mnt/RAM_disk/FT8/ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
+       if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
+        { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
+          return;
+        }
+       fwrite(&dialfreq, 1, 8, fp[channelPtr]);
+      }
+      fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
+      if (buf_ptr->bufCount == 239 )   // was this the last buffer?
+        {
+        fclose(fp[channelPtr]);
+        char chstr[2];
+        sprintf(chstr,"%d",channelPtr);
+        char mycmd[100];
+        strcpy(mycmd, "./ft8d ");
+        strcat(mycmd,name[channelPtr]);
+        strcat(mycmd, "  > /mnt/RAM_disk/FT8/decoded");
+        strcat(mycmd, chstr);
+        strcat(mycmd, ".txt &");
+        printf("the command: %s\n",mycmd);
+        int ret = system(mycmd);
+        puts("ft8 decode ran");
+        }
+      free (buf_ptr); 
+   //   return;  // TODO:  need to free both buffers after this before return
+    }
+
+  if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of "regular" I/Q data
+  {
+   buffers_received++;
+  //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
+   fprintf(stderr,"nread = %zd\n", nread);
+   fprintf(stderr,"Buffer starts with: %02x %02X \n",buf->base[0], buf->base[1]);
+   if (nread < 8000)  // discard this buffer for now 
+	{
+	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
+	}
+   if (nread > 8000)  // looks like a valid databuffer, based on length
+	{
+	puts("DATA BUFFER RECEIVED");
+    fprintf(stderr," DataBuffer starts with: %02x %02X %02X %02X\n",
+	buf->base[0], buf->base[1],buf->base[2], buf->base[3]);
+	//return;
+	}
+
+////////////////////////////////////////////////////////////////////////////////////
+// handle I/Q buffers coming in for storage to Digital RF
+
+    {
+    // set up memory and get a copy of the data (may be possible to eliminate this step)
+  //  DATABUF *buf_ptr;
+  //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
+  //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
+    packetCount = (long) buf_ptr->bufCount;
+    printf("bufcount = %ld\n", packetCount);
+
+  /* local variables  for Digital RF */
+    uint64_t vector_leading_edge_index = 0;
+    uint64_t global_start_sample = 0;
+
+// if bufCount is zero, it is first data packet; create the Digital RF file
+// we also check buffers_received, so we can start recording even if we missed
+// one or more buffers at start-up.
+
+// TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running.
+// For now, just set to 1.
+
+  global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR /  
+                 SAMPLE_RATE_DENOMINATOR;
+
+  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
+    fprintf(stderr,"Create HDF5 file group, start time: %ld \n",global_start_sample);
+    vector_leading_edge_index=0;
+    vector_sum = 0;
+    hdf_i= 0;
+    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
+     "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
+      }
+
+// here we write out DRF
+
+    vector_sum = vector_leading_edge_index + hdf_i*vector_length; 
+/*
+
+// in case we have to convert or otherwise interpret the DE buffer, here is a
+// way to iterate through it
+
+    puts("copy data");   // this can be eliminated by setting up buffer descrip better
+    for(int j=0; j < 2048; j=j+2)
+     {
+     data_hdf5[j] = buf_ptr->myDataSample[j/2].I_val;
+     data_hdf5[j+1] = buf_ptr->myDataSample[j/2].Q_val;
+     }
+*/
+
+    fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
+// push buffer directly to DRF just like it is
+    if(DRFdata_object != NULL)  // make sure there is an open DRF file
+	  {
+      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
+	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
+	  }
+       
+  //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
+
+    hdf_i++;
+
+    free (buf_ptr);  // free the work buffer
+    }
+
+  }
+
+
+///////////////////////////////////////////
+  free(buf->base);
+  }
+
+void recv_port_check() {
+  if(recv_port_status == 0)   // if port not already open, open it
+      {
+// start a listener on Port F
+      uv_udp_init(loop, &data_socket);
+      uv_ip4_addr("0.0.0.0", LH_DATA_IN_port, &recv_data_addr);
+      printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
+      int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
+      printf("bind retcode = %d\n",retcode);
+      retcode = uv_udp_recv_start(&data_socket, alloc_data_buffer, on_UDP_data_read);
+      printf("recv retcode = %d\n",retcode);
+      if (retcode == 0) recv_port_status = 1;
+      }
+  else
+    puts("recv port already open");
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -302,6 +489,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     printf("Sending CREATE CHANNEL to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    printf("... at this point, send_config_addr.sin_port= %d\n", ntohs(send_config_addr.sin_port));
     return;
 	}
 
@@ -312,7 +500,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 //channelBuf_ptr = (CHANNELBUF *)malloc(sizeof(CHANNELBUF));  // TODO: free this later
     uv_udp_send_t send_req;
     char b[400];
-    printf("Config channels received\n");
+    printf("Config channels (CH) received\n");
 	memcpy(h.channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
     const char comma[2] = ",";
     char *token;
@@ -322,37 +510,39 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
     for (int i=0; i < 16; i++)
       {
-      printf("Channel# %i :\n",i);
+ //     printf("Channel# %i :\n",i);
       token = strtok(NULL, comma);
-      printf("next token = %s\n", token);
+//printf("next token = %s\n", token);
       int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].channelNo );
-      printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
+//      printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
       token = strtok(NULL, comma);
-      printf("next token = %s\n", token);
+//printf("next token = %s\n", token);
       ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
-      printf("converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
+//      printf("converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
       token = strtok(NULL, comma);
-      printf("next token = %s\n", token);
+ //     printf("next token = %s\n", token);
       ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelFreq);
-      printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelFreq);
+ //     printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelFreq);
       token = strtok(NULL, comma);
-      printf("next token = %s\n", token);
+ //     printf("next token = %s\n", token);
       ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelBandwidth);
-      printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelBandwidth);
+ //     printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelBandwidth);
 
       }
     puts("done with conversion");
- //   memcpy(&channelBuf_ptr, &channelBuffer, sizeof(channelBuffer));
 
     memcpy(b,h.mybuf2,sizeof(CHANNELBUF));
     puts("port C print done");
 
 	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
-//	const uv_buf_t a[] = {{.base = channelBuffer, .len = sizeof(CHANNELBUF)}}
 
     printf("Sending CONFIG REQUEST to %s  port %u\n", DE_IP, d.myConfigBuf.configPort);
-    uv_ip4_addr(DE_IP, d.myConfigBuf.configPort, &send_addr);    
-    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    uv_ip4_addr(DE_IP, d.myConfigBuf.configPort, &send_config_addr);  
+      
+ //   uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    printf("port in the addr = %i\n",ntohs(send_config_addr.sin_port));
+    uv_udp_send(&send_req, &send_config_socket, a, 1, (const struct sockaddr *)&send_config_addr, on_UDP_send);
+    printf("after sending, port in the addr = %i\n",ntohs(send_config_addr.sin_port));
     }
 
   if(strncmp(mybuf, START_FT8_COLL , 2)==0)
@@ -360,7 +550,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     uv_udp_send_t send_req;
 	char b[100];
 	for(int i=0; i< 100; i++) { b[i] = 0; }
-
+    recv_port_check();  // ensure receive port is open (LH_DATA_IN_port)
 	strncpy(b, mybuf, nread-1 );
 	const uv_buf_t a[] = {{.base = b, .len = nread-1}};
     int rt =     system("mkdir /mnt/RAM_disk/FT8");
@@ -392,9 +582,23 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
 
-	strcpy(b, "SC");
+	strcpy(b, START_DATA_COLL );
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
-
+    if(recv_port_status == 0)   // if port not already open, open it
+      {
+// start a listener on Port F
+      recv_port_check(); // ensure port is open exactly once
+/*
+      uv_udp_init(loop, &data_socket);
+      uv_ip4_addr("0.0.0.0", LH_DATA_IN_port, &recv_data_addr);
+      printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
+      int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
+      printf("bind retcode = %d\n",retcode);
+      retcode = uv_udp_recv_start(&data_socket, alloc_data_buffer, on_UDP_data_read);
+      printf("recv retcode = %d\n",retcode);
+      if (retcode == 0) recv_port_status = 1;
+*/
+      }
 
     printf("Sending START DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
@@ -404,15 +608,11 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
   if(strncmp(mybuf, STOP_DATA_COLL , 2)==0)
 	{
-
     uv_udp_send_t send_req;
-
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
-
-	strcpy(b, "XC");
+	strcpy(b, STOP_DATA_COLL);
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
-
     struct sockaddr_in send_addr;
     printf("Sending STOP DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
@@ -427,15 +627,12 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   if(strncmp(mybuf, STATUS_INQUIRY, 2)==0)
 	{
 	puts("Forward status inquiry to DE");
-
     uv_udp_send_t send_req;
-
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
   // status inquiry
 	strcpy(b, "S?");
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
-
     struct sockaddr_in send_addr;
     printf("Sending STATUS INQUIRY to %s  port %u\n", DE_IP, DE_port);
     printf("\t(Listening on port %d )\n", ntohs(recv_addr.sin_port));
@@ -449,6 +646,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     puts("halting");
     uv_stop(loop);
     }
+
   if(strncmp(buf->base, START_DATA_COLL,2)==0)  // is this a command to start collecting data?
     {
       buffers_received = 0;  // this lets us count buffers independently of counter in the buffer itself
@@ -463,18 +661,14 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 	  result = digital_rf_close_write_hdf5(DRFdata_object);
       DRFdata_object = NULL;
 	}
-  puts("process_command triggered; set up uv_write_t");
-  uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
-  puts("set up write_req");
-  uv_buf_t a[]={{.base=mybuf,.len=nread},{.base="\n",.len=3}};
+//  puts("process_command triggered; set up uv_write_t");
+//  uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+//  puts("set up write_req");
+//  uv_buf_t a[]={{.base=mybuf,.len=nread},{.base="\n",.len=3}};
 // forward command to DE
-  puts("write to DE");
+//  puts("write to DE");
 
-  
-/*
-This is original code for talking to DE using TCP
-  uv_write(write_req, DEsockethandle, a, 1, DE_write_cb);
-*/
+
   }
 
 
@@ -555,8 +749,10 @@ void statusInquiry() {
 }
 
 
+
 ///////////////////////////////////////////////////////////////
-//  Callback for when UDP data packets received from DE 
+//  Callback for when UDP command/ACK packets received from DE 
+//  A separate callback handles incoming I/Q data, above
 //////////////////////////////////////////////////////////////
 void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
@@ -568,7 +764,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
       free(buf->base);
 	  return;
     }
-  printf("UDP data recvd\n");
+  printf("UDP data recvd, bytes = %ld\n", nread);
 
     DATABUF *buf_ptr;
     buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
@@ -591,12 +787,31 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
     if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)
     {
+    printf("AK buffer contains %x %x %x %x %x %x \n",
+           buf->base[0], buf->base[1], buf->base[2],
+			buf->base[3], buf->base[4], buf->base[4]);
 
-    memcpy(d.mybuf1, buf->base, 6);
-    printf("AK received from last command:  %s ,", d.myConfigBuf.cmd);
-    printf("DE receive ports = %hu  %hu \n", d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+/////////////////////////////////////////////////
+      if(nread == 6)    // this should be a CC ACK containing DE listening ports
+      {
+
+      puts("Prep to handle incoming IQ data");
+      memcpy(d.mybuf1, buf->base, 6);
+      printf("AK received from last command:  %s ,", d.myConfigBuf.cmd);
+      printf("DE receive ports = %hu  %hu \n", d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+      DE_DATA_IN_port = d.myConfigBuf.dataPort;
+      uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+
+      uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
+      puts("Forward the ACK");
+      uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+
+      return;
+
+      }
+
+
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
-
     uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
     puts("Forward the ACK");
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
@@ -608,6 +823,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     puts("NAK received from last command");
     return;
     }
+
+////  start of handling incoming I/Q data //////////////
 
     if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
     {
@@ -647,7 +864,6 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
         }
 
       return;
-
     }
 
 
@@ -702,10 +918,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
       }
 
-
 // here we write out DRF
 
-  
     vector_sum = vector_leading_edge_index + hdf_i*vector_length; 
 /*
 
@@ -738,13 +952,167 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   free(buf->base);
 
   }
+/////////////////// UNIT TEST SETUP //////////////////////////////////
+
+int max (int n1, int n2 )
+{
+   if ( n2 > n1 )  return n2;
+   return n1;
+}
+int init_suite(void) { return 0; }
+int clean_suite(void) { return 0; }
+/************* Test case functions ****************/
+
+void test_case_sample(void)
+{
+   CU_ASSERT(CU_TRUE);
+   CU_ASSERT_NOT_EQUAL(2, -1);
+   CU_ASSERT_STRING_EQUAL("string #1", "string #1");
+   CU_ASSERT_STRING_NOT_EQUAL("string #1", "string #2");
+
+   CU_ASSERT(CU_FALSE);
+   CU_ASSERT_EQUAL(2, 3);
+   CU_ASSERT_STRING_NOT_EQUAL("string #1", "string #1");
+   CU_ASSERT_STRING_EQUAL("string #1", "string #2");
+}
+
+void max_test_1(void) {
+  CU_ASSERT_EQUAL( max(1,2), 2);
+  CU_ASSERT_EQUAL( max(2,1), 2);
+}
+
+void max_test_2(void) {
+  CU_ASSERT_EQUAL( max(2,2), 2);
+  CU_ASSERT_EQUAL( max(0,0), 0);
+  CU_ASSERT_EQUAL( max(-1,-1), -1);
+}
+
+void max_test_3(void) {
+  CU_ASSERT_EQUAL( max(-1,-2), -1);
+}
+//////////////////////////////////////////////////////
+int run_all_tests()
+{
+  {
+	  {
+	  printf("UNIT TESTING mainctl\n");
+
+	  CU_pSuite pSuite = NULL;
+
+   // initialize the CUnit test registry 
+   	  if ( CUE_SUCCESS != CU_initialize_registry() )
+        return CU_get_error();
+
+   // add a suite to the registry 
+   	  pSuite = CU_add_suite( "max_test_suite", init_suite, clean_suite );
+   	  if ( NULL == pSuite ) {
+        CU_cleanup_registry();
+        return CU_get_error();
+   }
+
+   // add the tests to the suite 
+   	  if ( (NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
+          (NULL == CU_add_test(pSuite, "max_test_2", max_test_2)) ||
+          (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))
+      )
+   {
+      CU_cleanup_registry();
+      return CU_get_error();
+   }
+
+   // Run all tests using the basic interface
+   CU_basic_set_mode(CU_BRM_VERBOSE);
+   CU_basic_run_tests();
+   printf("\n");
+   CU_basic_show_failures(CU_get_failure_list());
+   printf("\n\n");
+
+/*   TODO: set up the complete test suite below
+   // Run all tests using the automated interface
+   CU_automated_run_tests();
+   CU_list_tests_to_file();
+
+   // Run all tests using the console interface
+   CU_console_run_tests();
+*/
+
+   // Clean up registry and return
+   CU_cleanup_registry();
+   return CU_get_error();
+
+	  }
+	}
+}
+
+///////////////// end of test package ///////////////////////
 
 
-/*  ************************************************************ */
-int main() {
+/*  ******************** MAIN PROGRAM **************************** */
+int main(int argc, char *argv[]) {
 // Discover what devices are acessible and respond to discovery packet (preamble hex EF FE ) 
   puts("starting");
-  
+  int testresult;
+  if(argc > 1)
+    {
+    printf("argc = %d\n",argc);
+    printf("Got argument: '%s'\n",argv[1]);
+    if(strcmp(argv[1],"test")==0)
+      testresult = run_all_tests();
+      return testresult;
+    }
+/*
+  if(argc > 0)
+	{
+	printf("mainctl called with arg: %s\n",argv[1]);
+    if(strcmp(argv[1],"test")==0)
+	  {
+	  printf("UNIT TESTING mainctl\n");
+
+	  CU_pSuite pSuite = NULL;
+
+   // initialize the CUnit test registry 
+   	  if ( CUE_SUCCESS != CU_initialize_registry() )
+        return CU_get_error();
+
+   // add a suite to the registry 
+   	  pSuite = CU_add_suite( "max_test_suite", init_suite, clean_suite );
+   	  if ( NULL == pSuite ) {
+        CU_cleanup_registry();
+        return CU_get_error();
+   }
+
+   // add the tests to the suite 
+   	  if ( (NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
+          (NULL == CU_add_test(pSuite, "max_test_2", max_test_2)) ||
+          (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))
+      )
+   {
+      CU_cleanup_registry();
+      return CU_get_error();
+   }
+
+   // Run all tests using the basic interface
+   CU_basic_set_mode(CU_BRM_VERBOSE);
+   CU_basic_run_tests();
+   printf("\n");
+   CU_basic_show_failures(CU_get_failure_list());
+   printf("\n\n");
+
+   // Run all tests using the automated interface
+   CU_automated_run_tests();
+   CU_list_tests_to_file();
+
+   // Run all tests using the console interface
+   CU_console_run_tests();
+
+   // Clean up registry and return
+   CU_cleanup_registry();
+   return CU_get_error();
+
+	  }
+	}
+*/
+
   puts("UDPdiscovery    ******    *****");
 
   //DEdevice = UDPdiscoverNew();  // call UDP discovery rtn
@@ -795,7 +1163,6 @@ int main() {
     return(EXIT_FAILURE);
   }
 
-
   if(config_lookup_string(&cfg, "DE_ip", &DE_ip_str))
     printf("Setting ip address of DE to: %s\n\n", DE_ip_str);
   else
@@ -806,7 +1173,23 @@ int main() {
   else
 	fprintf(stderr,"No DE_port setting in configuration file\n");
 
+// set these in code until configuration file bug can be fixed
 
+  LH_CONF_IN_port = 40001;
+  LH_DATA_IN_port = 40002;
+
+
+/*
+  if(config_lookup_int(&cfg, "LH_port_C", &LH_CONF_IN_port))
+	fprintf(stderr,"Setting LH_port_C to: %d\n",LH_CONF_IN_port);
+  else
+	fprintf(stderr,"No LH_port_C setting in configuration file\n");
+
+  if(config_lookup_int(&cfg, "LH_port_F", &LH_DATA_IN_port))
+	fprintf(stderr,"Setting LH_port_F to: %d\n",LH_DATA_IN_port);
+  else
+	fprintf(stderr,"No LH_port_F setting in configuration file\n");
+*/
   if(config_lookup_int(&cfg, "controller_port", &controller_port))
     fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
   else
@@ -820,9 +1203,7 @@ int main() {
   else
     fprintf(stderr,"No port set for listening to webcontrol\n");
 
-
   loop = uv_default_loop();
-
 
 // Set up to listen to incoming TCP port for commands from web controller
   uv_tcp_t server;
@@ -843,7 +1224,7 @@ int main() {
 
  // here we will listen on that port broadcast earlier selected
   uv_ip4_addr("localhost", LH_port, &recv_addr);   // TODO: should be localhost (?)
-  printf("will listen on port %u \n", LH_port);
+  printf("will listen on port A %u \n", LH_port);
   uv_udp_bind(&recv_socket, (const struct sockaddr *)&recv_addr, UV_UDP_REUSEADDR);
   uv_udp_recv_start(&recv_socket, alloc_buffer, on_UDP_read);
 
@@ -854,23 +1235,32 @@ int main() {
   uv_ip4_addr(INADDR_ANY, LH_port, &send_addr);
   uv_udp_bind(&send_socket, (const struct sockaddr *)&send_addr, 0);
 
- // statusInquiry();  // test this new virtual connection
+/////////////////////////////////////////////////////////////////
+// here we will set up to send and receive on "Port C"
+
+  puts("Prep to handle config request and reply");
+  uv_udp_t config_socket;
+  uv_udp_init(loop, &config_socket);
+
+  uv_ip4_addr("0.0.0.0", 40001, &recv_config_addr); 
+  printf("will listen on port C %u \n", LH_CONF_IN_port);
+  uv_udp_bind(&config_socket, (const struct sockaddr *)&recv_config_addr, UV_UDP_REUSEADDR);
+  uv_udp_recv_start(&config_socket, alloc_config_buffer, on_UDP_read);
+
+  printf("prep to send UDP config (CH) using outbound port %i\n", LH_CONF_IN_port);
+
+  uv_udp_init(loop, &send_config_socket);
+  uv_ip4_addr("255.255.255.255", 50001, &send_config_addr);
+//  send_config_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+//send_config_addr.sin_family = AF_INET;
+ // send_config_addr.sin_port = htons(LH_CONF_IN_port);  // can we force it?
+  uv_udp_bind(&send_config_socket, (const struct sockaddr *)&send_config_addr, 0);
 
 
-//  puts("DE connection request done; awaiting response from DE..."); 
 
-/////////// Digital RF Setup //////////////////////////////////////
-
-  /* local variables */
-
-/*
-  uint64_t vector_leading_edge_index = 0;
-  uint64_t global_start_sample = (uint64_t)(START_TIMESTAMP * ((long double)SAMPLE_RATE_NUMERATOR)/SAMPLE_RATE_DENOMINATOR);
-
-*/
+///////////////////////////////////////////////////////////////////////
 
 
-  //strcpy(path_to_DRF_data, "/media/odroid/hamsci/hdf5");    // TODO: replace with config item
   DIR* dir = opendir(ringbufferPath);
   if(dir)
 	{

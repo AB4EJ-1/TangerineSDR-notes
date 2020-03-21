@@ -5,6 +5,7 @@ import _thread
 import time
 import os
 import subprocess
+from subprocess import Popen, PIPE
 import configparser
 import smtplib
 #from array import *
@@ -18,7 +19,7 @@ from flask_wtf import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
 from flask import request, flash
 from forms import MainControlForm, ThrottleControlForm, ChannelControlForm, ServerControlForm
-#from forms import ContactForm
+from forms import CallsignForm
 
 from wtforms import validators, ValidationError
 from flask_wtf import CSRFProtect
@@ -45,7 +46,7 @@ def send_to_mainctl(cmdToSend):
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: *** WC: *** connect to socket")
+     print("F: *** WC: *** connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send query")
      tcp_client.sendall(data.encode())
@@ -68,10 +69,10 @@ def send_to_mainctl(cmdToSend):
   except Exception as e: 
      print(e)
      print("F: '" + e.errno + "'")
-     if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error " + e.errno +  "mainctl program not responding"
-     else:
-       theStatus = "Exception " + str(e)
+#     if(str(e.errno) == "111" or str(e.errno == "11")):
+#       theStatus = "Error " + e.errno +  "mainctl program not responding"
+#     else:
+#       theStatus = "Exception " + str(e)
   finally:
      tcp_client.close()
 
@@ -98,7 +99,7 @@ def check_status_once():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: *** WC: *** connect to socket")
+     print("F: *** WC: *** connect to socket ,port ",server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send query")
      tcp_client.sendall(data.encode())
@@ -155,13 +156,18 @@ def sdr():
          return render_template('tangerine.html', form = form)
       else:
          result = request.form
-         print('F: mode set to:',form.mode.data)
+         print('F: mode set to:"',form.mode.data,'"')
          parser.set('settings','mode',form.mode.data)
          fp = open('config.ini','w')
          parser.write(fp)
          fp.close()
          print('F: start set to ',form.startDC.data)
          print('F: stop set to ', form.stopDC.data)
+         if(form.startDC.data and form.mode.data =='snapshotter'):
+           process = subprocess.Popen(["./displayFFT.py","/mnt/RAM_disk/snap/fn.dat"], stdout = PIPE, stderr=PIPE)
+#           stdout, stderr = process.communicate()
+#           print(stdout)
+           return  render_template('tangerine.html', form = form)
          if(form.startDC.data ):
             if ( len(parser['settings']['ringbuffer_path']) < 1 
                    and form.mode.data == 'ringbuffer') :
@@ -517,7 +523,7 @@ def desetup():
    for i in list(range(16)):
      configCmd = configCmd + ',' + str(i) + ',' + a[i] + ',' + f[i] + ',' + b[i]
 
-   print("configcmd=" + configCmd)
+#   print("configcmd=" + configCmd)
    send_to_mainctl(configCmd);
 
    return render_template('desetup.html',
@@ -592,7 +598,7 @@ def startprop():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -619,7 +625,7 @@ def stopprop():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port",server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -659,7 +665,7 @@ def startcoll():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port", server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -690,7 +696,7 @@ def stopcoll():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port ",server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -738,7 +744,7 @@ def throttle():
 @app.route("/callsign", methods = ['POST','GET'])
 def callsign():
    global theStatus, theDataStatus
-#   form = CallsignForm()
+   form = CallsignForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'GET':
@@ -748,7 +754,7 @@ def callsign():
      c3 = parser['monitor']['c3']
      c4 = parser['monitor']['c4']
      c5 = parser['monitor']['c5']
-     return render_template('callsign.html',
+     return render_template('callsign.html', form = form,
 	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
    if request.method == 'POST':
      result = request.form
@@ -775,7 +781,7 @@ def callsign():
      c4 = parser['monitor']['c4']
      c5 = parser['monitor']['c5']
      
-     return render_template('callsign.html',
+     return render_template('callsign.html', form = form,
 	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
 
 @app.route("/notification", methods = ['POST','GET'])
@@ -972,21 +978,37 @@ def propagation():
 @app.route('/_ft8list')
 def ft8list():
   ft8string = ""
+  band = [ 7, 10, 14, 18, 21, 24, 28]
   try:
-   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
-   x = f.readlines()
-   f.close()
+#   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
+#   x = f.readlines()
+#   f.close()
+    plist = []
+    for fno in range(7):
+     fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
+     print("checking file",fname)
+     f = open(fname,"r")
+     plist.append(len(f.readlines()))
+     f.close()
+      
 
 # here we build a JSON string to populate the FT8 panel
-   ft8string = '{'
-   for i in range(0,len(x)):
-    ft8string = ft8string + '"' + str(i) + '":"' +  \
-      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
+    ft8string = '{'
+#   for i in range(0,len(x)):
+#    ft8string = ft8string + '"' + str(i) + '":"' +  \
+#      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
+    ft8string = ft8string + '"0":"MHz  spots",'
+    for i in range(7):
+     pval = str(plist[i])
+     ft8string = ft8string + '"' + str(i+1) + '":"' +  \
+       str(band[i]) + ' - ' + pval + ' ",'
 
-   ft8string = ft8string + '"end":" "}'
-   print("string= " , ft8string)
-  except:
-   print("ft8 file not found")
+    ft8string = ft8string + '"end":" "}'
+    print("string= " , ft8string)
+  except Exception as ex:
+    print(ex)
+# no-op
+    z=1
 
   return Response(ft8string, mimetype='application/json')
 
@@ -1001,7 +1023,7 @@ if __name__ == "__main__":
 #	app.run(debug = True)
 
 	from waitress import serve
-#	serve(app, host = "0.0.0.0", port=5000) 
-	serve(app)
+	serve(app, host = "0.0.0.0", port=5000) 
+#	serve(app)
 #	serve(app, host = "192.168.1.75", port=5000)
 
