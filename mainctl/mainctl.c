@@ -112,7 +112,7 @@ static  uint64_t vector_sum = 0;
 static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
 
 static char ringbuffer_path[50];
-const  char *ringbufferPath;
+//const  char *ringbufferPath;
 
 static long packetCount;
 static int recv_port_status = 0;
@@ -171,6 +171,9 @@ static void alloc_data_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
 }
+
+const char *configPath;
+//char configPath[100];
 
 //// *********************** Start of Code  *******************************//////
 
@@ -952,10 +955,56 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   free(buf->base);
 
   }
+ ////////////// reads config items from the (python) config file /////////
+int rconfig(char * arg, char * result, int testThis) {
+const char delimiters[] = " =";
+printf("start fcn looking for %s\n", arg);
+FILE *fp;
+char *line = NULL;
+size_t len = 0;
+ssize_t read;
+char *token, *cp;
+if (testThis)
+  {
+  fp = fopen( "/home/odroid/projects/TangerineSDR-notes/flask/config.ini", "r");
+  }
+else
+  fp = fopen(configPath, "r");
+if (fp == NULL)
+  {
+  printf("ERROR - could not open config file at %s\n",configPath);
+  exit(-1);
+  }
+//puts("read config");
+while ((read = getline(&line, &len, fp)) != -1) {
+//  printf("line length %zu: ",read);
+//  printf("%s \n",line);
+  cp = strdup(line);  // allocate enuff memory for a copy of this
+//  printf("cp=%s\n",cp);
+  token = strtok(cp, delimiters);
+//  printf("first token='%s'\n",token);
+  if(strcmp(arg,token) == 0)
+   {
+  token = strtok(NULL, delimiters);
+//  printf("second token=%s\n",token);
+  printf("config value found = '%s', length = %lu\n",token,strlen(token));
+  
+  strncpy(result,token,strlen(token)-1);
+  result[strlen(token)-1] = 0x00;  // terminate the string
+  free(cp);
+  return(1);
+   }
+  }
+  free(cp);
+  return(0);
+}
+
+
 /////////////////// UNIT TEST SETUP //////////////////////////////////
 
 int max (int n1, int n2 )
 {
+   puts("test max");
    if ( n2 > n1 )  return n2;
    return n1;
 }
@@ -990,6 +1039,22 @@ void max_test_2(void) {
 void max_test_3(void) {
   CU_ASSERT_EQUAL( max(-1,-2), -1);
 }
+
+void test_get_config(void) {
+  config_t cfg;
+  config_setting_t *setting;
+
+  char tresult[100];
+  int tval = 0;
+  int tme = 1;
+ // puts("call rconfig");
+  tval = rconfig("test_value", tresult, tme);
+//  printf("returned value = '%s'",tresult);
+ // printf("or %02x %02x %02x %02x %02x \n",tresult[0],tresult[1],tresult[2],tresult[3],tresult[4]);
+  CU_ASSERT_EQUAL(tval,1);
+  CU_ASSERT_STRING_EQUAL(tresult,"T123"); 
+
+}
 //////////////////////////////////////////////////////
 int run_all_tests()
 {
@@ -1012,8 +1077,9 @@ int run_all_tests()
 
    // add the tests to the suite 
    	  if ( (NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
-          (NULL == CU_add_test(pSuite, "max_test_2", max_test_2)) ||
-          (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))
+          (NULL == CU_add_test(pSuite, "max_test_2", max_test_2))  ||
+          (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))  ||
+		  (NULL == CU_add_test(pSuite, "config_test1", test_get_config))
       )
    {
       CU_cleanup_registry();
@@ -1052,7 +1118,7 @@ int main(int argc, char *argv[]) {
 // Discover what devices are acessible and respond to discovery packet (preamble hex EF FE ) 
   puts("starting");
   int testresult;
-  if(argc > 1)
+  if(argc > 1)  // execute this if user asked to run the unit tests
     {
     printf("argc = %d\n",argc);
     printf("Got argument: '%s'\n",argv[1]);
@@ -1060,58 +1126,6 @@ int main(int argc, char *argv[]) {
       testresult = run_all_tests();
       return testresult;
     }
-/*
-  if(argc > 0)
-	{
-	printf("mainctl called with arg: %s\n",argv[1]);
-    if(strcmp(argv[1],"test")==0)
-	  {
-	  printf("UNIT TESTING mainctl\n");
-
-	  CU_pSuite pSuite = NULL;
-
-   // initialize the CUnit test registry 
-   	  if ( CUE_SUCCESS != CU_initialize_registry() )
-        return CU_get_error();
-
-   // add a suite to the registry 
-   	  pSuite = CU_add_suite( "max_test_suite", init_suite, clean_suite );
-   	  if ( NULL == pSuite ) {
-        CU_cleanup_registry();
-        return CU_get_error();
-   }
-
-   // add the tests to the suite 
-   	  if ( (NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
-          (NULL == CU_add_test(pSuite, "max_test_2", max_test_2)) ||
-          (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))
-      )
-   {
-      CU_cleanup_registry();
-      return CU_get_error();
-   }
-
-   // Run all tests using the basic interface
-   CU_basic_set_mode(CU_BRM_VERBOSE);
-   CU_basic_run_tests();
-   printf("\n");
-   CU_basic_show_failures(CU_get_failure_list());
-   printf("\n\n");
-
-   // Run all tests using the automated interface
-   CU_automated_run_tests();
-   CU_list_tests_to_file();
-
-   // Run all tests using the console interface
-   CU_console_run_tests();
-
-   // Clean up registry and return
-   CU_cleanup_registry();
-   return CU_get_error();
-
-	  }
-	}
-*/
 
   puts("UDPdiscovery    ******    *****");
 
@@ -1135,9 +1149,7 @@ int main(int argc, char *argv[]) {
 	if(discovered[i].device == DEVICE_TANGERINE) 
 	 {
 		strcpy(DE_IP, inet_ntoa(discovered[i].info.network.address.sin_addr));
-
 		DE_port = htons(discovered[i].info.network.address.sin_port);
-	
 		printf("selected Tangerine at port %u\n",DE_port);
 	  }
 	}
@@ -1146,7 +1158,8 @@ int main(int argc, char *argv[]) {
 // get the configuration file
   config_t cfg;
   config_setting_t *setting;
-  const char *DE_ip_str;
+ // char *DE_ip_str;
+  char DE_ip_str[20];
   packetCount = 0;
   int DE_port;
   int controller_port;
@@ -1154,6 +1167,11 @@ int main(int argc, char *argv[]) {
   config_init(&cfg);
 
   /* Read the file. If there is an error, report it and exit. */
+
+// The only thing we use this config file for is to get the path to the
+// python config file. Seems like a kludge, but allows flexibility in
+// system directory structure.
+
   if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
   {
     fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
@@ -1163,6 +1181,33 @@ int main(int argc, char *argv[]) {
     return(EXIT_FAILURE);
   }
 
+  if(config_lookup_string(&cfg, "config_path", &configPath))
+    printf("Setting config file path to: %s\n\n", configPath);
+  else
+    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
+
+  char result[100];
+  char target[30];
+  strcpy(target,"configport");
+  int num_items = 0;
+  puts("start");
+  printf("looking for '%s'\n",target);
+  num_items = rconfig(target,result,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - configport setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",result);
+    printf("len =%lu\n",strlen(result));
+    LH_CONF_IN_port = atoi(result);
+    num_items = rconfig("dataport",result,0);
+    LH_DATA_IN_port = atoi(result);
+    }
+ // LH_CONF_IN_port = 40001;
+ // LH_DATA_IN_port = 40002;
+/*
   if(config_lookup_string(&cfg, "DE_ip", &DE_ip_str))
     printf("Setting ip address of DE to: %s\n\n", DE_ip_str);
   else
@@ -1172,11 +1217,38 @@ int main(int argc, char *argv[]) {
 	fprintf(stderr,"Setting DE port to: %d\n",DE_port);
   else
 	fprintf(stderr,"No DE_port setting in configuration file\n");
+*/
+  strcpy(target,"DE_ip");
+//  int num_items = 0;
+  puts("start");
+  printf("looking for '%s'\n",target);
+  num_items = rconfig(target,result,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - DE_ip setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT for DE_ip = '%s'\n",result);
+    printf("len =%lu\n",strlen(result));
+    strcpy(DE_ip_str, result);
+    }
 
-// set these in code until configuration file bug can be fixed
+  strcpy(target,"DE_port");
+  puts("start");
+  printf("looking for '%s'\n",target);
+  num_items = rconfig(target,result,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - DE_ip setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT for DE_port = '%s'\n",result);
+    printf("len =%lu\n",strlen(result));
+    DE_port = atoi(result);
+    }
 
-  LH_CONF_IN_port = 40001;
-  LH_DATA_IN_port = 40002;
 
 
 /*
@@ -1190,11 +1262,26 @@ int main(int argc, char *argv[]) {
   else
 	fprintf(stderr,"No LH_port_F setting in configuration file\n");
 */
+/*
   if(config_lookup_int(&cfg, "controller_port", &controller_port))
     fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
   else
     fprintf(stderr,"No port set for listening to webcontrol\n");
+*/
+  strcpy(target,"controlport");
+  num_items = rconfig(target,result,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - controlport setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",result);
+    printf("len =%lu\n",strlen(result));
+    controller_port = atoi(result);
+    }
 
+/*
   if(config_lookup_string(&cfg, "ringbuffer_path", &ringbufferPath))
     {
     strcpy(ringbuffer_path, ringbufferPath);
@@ -1202,6 +1289,21 @@ int main(int argc, char *argv[]) {
     }
   else
     fprintf(stderr,"No port set for listening to webcontrol\n");
+*/
+  strcpy(target,"ringbuffer_path");
+  num_items = rconfig(target,result,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - ringbuffer_path setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",result);
+    printf("len =%lu\n",strlen(result));
+    strcpy(ringbuffer_path, result);
+   // strcpy(ringbufferPath,result);
+    }
+
 
   loop = uv_default_loop();
 
@@ -1255,13 +1357,13 @@ int main(int argc, char *argv[]) {
 //send_config_addr.sin_family = AF_INET;
  // send_config_addr.sin_port = htons(LH_CONF_IN_port);  // can we force it?
   uv_udp_bind(&send_config_socket, (const struct sockaddr *)&send_config_addr, 0);
-
+  printf("UDP config port setup done\n");
 
 
 ///////////////////////////////////////////////////////////////////////
 
-
-  DIR* dir = opendir(ringbufferPath);
+  printf("Try to open directory '%s'\n",ringbuffer_path);
+  DIR* dir = opendir(ringbuffer_path);
   if(dir)
 	{
 	printf("Digital RF directory found\n");

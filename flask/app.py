@@ -328,9 +328,18 @@ def desetup():
 	  ch14f = ch14f, ch14b = ch14b,
 	  ch15f = ch15f, ch15b = ch15b )
 
-   if not form.validate():
-     theStatus = form.errors
-     result = request.form
+
+   result = request.form
+   rgPathExists = os.path.isdir(result.get('ringbufferPath'))
+   print("path / directory existence check: ", rgPathExists)
+   
+   
+   if not form.validate() or rgPathExists == False:
+     if rgPathExists == True:
+       theStatus = form.errors
+     else:
+       theStatus = "Ringbuffer path invalid or not a directory"
+#     result = request.form
      ringbufferPath = result.get('ringbufferPath')
      ch0f =     str(result.get('ch0f'))
      ch0b =     str(result.get('ch0b'))     
@@ -391,7 +400,7 @@ def desetup():
        print("F: CANCEL")
      else:
        print("F: POST ringbufferPath =", result.get('ringbufferPath'))
-       ringbufferPath = ""
+#       ringbufferPath = ""
        parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
        parser.set('settings', 'ant0',            form.antennaport0.data)
        parser.set('settings', 'ch0f',            str(result.get('ch0f')))
