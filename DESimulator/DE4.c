@@ -41,6 +41,7 @@ struct sockaddr_in server_addr;
 struct sockaddr_in config_in_addr;
 
 int sock;
+int sock1;
 int sock2;
 long cmdthreadID;
 int cmdport;
@@ -48,17 +49,34 @@ int stoplink;
 int stopData;
 int stopft8;
 int ft8active;
+int config_busy;
 struct iqpair {
   float ival; 
   float qval;
 };
 
+union {
+  char mybuf1[100];
+  CONFIGBUF myConfigBuf;
+       } d;
+
+  union {
+    char configBuffer[1024];
+    CHANNELBUF chBuf;
+    } cb ;
+
+/*
+union {
+  char mybuf1[100];
+  CONFIGBUF myConfigBuf;
+       } LH;
+*/
 
 static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
 static uint16_t LH_CONF_OUT_port; // for sending (outbound) config request to DE
-static uint16_t DE_CONF_IN_port;  // port D; DE listens for config request on this port
+static uint16_t DE_CONF_IN_port;  // port B ; DE listens for config request on this port
 static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
-static uint16_t DE_DATA_IN_port;  // port E; DE listens for xmit data on this port
+static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
 static uint16_t LH_DATA_OUT_port; // for sending (outbound) data (e.g., mic audio) to DE
 
 
@@ -95,7 +113,7 @@ void *sendFT8(void *threadid) {
    if((fp = fopen(name, "r")) == NULL)
     {
       fprintf(stderr, "Cannot open ft8 input file %s.\n", name);
-      return 1;
+      return (void *) 1;
     }
    fread(&dialfreq, 1, 8, fp);
    printf("%f\n",dialfreq);
@@ -105,7 +123,9 @@ void *sendFT8(void *threadid) {
    printf("unix time = %ld\n", epoch);
    strncpy(ft8Buffer.bufType,"FT",2);
    ft8Buffer.timeStamp = (double) epoch;
-   client_addr.sin_port = htons(LH_port);
+ //  client_addr.sin_port = htons(LH_port); 
+ //  client_addr.sin_port = htons(d.myConfigBuf.dataPort);
+   client_addr.sin_port = htons(LH_DATA_IN_port);
    ft8Buffer.centerFreq = dialfreq;
    ft8Buffer.channelNo = (long)threadid;
 //   while(1)
@@ -115,7 +135,7 @@ void *sendFT8(void *threadid) {
      {
        for(int j=0; j < 4; j++)  // send 4 buffers, each containing 1000 complex samples
        {
-         for (int k=0; k < 1000; k++)  
+         for(int k=0; k < 1000; k++)
          {
          ft8Buffer.theDataSample[k].I_val = iqpairdat[inputCounter].ival;
          ft8Buffer.theDataSample[k].Q_val = iqpairdat[inputCounter].qval;
@@ -127,7 +147,8 @@ void *sendFT8(void *threadid) {
          sentBytes = sendto(sock, (const struct dataBuf *)&ft8Buffer, sizeof(ft8Buffer), 0, 
 	      (struct sockaddr*)&client_addr, sizeof(client_addr));
 
-         fprintf(stderr,"UDP message sent from thread. bytes= %ld\n", sentBytes); 
+         fprintf(stderr,"UDP message sent from thread to port %u. bytes= %ld\n", 
+           htons(client_addr.sin_port), sentBytes); 
     // sleep(1);
          usleep(250000);  // wait for this many microseconds
          if(stopft8)
@@ -144,32 +165,58 @@ void *sendFT8(void *threadid) {
    ft8active = 0;  // done here
 }
 
-void *awaitConfig(void *threadid) {
-  puts("Starting await-config thread");
+/*
+void *awaitCH(void *threadid) {
+  printf("Starting await-CH thread listening on port %d\n",DE_CH_IN_port);
+  printf("... will send data to LH port %d\n",LH_DATA_IN_port);
   char configBuffer[1024];
+  CHANNELBUF chBuf;
+
+}
+*/
+
+// This thread handles incoming CH  channel setup
+void *awaitConfig(void *threadid) {
+  config_busy = 1;
+  printf("Starting await-config thread listening on port %d (Port D)\n",DE_CH_IN_port);
+//  printf("... will send data to LH port %d\n",LH_DATA_IN_port);
+
   int addr_len;
   int ret;
   int count;
+  int optval;
 // create & bind socket for inbound config packets
   fd_set readcfg;
   sock2 = socket(AF_INET,SOCK_DGRAM,0);
-  if(sock2 < 0 ) { perror("sock2 error\n"); return -1; }
+  setsockopt(sock2, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval, sizeof(int));
+  if(sock2 < 0 ) { perror("sock2 error\n"); return (void *) -1; }
   addr_len = sizeof(struct sockaddr_in);
   memset((void*)&config_in_addr,0,addr_len);
   config_in_addr.sin_family = AF_INET;
   config_in_addr.sin_addr.s_addr = htons(INADDR_ANY);
-  config_in_addr.sin_port = htons(DE_CONF_IN_port);
+  config_in_addr.sin_port = htons(DE_CH_IN_port);  // listen on Port D
   ret = bind(sock2,(struct sockaddr *)&config_in_addr,addr_len);
-  if(ret < 0) { perror("sock2 bind error\n"); return -1; }
+  if(ret < 0) { perror("sock2 bind error\n"); return (void *) -1; }
   
   while(1)
     {
-    count = recvfrom(sock2, configBuffer, LH_CONF_IN_port , 0, 
+    count = recvfrom(sock2, cb.configBuffer, sizeof(cb.configBuffer) , 0, 
         (struct sockaddr*)&config_in_addr, &addr_len);
-   // LH_port = ntohs(client_addr.sin_port);
-    printf("config command recd %c%c %x02 %x02 from port %d\n",
-         configBuffer[0],configBuffer[1],configBuffer[0],configBuffer[1], LH_port);
 
+    printf("CHANNEL Setup CH received \n");
+    for (int i=0; i<16; i++) 
+      {
+      if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
+        continue;
+      else
+        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
+        cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
+      }
+  
+    client_addr.sin_port = htons(LH_CONF_IN_port ); 
+
+    count = sendto(sock, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+    printf("response = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port) ;
     }
 }
 
@@ -177,7 +224,16 @@ void *awaitConfig(void *threadid) {
 void *sendData(void *threadid) {
   int addr_len;
   //memset((void*)&server_addr, 0, addr_len);
-  puts("starting thread");
+  printf("starting thread, to send to LH port %d, using following chanel layout:\n",LH_DATA_IN_port);
+
+    for (int i=0; i<16; i++) 
+      {
+      if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
+        continue;
+      else
+        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
+        cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
+      }
 // build an example DE data buffer containing a low freq sine wave
 	float I;
 	float Q;
@@ -208,13 +264,17 @@ void *sendData(void *threadid) {
    // puts("passed wait");
     myBuffer.bufCount = bufcount++;
 
-    client_addr.sin_port = htons(LH_port);
+    //client_addr.sin_port = htons(LH_port);
+ //   client_addr.sin_port = htons(d.myConfigBuf.dataPort);
+   
+    client_addr.sin_port = htons(LH_DATA_IN_port);
     sentBytes = sendto(sock, (const struct dataBuf *)&myBuffer, sizeof(myBuffer), 0, 
 	   (struct sockaddr*)&client_addr, sizeof(client_addr));
 
-    fprintf(stderr,"UDP message sent from thread. bytes= %ld\n", sentBytes); 
-    // sleep(1);
-    usleep(528);  // wait for this many microseconds
+    fprintf(stderr,"UDP message sent from thread to port %u. bytes= %ld\n", 
+           LH_DATA_IN_port, sentBytes); 
+    sleep(1);
+    //usleep(528);  // wait for this many microseconds
     if(stopData)
 	{
          puts("UDP thread end");
@@ -248,30 +308,46 @@ int main() {
   stopData = 0;
   stopft8 = 0;
   ft8active = 0;
+  config_busy = 0;
   int addr_len;
   int count;
   int ret;
-  DE_CONF_IN_port = 50001;  //fixed port on which to receive config request
-  DE_DATA_IN_port = 50002; 
+  DE_CONF_IN_port = 50001;  //fixed port on which to receive config request (CC)
+  DE_CH_IN_port = 50002;   // fixed port on which to receive channel setup req. (CH)
   fd_set readfd;
   char buffer[1024];
-  sock = socket(AF_INET, SOCK_DGRAM, 0);
+  sock = socket(AF_INET, SOCK_DGRAM, 0);  // for initial discovery packet
   if (sock < 0) {
     perror("sock error\n");
     return -1;
-  }
+    }
+  sock1 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
+  if (sock1 < 0) {
+    perror("sock1 error\n");
+    return -1;
+    }
   addr_len = sizeof(struct sockaddr_in);
   memset((void*)&server_addr, 0, addr_len);
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = htons(INADDR_ANY);
   server_addr.sin_port = htons(PORT);
   cmdport = PORT;  // this could be made to follow randomly chosen port
+  cmdport = DE_CONF_IN_port;
   // bind to our port to listen on
   ret = bind(sock, (struct sockaddr*)&server_addr, addr_len);
   if (ret < 0) {
     perror("bind error\n");
     return -1;
   }
+// set up for Port B reply
+  server_addr.sin_port = htons(DE_CONF_IN_port);
+  ret = bind(sock1, (struct sockaddr*)&server_addr, addr_len);
+  if (ret < 0) {
+    perror("bind error\n");
+    return -1;
+  }
+
+
   while (1) {
   
   printf("Initialized; await discovery on port %d\n", PORT);
@@ -285,12 +361,14 @@ int main() {
         count = recvfrom(sock, buffer, 1024, 0, (struct sockaddr*)&client_addr, &addr_len);
         if((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
 	      fprintf(stderr,"discovery packet detected at startup point\n"); 
+      //    client_addr.sin_port = ntohs(DE_CONF_IN_port);  // temp test
           LH_port = ntohs(client_addr.sin_port);
+
           printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
             inet_ntoa(client_addr.sin_addr), LH_port);
 	      buffer[10] = 0x07;
-
-	      count = sendto(sock, buffer, 60, 0, (struct sockaddr*)&client_addr,
+// temp test of sending from Port B
+	      count = sendto(sock1, buffer, 60, 0, (struct sockaddr*)&client_addr,
 		            sizeof(client_addr));
         }
       }
@@ -301,10 +379,10 @@ int main() {
   /////////////////////////////// control loop ////////////////////
   while(1)
     {
-    printf("awaiting command\n");
-    count = recvfrom(sock, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
+    printf("awaiting command to come in from port %u\n", cmdport);
+    count = recvfrom(sock1, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
    // LH_port = ntohs(client_addr.sin_port);
-    printf("command recd %c%c %x02 %x02 from port %d\n",buffer[0],buffer[1],buffer[0],buffer[1], LH_port);
+    printf("command recd %c%c %x %x %x %x from port %d, bytes=%d\n",buffer[0],buffer[1],buffer[2],buffer[3],buffer[4],buffer[5], LH_port,count);
     char bufstr[50];
     strncpy(bufstr, buffer, count);
     printf("Raw buf= %s\n",bufstr);
@@ -315,40 +393,67 @@ int main() {
 	  printf("STATUS INQUIRY\n");
       client_addr.sin_port = htons(LH_port);  // this may wipe desired port
 
-      count = sendto(sock, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+      count = sendto(sock1, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
       printf("response = %d  sent to ",count);
       printf(" IP: %s, Port: %d\n", 
       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 	  continue;
 	  }
+    if(strncmp(buffer, CONFIG_CHANNELS,2) == 0)
+      {
+      puts("CONFIG_CHANNEL received at wrong port");
+      continue;
+      }
+
+
     if(strncmp(buffer, CREATE_CHANNEL ,2) == 0)
       {
 
   //    CONFIGBUF myConfigBuf;
-      union {
-       char mybuf1[100];
-       CONFIGBUF myConfigBuf;
-             } d;
-      memcpy(d.mybuf1, buffer, sizeof(buffer));
+
+      memcpy(d.mybuf1, buffer, 6);
 
       printf("CREATE CHANNEL RECD, cmd = %s, port C = %hu, port F = %hu \n",
           d.myConfigBuf.cmd, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+  //    if(config_busy)  // the channels already configured
+   //     {
+   //      puts("Command channel already set up; ignoring");
+  //       continue;
+  //      }
       LH_CONF_IN_port = d.myConfigBuf.configPort;
       LH_DATA_IN_port = d.myConfigBuf.dataPort;
       client_addr.sin_port = htons(LH_port);  // this may wipe desired port
 
       strncpy(d.myConfigBuf.cmd, "AK", 2);
       d.myConfigBuf.configPort = DE_CONF_IN_port;
-      d.myConfigBuf.dataPort = DE_DATA_IN_port;
+      d.myConfigBuf.dataPort = DE_CH_IN_port;  // this is Port E (mic data) currently unsupported
 
-      int c = 100;   // thread ID for config thread
-      pthread_t configthread;
-      int rc = pthread_create(&configthread, NULL, awaitConfig, (void *)c);
+      long c = 100;   // thread ID for config thread
+      long ch = 200;  // thread ID for ch thread
+ //     pthread_t configthread;
+  //    int rc = pthread_create(&configthread, NULL, awaitConfig, (void *)c);
 
-      count = sendto(sock, d.mybuf1, sizeof(d.myConfigBuf), 0, (struct sockaddr*)&client_addr, addr_len);
+      count = sendto(sock1, d.mybuf1, sizeof(d.myConfigBuf), 0, (struct sockaddr*)&client_addr, addr_len);
       printf("response = %d  sent to ",count);
       printf(" IP: %s, Port: %d\n", 
       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+      if(config_busy)  // the channels already configured
+        {
+         puts("Command channel already set up; ignoring");
+         continue;
+        }
+
+// start thread for receiving config request (CC)
+      pthread_t configthread;
+      int rc = pthread_create(&configthread, NULL, awaitConfig, (void *)c);
+
+/*
+      pthread_t chthread;
+      rc = pthread_create(&chthread, NULL, awaitCH, (void *)ch);
+*/
+
+
 	  continue;
 
       }
@@ -391,7 +496,7 @@ int main() {
          ft8freq[4],ft8freq[5],ft8freq[6],ft8freq[7]);
 
       pthread_t ft8nthread[8];  
-      int k;
+      long k;
       int rc;    // create one thread for each ft8 channel to run
       for(int ft8chan = 0; ft8chan < 8; ft8chan++)
        {
@@ -421,10 +526,13 @@ int main() {
 	  {
 	  puts("starting sendData");
 	  stopData = 0;
-  	  int j = 1;
+  	  long j = 1;
   	  pthread_t datathread;
   	  int rc = pthread_create(&datathread, NULL, sendData, (void *)j);
   	  printf("thread start rc = %d\n",rc);
+	  printf("SEND ACK to port %u\n",LH_CONF_IN_port);
+      client_addr.sin_port = htons(LH_CONF_IN_port);  // this may wipe desired port
+      count = sendto(sock1, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
       continue;
 	  }
 
