@@ -8,6 +8,14 @@ import subprocess
 from subprocess import Popen, PIPE
 import configparser
 import smtplib
+
+# This is temporary until we can get digital_rf, h5py, and hdf5 to install correctly under Python3.x
+import sys
+
+import h5py
+import numpy as np
+import datetime
+
 #from array import *
 from email.mime.multipart import MIMEMultipart 
 from email.mime.text import MIMEText 
@@ -36,8 +44,9 @@ dataCollStatus = 0;
 theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
+f = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
-def send_to_mainctl(cmdToSend):
+def send_to_mainctl(cmdToSend,waitTime):
   print("F: sending:" + cmdToSend)
   host_ip, server_port = "127.0.0.1", 6100
   data = cmdToSend + "\n"  
@@ -48,10 +57,11 @@ def send_to_mainctl(cmdToSend):
     # Establish connection to TCP server and exchange data
      print("F: *** WC: *** connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
-     print("F: send query")
+     print("F: send cmd:",cmdToSend)
      tcp_client.sendall(data.encode())
      print("F: wait for DE response")
-     time.sleep(4)
+     if(waitTime > 0):
+       time.sleep(waitTime)
      print("F: try to receive response")
      received = "NOTHING"
     # Read data from the TCP server and close the connection
@@ -84,7 +94,7 @@ def channel_request():
 # ports that mainctl will listen on for traffic from DE
   configPort =  parser['settings']['configport']
   dataPort   =  parser['settings']['dataport']
-  send_to_mainctl("CC," + configPort + "," + dataPort )
+  send_to_mainctl(("CC," + configPort + "," + dataPort),1 )
   
 
 def check_status_once():
@@ -174,7 +184,50 @@ def sdr():
               print("F: configured ringbuffer path='", parser['settings']['ringbuffer_path'],"'", len(parser['settings']['ringbuffer_path']))
               form.errline = 'ERROR: Path to digital data storage not configured'
             else:
-              startcoll()
+          #    startcoll()
+          # command mainctl to trigger DE to start sending ringvuffer data
+              send_to_mainctl('SC',1)
+# TODO: the following has to use the configured path setting
+              ch0f =     parser['settings']['ch0f']
+              ch0b =     parser['settings']['ch0b']     
+              ch1f =     parser['settings']['ch1f']
+              ch1b =     parser['settings']['ch1b']
+              ch2f =     parser['settings']['ch2f']
+              ch2b =     parser['settings']['ch2b']
+              ch3f =     parser['settings']['ch3f']
+              ch3b =     parser['settings']['ch3b']
+              ch4f =     parser['settings']['ch4f']
+
+              ch4b =     parser['settings']['ch4b']
+              ch5f =     parser['settings']['ch5f']
+              ch5b =     parser['settings']['ch5b']
+              ch6f =     parser['settings']['ch6f']
+              ch6b =     parser['settings']['ch6b']
+              ch7f =     parser['settings']['ch7f']
+              ch7b =     parser['settings']['ch7b']
+              ch8f =     parser['settings']['ch8f']
+              ch8b =     parser['settings']['ch8b']
+              ch9f =     parser['settings']['ch9f']
+              ch9b =     parser['settings']['ch9b']
+              ch10f =     parser['settings']['ch10f']
+              ch10b =     parser['settings']['ch10b']
+              ch11f =     parser['settings']['ch11f']
+              ch11b =     parser['settings']['ch11b']
+              ch12f =     parser['settings']['ch12f']
+              ch12b =     parser['settings']['ch12b']
+              ch13f =     parser['settings']['ch13f']
+              ch13b =     parser['settings']['ch13b']
+              ch14f =     parser['settings']['ch14f']
+              ch14b =     parser['settings']['ch14b']
+              ch15f =     parser['settings']['ch15f']
+              ch15b =     parser['settings']['ch15b']
+              print("Record list of subchannels=",[ch0f,ch1f,ch2f,ch3f,ch4f,ch5f])
+              f5 = h5py.File('/media/odroid/416BFA3A615ACF0E/hamsci/hdf5/drf_properties.h5','r+')
+              f5.attrs.__setitem__('subchannel_frequencies',
+               [float(ch0f),float(ch1f),float(ch2f),float(ch3f),float(ch4f),float(ch5f)])
+              bw=[1.1,2.2,3.3,4.4]
+              f5.attrs.__setitem__('subchannel_bandwidths',bw)
+              f5.close()
          if(form.stopDC.data ):
             stopcoll()
          if(form.startprop.data):
@@ -327,7 +380,6 @@ def desetup():
 	  ch13f = ch13f, ch13b = ch13b,
 	  ch14f = ch14f, ch14b = ch14b,
 	  ch15f = ch15f, ch15b = ch15b )
-
 
    result = request.form
    rgPathExists = os.path.isdir(result.get('ringbufferPath'))
@@ -533,7 +585,25 @@ def desetup():
      configCmd = configCmd + ',' + str(i) + ',' + a[i] + ',' + f[i] + ',' + b[i]
 
 #   print("configcmd=" + configCmd)
-   send_to_mainctl(configCmd);
+   send_to_mainctl(configCmd,1);
+
+# record a DigitalMetatdata file including channel config details
+#   metadata_dir = ringbufferPath
+#   subdirectory_cadence_seconds = 3600
+#   file_cadence_seconds = 60
+#   samples_per_second_numerator = 10
+#   samples_per_second_denominator = 9
+#   file_name = "channel_layout"
+#   stime =int(time.time())
+#   dmw = digital_rf.DigitalMetadataWriter(
+#    metadata_dir,
+#    subdirectory_cadence_seconds,
+#    file_cadence_seconds,
+#    samples_per_second_numerator,
+#    samples_per_second_denominator,
+#    file_name,
+#    )
+   print("first metatdata create okay")
 
    return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
@@ -995,12 +1065,11 @@ def ft8list():
     plist = []
     for fno in range(7):
      fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
-     print("checking file",fname)
+ #    print("checking file",fname)
      f = open(fname,"r")
      plist.append(len(f.readlines()))
      f.close()
       
-
 # here we build a JSON string to populate the FT8 panel
     ft8string = '{'
 #   for i in range(0,len(x)):
@@ -1015,7 +1084,7 @@ def ft8list():
     ft8string = ft8string + '"end":" "}'
     print("string= " , ft8string)
   except Exception as ex:
-    print(ex)
+ #   print(ex)
 # no-op
     z=1
 

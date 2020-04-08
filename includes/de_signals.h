@@ -29,7 +29,10 @@ struct dataSample
 typedef struct dataBuf
 	{
     char bufType[2];
-	long bufCount;
+	union {  // this space contains buffer length for data buffer, error code for NAK
+	  long bufCount;
+      char errorCode[2];
+	  } dval;
 	long timeStamp;
     int channelNo;
     double centerFreq;
@@ -39,11 +42,19 @@ typedef struct dataBuf
     struct dataSample theDataSample[1024];  // should be double the number of samples
 	} DATABUF ;
 
+/*
+typedef struct responseBuf
+	{
+	char buftype[2];
+	char responseCode[2];
+    } RESPONSEBUF;
+*/
+
 typedef struct configChannelRequest
 	{
     char cmd[2];
-	uint16_t configPort;
-	uint16_t dataPort;
+	uint16_t configPort;  // Port C
+	uint16_t dataPort;    // Port F
 	} CONFIGBUF;
 
 struct channelBlock

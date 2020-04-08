@@ -81,7 +81,7 @@ static	Digital_rf_write_object * DRFdata_object = NULL; /* main object created b
 //static	Digital_rf_write_object * data_object1 = NULL; /* main object created by init */
 static	uint64_t vector_leading_edge_index = 0; /* index of the sample being written starting at zero with the first sample recorded */
 static	uint64_t global_start_index; /* start sample (unix time * sample_rate) of first measurement - set below */
-static	int hdf_i = 0; 
+static	long hdf_i = 0; 
 static  int result = 0;
 static  int sampleCounter = 0;
 	/*  dataset to write */
@@ -173,7 +173,7 @@ static void alloc_data_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf
 }
 
 const char *configPath;
-//char configPath[100];
+
 
 //// *********************** Start of Code  *******************************//////
 
@@ -236,11 +236,8 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
   uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
-
   puts("forward status to webcontrol");
-
   uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
-
   puts("free the DE buffer");
   free(DEbuf->base);    
 }
@@ -273,8 +270,8 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     {
        double dialfreq = buf_ptr->centerFreq;
        channelPtr = buf_ptr-> channelNo;
-       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->bufCount);
-       if(buf_ptr->bufCount == 0 )   // this is the first buffer of the minute
+       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->dval.bufCount);
+       if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
        {
         t = time(NULL);
 
@@ -284,12 +281,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
         sprintf(name[channelPtr], "/mnt/RAM_disk/FT8/ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
        if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
         { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
+		  free(buf->base);  // always release memory before exiting this callback
+		  free(buf_ptr);
           return;
         }
        fwrite(&dialfreq, 1, 8, fp[channelPtr]);
       }
       fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
-      if (buf_ptr->bufCount == 239 )   // was this the last buffer?
+      if (buf_ptr->dval.bufCount == 239 )   // was this the last buffer?
         {
         fclose(fp[channelPtr]);
         char chstr[2];
@@ -303,12 +302,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
         printf("the command: %s\n",mycmd);
         int ret = system(mycmd);
         puts("ft8 decode ran");
-        }
-      free (buf_ptr); 
-   //   return;  // TODO:  need to free both buffers after this before return
-    }
 
-  if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of "regular" I/Q data
+        }
+	free(buf->base);  // always release memory before exiting this callback
+    free (buf_ptr);
+	return; 
+    }  // end of code for handling incoming FT8 data
+
+  if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
   {
    buffers_received++;
   //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
@@ -317,6 +318,9 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
    if (nread < 8000)  // discard this buffer for now 
 	{
 	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
+	 free(buf->base);  // always release memory before exiting this callback
+     free (buf_ptr);
+	 return; 
 	}
    if (nread > 8000)  // looks like a valid databuffer, based on length
 	{
@@ -334,7 +338,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   //  DATABUF *buf_ptr;
   //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
-    packetCount = (long) buf_ptr->bufCount;
+    packetCount = (long) buf_ptr->dval.bufCount;
     printf("bufcount = %ld\n", packetCount);
 
   /* local variables  for Digital RF */
@@ -387,16 +391,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        
   //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
 
-    hdf_i++;
+    hdf_i++;  // increment count of hdf buffers processed
 
     free (buf_ptr);  // free the work buffer
     }
-
   }
 
-
-///////////////////////////////////////////
-  free(buf->base);
+  free(buf->base);  // free the callback buffer
+  return;  // end of callback for handling incoming I/Q data
   }
 
 void recv_port_check() {
@@ -469,11 +471,12 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     token = strtok(NULL, comma);
 
     printf("second token = %s\n", token);
-
+//  Set up "Port C" where we listen for config request response
     int ret = sscanf(token,"%5hu",&LH_CONF_IN_port );
     printf("port conversion done, ret= %d\n",ret);
     printf("Port C assigned as %d \n",LH_CONF_IN_port);
 //    memcpy(configBuf_ptr->configPort,LH_CONF_IN_port,2);
+//  Set up "Port F" where we will listen for I/Q data coming from DE
     configBuf_ptr->configPort = LH_CONF_IN_port;
     token = strtok(NULL, comma);
     
@@ -513,15 +516,18 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
     for (int i=0; i < 16; i++)
       {
- //     printf("Channel# %i :\n",i);
+      printf("Channel# %i :\n",i);
       token = strtok(NULL, comma);
 //printf("next token = %s\n", token);
       int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].channelNo );
-//      printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
+      printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
       token = strtok(NULL, comma);
-//printf("next token = %s\n", token);
-      ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
-//      printf("converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
+      printf("next token = %s\n", token);
+      if(strcmp(token,"Off")==0)
+		h.channelBuffer.channelDef[i].antennaPort = -1;
+	  else
+        ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
+      printf("converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
       token = strtok(NULL, comma);
  //     printf("next token = %s\n", token);
       ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelFreq);
@@ -539,8 +545,8 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
 	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
 
-    printf("Sending CONFIG REQUEST to %s  port %u\n", DE_IP, d.myConfigBuf.configPort);
-    uv_ip4_addr(DE_IP, d.myConfigBuf.configPort, &send_config_addr);  
+    printf("Sending CONFIG CHANNELS to %s  port %u\n", DE_IP, d.myConfigBuf.dataPort);
+    uv_ip4_addr(DE_IP, d.myConfigBuf.dataPort, &send_config_addr);  
       
  //   uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     printf("port in the addr = %i\n",ntohs(send_config_addr.sin_port));
@@ -752,9 +758,8 @@ void statusInquiry() {
 }
 
 
-
 ///////////////////////////////////////////////////////////////
-//  Callback for when UDP command/ACK packets received from DE 
+//  Callback for when UDP command/ACK/NAK packets received from DE 
 //  A separate callback handles incoming I/Q data, above
 //////////////////////////////////////////////////////////////
 void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
@@ -769,15 +774,16 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     }
   printf("UDP data recvd, bytes = %ld\n", nread);
 
-    DATABUF *buf_ptr;
-    buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-    memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
+  DATABUF *buf_ptr;
+  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
+// TODO: ensure there is a free for this memory before every return
+  memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
 
-    printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+  printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
 
   // respond to STATUS INQUIRY
 
-    if(strncmp(buf_ptr->bufType, "OK" ,2) ==0)
+  if(strncmp(buf_ptr->bufType, "OK" ,2) ==0)
 	{
 	puts("OK status message received from DE!  It's alive!!");
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
@@ -788,14 +794,14 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
      return;
 	}
 
-    if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)
+  if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)
     {
     printf("AK buffer contains %x %x %x %x %x %x \n",
            buf->base[0], buf->base[1], buf->base[2],
 			buf->base[3], buf->base[4], buf->base[4]);
 
 /////////////////////////////////////////////////
-      if(nread == 6)    // this should be a CC ACK containing DE listening ports
+    if(nread == 6)    // this should be a CC ACK containing DE listening ports
       {
 
       puts("Prep to handle incoming IQ data");
@@ -807,12 +813,10 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
       uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
       puts("Forward the ACK");
+//    Forward ACK to web controller 
       uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
-
       return;
-
       }
-
 
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
     uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
@@ -821,6 +825,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     return;
     }
 
+//  If DE could not fulfil the last request or command, it sends a NAK
     if(strncmp(buf_ptr->bufType, "NAK" ,3) ==0)
     {
     puts("NAK received from last command");
@@ -833,8 +838,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     {
        double dialfreq = buf_ptr->centerFreq;
        channelPtr = buf_ptr-> channelNo;
-       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->bufCount);
-       if(buf_ptr->bufCount == 0 )   // this is the first buffer of the minute
+       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->dval.bufCount);
+       if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
        {
         t = time(NULL);
 
@@ -850,7 +855,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
        fwrite(&dialfreq, 1, 8, fp[channelPtr]);
       }
       fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
-      if (buf_ptr->bufCount == 239 )   // was this the last buffer?
+      if (buf_ptr->dval.bufCount == 239 )   // was this the last buffer?
         {
         fclose(fp[channelPtr]);
         char chstr[2];
@@ -894,7 +899,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   //  DATABUF *buf_ptr;
   //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
-    packetCount = (long) buf_ptr->bufCount;
+    packetCount = (long) buf_ptr->dval.bufCount;
     printf("bufcount = %ld\n", packetCount);
 
   /* local variables  for Digital RF */
@@ -1118,7 +1123,7 @@ int main(int argc, char *argv[]) {
 // Discover what devices are acessible and respond to discovery packet (preamble hex EF FE ) 
   puts("starting");
   int testresult;
-  if(argc > 1)  // execute this if user asked to run the unit tests
+  if(argc > 1)  // execute only this if user asked to run the unit tests
     {
     printf("argc = %d\n",argc);
     printf("Got argument: '%s'\n",argv[1]);
@@ -1136,7 +1141,8 @@ int main(int argc, char *argv[]) {
   discovered[0]= UDPdiscover(&LH_port);    // pass handle to outbound port
   // discovery randomly selects an outbound port. DE will talk to that port.
   // Here we find out what that port is, so we can listen on it.
-  printf("discovery selected LH port %d \n", LH_port); 
+  // In documentation, this port is called "Port A"
+  printf("discovery selected LH port %d (Port A)\n", LH_port); 
   puts("Here's what we found:");
   for(int i=0;i<MAX_DEVICES;i++)
 	{
@@ -1150,10 +1156,9 @@ int main(int argc, char *argv[]) {
 	 {
 		strcpy(DE_IP, inet_ntoa(discovered[i].info.network.address.sin_addr));
 		DE_port = htons(discovered[i].info.network.address.sin_port);
-		printf("selected Tangerine at port %u\n",DE_port);
+		printf("selected Tangerine at port %u (Port B)\n",DE_port);
 	  }
 	}
-
 
 // get the configuration file
   config_t cfg;
@@ -1188,11 +1193,11 @@ int main(int argc, char *argv[]) {
 
   char result[100];
   char target[30];
-  strcpy(target,"configport");
+ // strcpy(target,"configport");
   int num_items = 0;
   puts("start");
-  printf("looking for '%s'\n",target);
-  num_items = rconfig(target,result,0);
+ // printf("looking for '%s'\n",target);
+  num_items = rconfig("configport",result,0);
   if(num_items == 0)
     {
     printf("ERROR - configport setting not found in config.ini");
@@ -1200,29 +1205,17 @@ int main(int argc, char *argv[]) {
   else
     {
     printf(" CONFIG RESULT = '%s'\n",result);
-    printf("len =%lu\n",strlen(result));
+ //   printf("len =%lu\n",strlen(result));
     LH_CONF_IN_port = atoi(result);
     num_items = rconfig("dataport",result,0);
     LH_DATA_IN_port = atoi(result);
     }
- // LH_CONF_IN_port = 40001;
- // LH_DATA_IN_port = 40002;
-/*
-  if(config_lookup_string(&cfg, "DE_ip", &DE_ip_str))
-    printf("Setting ip address of DE to: %s\n\n", DE_ip_str);
-  else
-    fprintf(stderr, "No 'name' setting in configuration file.\n");
 
-  if(config_lookup_int(&cfg, "DE_port", &DE_port))
-	fprintf(stderr,"Setting DE port to: %d\n",DE_port);
-  else
-	fprintf(stderr,"No DE_port setting in configuration file\n");
-*/
-  strcpy(target,"DE_ip");
+//  strcpy(target,"DE_ip");
 //  int num_items = 0;
   puts("start");
-  printf("looking for '%s'\n",target);
-  num_items = rconfig(target,result,0);
+ // printf("looking for '%s'\n",target);
+  num_items = rconfig("DE_ip",result,0);
   if(num_items == 0)
     {
     printf("ERROR - DE_ip setting not found in config.ini");
@@ -1234,10 +1227,11 @@ int main(int argc, char *argv[]) {
     strcpy(DE_ip_str, result);
     }
 
-  strcpy(target,"DE_port");
-  puts("start");
-  printf("looking for '%s'\n",target);
-  num_items = rconfig(target,result,0);
+ // strcpy(target,"DE_port");
+//  puts("start");
+ // printf("looking for '%s'\n",target);
+
+  num_items = rconfig("DE_port",result,0);
   if(num_items == 0)
     {
     printf("ERROR - DE_ip setting not found in config.ini");
@@ -1249,27 +1243,9 @@ int main(int argc, char *argv[]) {
     DE_port = atoi(result);
     }
 
+ // strcpy(target,"controlport");
 
-
-/*
-  if(config_lookup_int(&cfg, "LH_port_C", &LH_CONF_IN_port))
-	fprintf(stderr,"Setting LH_port_C to: %d\n",LH_CONF_IN_port);
-  else
-	fprintf(stderr,"No LH_port_C setting in configuration file\n");
-
-  if(config_lookup_int(&cfg, "LH_port_F", &LH_DATA_IN_port))
-	fprintf(stderr,"Setting LH_port_F to: %d\n",LH_DATA_IN_port);
-  else
-	fprintf(stderr,"No LH_port_F setting in configuration file\n");
-*/
-/*
-  if(config_lookup_int(&cfg, "controller_port", &controller_port))
-    fprintf(stderr,"Will listen on port %d for commands from webcontrol\n", controller_port);
-  else
-    fprintf(stderr,"No port set for listening to webcontrol\n");
-*/
-  strcpy(target,"controlport");
-  num_items = rconfig(target,result,0);
+  num_items = rconfig("controlport",result,0);
   if(num_items == 0)
     {
     printf("ERROR - controlport setting not found in config.ini");
@@ -1281,17 +1257,9 @@ int main(int argc, char *argv[]) {
     controller_port = atoi(result);
     }
 
-/*
-  if(config_lookup_string(&cfg, "ringbuffer_path", &ringbufferPath))
-    {
-    strcpy(ringbuffer_path, ringbufferPath);
-    fprintf(stderr,"Will store Digital RF / HDF5 files in %s \n", ringbuffer_path);
-    }
-  else
-    fprintf(stderr,"No port set for listening to webcontrol\n");
-*/
-  strcpy(target,"ringbuffer_path");
-  num_items = rconfig(target,result,0);
+
+ // strcpy(target,"ringbuffer_path");
+  num_items = rconfig("ringbuffer_path",result,0);
   if(num_items == 0)
     {
     printf("ERROR - ringbuffer_path setting not found in config.ini");
@@ -1301,7 +1269,6 @@ int main(int argc, char *argv[]) {
     printf(" CONFIG RESULT = '%s'\n",result);
     printf("len =%lu\n",strlen(result));
     strcpy(ringbuffer_path, result);
-   // strcpy(ringbufferPath,result);
     }
 
 
@@ -1324,7 +1291,7 @@ int main(int argc, char *argv[]) {
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
 
- // here we will listen on that port broadcast earlier selected
+ // here we will listen on that port broadcast earlier selected ("Port A")
   uv_ip4_addr("localhost", LH_port, &recv_addr);   // TODO: should be localhost (?)
   printf("will listen on port A %u \n", LH_port);
   uv_udp_bind(&recv_socket, (const struct sockaddr *)&recv_addr, UV_UDP_REUSEADDR);
@@ -1343,14 +1310,14 @@ int main(int argc, char *argv[]) {
   puts("Prep to handle config request and reply");
   uv_udp_t config_socket;
   uv_udp_init(loop, &config_socket);
-
-  uv_ip4_addr("0.0.0.0", 40001, &recv_config_addr); 
+// Set up "Port C" where we listen for response from DE to config request
+  uv_ip4_addr("0.0.0.0", LH_CONF_IN_port , &recv_config_addr); 
   printf("will listen on port C %u \n", LH_CONF_IN_port);
   uv_udp_bind(&config_socket, (const struct sockaddr *)&recv_config_addr, UV_UDP_REUSEADDR);
   uv_udp_recv_start(&config_socket, alloc_config_buffer, on_UDP_read);
 
   printf("prep to send UDP config (CH) using outbound port %i\n", LH_CONF_IN_port);
-
+// TODO: this must be the configured port
   uv_udp_init(loop, &send_config_socket);
   uv_ip4_addr("255.255.255.255", 50001, &send_config_addr);
 //  send_config_addr.sin_addr.s_addr = htonl(INADDR_ANY);
