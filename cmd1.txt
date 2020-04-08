@@ -1,0 +1,5 @@
+set kf6 [exec tput kf6]
+spawn -noecho gnuradio-companion /home/odroid/projects/grc_module_experiments/showfft.grc
+sleep 10
+interact
+send $kf6

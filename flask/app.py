@@ -5,8 +5,17 @@ import _thread
 import time
 import os
 import subprocess
+from subprocess import Popen, PIPE
 import configparser
 import smtplib
+
+# This is temporary until we can get digital_rf, h5py, and hdf5 to install correctly under Python3.x
+import sys
+
+import h5py
+import numpy as np
+import datetime
+
 #from array import *
 from email.mime.multipart import MIMEMultipart 
 from email.mime.text import MIMEText 
@@ -18,7 +27,7 @@ from flask_wtf import Form
 from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
 from flask import request, flash
 from forms import MainControlForm, ThrottleControlForm, ChannelControlForm, ServerControlForm
-#from forms import ContactForm
+from forms import CallsignForm
 
 from wtforms import validators, ValidationError
 from flask_wtf import CSRFProtect
@@ -35,8 +44,9 @@ dataCollStatus = 0;
 theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
+f = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
-def send_to_mainctl(cmdToSend):
+def send_to_mainctl(cmdToSend,waitTime):
   print("F: sending:" + cmdToSend)
   host_ip, server_port = "127.0.0.1", 6100
   data = cmdToSend + "\n"  
@@ -45,12 +55,13 @@ def send_to_mainctl(cmdToSend):
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: *** WC: *** connect to socket")
+     print("F: *** WC: *** connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
-     print("F: send query")
+     print("F: send cmd:",cmdToSend)
      tcp_client.sendall(data.encode())
      print("F: wait for DE response")
-     time.sleep(4)
+     if(waitTime > 0):
+       time.sleep(waitTime)
      print("F: try to receive response")
      received = "NOTHING"
     # Read data from the TCP server and close the connection
@@ -68,10 +79,10 @@ def send_to_mainctl(cmdToSend):
   except Exception as e: 
      print(e)
      print("F: '" + e.errno + "'")
-     if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error " + e.errno +  "mainctl program not responding"
-     else:
-       theStatus = "Exception " + str(e)
+#     if(str(e.errno) == "111" or str(e.errno == "11")):
+#       theStatus = "Error " + e.errno +  "mainctl program not responding"
+#     else:
+#       theStatus = "Exception " + str(e)
   finally:
      tcp_client.close()
 
@@ -83,7 +94,7 @@ def channel_request():
 # ports that mainctl will listen on for traffic from DE
   configPort =  parser['settings']['configport']
   dataPort   =  parser['settings']['dataport']
-  send_to_mainctl("CC," + configPort + "," + dataPort )
+  send_to_mainctl(("CC," + configPort + "," + dataPort),1 )
   
 
 def check_status_once():
@@ -98,7 +109,7 @@ def check_status_once():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: *** WC: *** connect to socket")
+     print("F: *** WC: *** connect to socket ,port ",server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send query")
      tcp_client.sendall(data.encode())
@@ -155,20 +166,68 @@ def sdr():
          return render_template('tangerine.html', form = form)
       else:
          result = request.form
-         print('F: mode set to:',form.mode.data)
+         print('F: mode set to:"',form.mode.data,'"')
          parser.set('settings','mode',form.mode.data)
          fp = open('config.ini','w')
          parser.write(fp)
          fp.close()
          print('F: start set to ',form.startDC.data)
          print('F: stop set to ', form.stopDC.data)
+         if(form.startDC.data and form.mode.data =='snapshotter'):
+           process = subprocess.Popen(["./displayFFT.py","/mnt/RAM_disk/snap/fn.dat"], stdout = PIPE, stderr=PIPE)
+#           stdout, stderr = process.communicate()
+#           print(stdout)
+           return  render_template('tangerine.html', form = form)
          if(form.startDC.data ):
             if ( len(parser['settings']['ringbuffer_path']) < 1 
                    and form.mode.data == 'ringbuffer') :
               print("F: configured ringbuffer path='", parser['settings']['ringbuffer_path'],"'", len(parser['settings']['ringbuffer_path']))
               form.errline = 'ERROR: Path to digital data storage not configured'
             else:
-              startcoll()
+          #    startcoll()
+          # command mainctl to trigger DE to start sending ringvuffer data
+              send_to_mainctl('SC',1)
+# TODO: the following has to use the configured path setting
+              ch0f =     parser['settings']['ch0f']
+              ch0b =     parser['settings']['ch0b']     
+              ch1f =     parser['settings']['ch1f']
+              ch1b =     parser['settings']['ch1b']
+              ch2f =     parser['settings']['ch2f']
+              ch2b =     parser['settings']['ch2b']
+              ch3f =     parser['settings']['ch3f']
+              ch3b =     parser['settings']['ch3b']
+              ch4f =     parser['settings']['ch4f']
+
+              ch4b =     parser['settings']['ch4b']
+              ch5f =     parser['settings']['ch5f']
+              ch5b =     parser['settings']['ch5b']
+              ch6f =     parser['settings']['ch6f']
+              ch6b =     parser['settings']['ch6b']
+              ch7f =     parser['settings']['ch7f']
+              ch7b =     parser['settings']['ch7b']
+              ch8f =     parser['settings']['ch8f']
+              ch8b =     parser['settings']['ch8b']
+              ch9f =     parser['settings']['ch9f']
+              ch9b =     parser['settings']['ch9b']
+              ch10f =     parser['settings']['ch10f']
+              ch10b =     parser['settings']['ch10b']
+              ch11f =     parser['settings']['ch11f']
+              ch11b =     parser['settings']['ch11b']
+              ch12f =     parser['settings']['ch12f']
+              ch12b =     parser['settings']['ch12b']
+              ch13f =     parser['settings']['ch13f']
+              ch13b =     parser['settings']['ch13b']
+              ch14f =     parser['settings']['ch14f']
+              ch14b =     parser['settings']['ch14b']
+              ch15f =     parser['settings']['ch15f']
+              ch15b =     parser['settings']['ch15b']
+              print("Record list of subchannels=",[ch0f,ch1f,ch2f,ch3f,ch4f,ch5f])
+              f5 = h5py.File('/media/odroid/416BFA3A615ACF0E/hamsci/hdf5/drf_properties.h5','r+')
+              f5.attrs.__setitem__('subchannel_frequencies',
+               [float(ch0f),float(ch1f),float(ch2f),float(ch3f),float(ch4f),float(ch5f)])
+              bw=[1.1,2.2,3.3,4.4]
+              f5.attrs.__setitem__('subchannel_bandwidths',bw)
+              f5.close()
          if(form.stopDC.data ):
             stopcoll()
          if(form.startprop.data):
@@ -322,9 +381,17 @@ def desetup():
 	  ch14f = ch14f, ch14b = ch14b,
 	  ch15f = ch15f, ch15b = ch15b )
 
-   if not form.validate():
-     theStatus = form.errors
-     result = request.form
+   result = request.form
+   rgPathExists = os.path.isdir(result.get('ringbufferPath'))
+   print("path / directory existence check: ", rgPathExists)
+   
+   
+   if not form.validate() or rgPathExists == False:
+     if rgPathExists == True:
+       theStatus = form.errors
+     else:
+       theStatus = "Ringbuffer path invalid or not a directory"
+#     result = request.form
      ringbufferPath = result.get('ringbufferPath')
      ch0f =     str(result.get('ch0f'))
      ch0b =     str(result.get('ch0b'))     
@@ -385,7 +452,7 @@ def desetup():
        print("F: CANCEL")
      else:
        print("F: POST ringbufferPath =", result.get('ringbufferPath'))
-       ringbufferPath = ""
+#       ringbufferPath = ""
        parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
        parser.set('settings', 'ant0',            form.antennaport0.data)
        parser.set('settings', 'ch0f',            str(result.get('ch0f')))
@@ -517,8 +584,26 @@ def desetup():
    for i in list(range(16)):
      configCmd = configCmd + ',' + str(i) + ',' + a[i] + ',' + f[i] + ',' + b[i]
 
-   print("configcmd=" + configCmd)
-   send_to_mainctl(configCmd);
+#   print("configcmd=" + configCmd)
+   send_to_mainctl(configCmd,1);
+
+# record a DigitalMetatdata file including channel config details
+#   metadata_dir = ringbufferPath
+#   subdirectory_cadence_seconds = 3600
+#   file_cadence_seconds = 60
+#   samples_per_second_numerator = 10
+#   samples_per_second_denominator = 9
+#   file_name = "channel_layout"
+#   stime =int(time.time())
+#   dmw = digital_rf.DigitalMetadataWriter(
+#    metadata_dir,
+#    subdirectory_cadence_seconds,
+#    file_cadence_seconds,
+#    samples_per_second_numerator,
+#    samples_per_second_denominator,
+#    file_name,
+#    )
+   print("first metatdata create okay")
 
    return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath,
@@ -592,7 +677,7 @@ def startprop():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -619,7 +704,7 @@ def stopprop():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port",server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -659,7 +744,7 @@ def startcoll():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port", server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -690,7 +775,7 @@ def stopcoll():
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Establish connection to TCP server and exchange data
-     print("F: connect to socket")
+     print("F: connect to socket, port ",server_port)
      tcp_client.connect((host_ip, server_port))
      print("F: send command")
      tcp_client.sendall(data.encode())
@@ -738,7 +823,7 @@ def throttle():
 @app.route("/callsign", methods = ['POST','GET'])
 def callsign():
    global theStatus, theDataStatus
-#   form = CallsignForm()
+   form = CallsignForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'GET':
@@ -748,7 +833,7 @@ def callsign():
      c3 = parser['monitor']['c3']
      c4 = parser['monitor']['c4']
      c5 = parser['monitor']['c5']
-     return render_template('callsign.html',
+     return render_template('callsign.html', form = form,
 	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
    if request.method == 'POST':
      result = request.form
@@ -775,7 +860,7 @@ def callsign():
      c4 = parser['monitor']['c4']
      c5 = parser['monitor']['c5']
      
-     return render_template('callsign.html',
+     return render_template('callsign.html', form = form,
 	  c0 = c0, c1 = c1, c2 = c2, c3 = c3, c4 = c4, c5 = c5)
 
 @app.route("/notification", methods = ['POST','GET'])
@@ -972,21 +1057,36 @@ def propagation():
 @app.route('/_ft8list')
 def ft8list():
   ft8string = ""
+  band = [ 7, 10, 14, 18, 21, 24, 28]
   try:
-   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
-   x = f.readlines()
-   f.close()
-
+#   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
+#   x = f.readlines()
+#   f.close()
+    plist = []
+    for fno in range(7):
+     fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
+ #    print("checking file",fname)
+     f = open(fname,"r")
+     plist.append(len(f.readlines()))
+     f.close()
+      
 # here we build a JSON string to populate the FT8 panel
-   ft8string = '{'
-   for i in range(0,len(x)):
-    ft8string = ft8string + '"' + str(i) + '":"' +  \
-      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
+    ft8string = '{'
+#   for i in range(0,len(x)):
+#    ft8string = ft8string + '"' + str(i) + '":"' +  \
+#      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
+    ft8string = ft8string + '"0":"MHz  spots",'
+    for i in range(7):
+     pval = str(plist[i])
+     ft8string = ft8string + '"' + str(i+1) + '":"' +  \
+       str(band[i]) + ' - ' + pval + ' ",'
 
-   ft8string = ft8string + '"end":" "}'
-   print("string= " , ft8string)
-  except:
-   print("ft8 file not found")
+    ft8string = ft8string + '"end":" "}'
+    print("string= " , ft8string)
+  except Exception as ex:
+ #   print(ex)
+# no-op
+    z=1
 
   return Response(ft8string, mimetype='application/json')
 
@@ -1001,7 +1101,7 @@ if __name__ == "__main__":
 #	app.run(debug = True)
 
 	from waitress import serve
-#	serve(app, host = "0.0.0.0", port=5000) 
-	serve(app)
+	serve(app, host = "0.0.0.0", port=5000) 
+#	serve(app)
 #	serve(app, host = "192.168.1.75", port=5000)
 

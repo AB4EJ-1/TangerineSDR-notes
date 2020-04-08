@@ -75,6 +75,9 @@ class ThrottleControlForm(FlaskForm):
      ('100 Mbps', '100M')])
   submit = SubmitField("Set Bandwidth")
 
+class CallsignForm(FlaskForm):
+  submit = SubmitField('Save callsigns')
+
 class ServerControlForm(FlaskForm):
   emailto = StringField('email from',[
     validators.Length(min=6, message=(u'Too short for email addr')),
