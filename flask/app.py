@@ -187,46 +187,23 @@ def sdr():
           #    startcoll()
           # command mainctl to trigger DE to start sending ringvuffer data
               send_to_mainctl('SC',1)
-# TODO: the following has to use the configured path setting
-              ch0f =     parser['settings']['ch0f']
-              ch0b =     parser['settings']['ch0b']     
-              ch1f =     parser['settings']['ch1f']
-              ch1b =     parser['settings']['ch1b']
-              ch2f =     parser['settings']['ch2f']
-              ch2b =     parser['settings']['ch2b']
-              ch3f =     parser['settings']['ch3f']
-              ch3b =     parser['settings']['ch3b']
-              ch4f =     parser['settings']['ch4f']
-
-              ch4b =     parser['settings']['ch4b']
-              ch5f =     parser['settings']['ch5f']
-              ch5b =     parser['settings']['ch5b']
-              ch6f =     parser['settings']['ch6f']
-              ch6b =     parser['settings']['ch6b']
-              ch7f =     parser['settings']['ch7f']
-              ch7b =     parser['settings']['ch7b']
-              ch8f =     parser['settings']['ch8f']
-              ch8b =     parser['settings']['ch8b']
-              ch9f =     parser['settings']['ch9f']
-              ch9b =     parser['settings']['ch9b']
-              ch10f =     parser['settings']['ch10f']
-              ch10b =     parser['settings']['ch10b']
-              ch11f =     parser['settings']['ch11f']
-              ch11b =     parser['settings']['ch11b']
-              ch12f =     parser['settings']['ch12f']
-              ch12b =     parser['settings']['ch12b']
-              ch13f =     parser['settings']['ch13f']
-              ch13b =     parser['settings']['ch13b']
-              ch14f =     parser['settings']['ch14f']
-              ch14b =     parser['settings']['ch14b']
-              ch15f =     parser['settings']['ch15f']
-              ch15b =     parser['settings']['ch15b']
-              print("Record list of subchannels=",[ch0f,ch1f,ch2f,ch3f,ch4f,ch5f])
+# write metadata describing channels into the drf_properties file
+              ant = []
+              chf = []
+              bw = []
+              chcount = 0
+              for i in range(0,15):
+                if(parser['settings']['ant' + str(i)] != 'Off'):
+                  ant.append(int(parser['settings']['ant' + str(i)]))
+                  chf.append(float(parser['settings']['ch' + str(i) + 'f']))
+                  bw.append(float(parser['settings']['ch' + str(i) + 'b']))
+                  chcount = chcount + 1
+              print("Record list of subchannels=",chf)
               f5 = h5py.File('/media/odroid/416BFA3A615ACF0E/hamsci/hdf5/drf_properties.h5','r+')
-              f5.attrs.__setitem__('subchannel_frequencies',
-               [float(ch0f),float(ch1f),float(ch2f),float(ch3f),float(ch4f),float(ch5f)])
-              bw=[1.1,2.2,3.3,4.4]
-              f5.attrs.__setitem__('subchannel_bandwidths',bw)
+              f5.attrs.__setitem__('no_of_subchannels',chcount)
+              f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
+              f5.attrs.__setitem__('subchannel_bandwidths_KHz',bw)
+              f5.attrs.__setitem__('antenna_ports',ant)
               f5.close()
          if(form.stopDC.data ):
             stopcoll()
