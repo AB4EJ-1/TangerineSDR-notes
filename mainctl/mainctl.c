@@ -340,6 +340,9 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
     packetCount = (long) buf_ptr->dval.bufCount;
     printf("bufcount = %ld\n", packetCount);
+    int noOfChannels = buf_ptr->channelCount;
+    int sampleCount = 1024 / noOfChannels;
+    printf("Channel count = %i\n",buf_ptr->channelCount);
 
   /* local variables  for Digital RF */
     uint64_t vector_leading_edge_index = 0;
@@ -360,14 +363,20 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     vector_leading_edge_index=0;
     vector_sum = 0;
     hdf_i= 0;
+/*
     DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
+*/
+    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
+     "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
       }
 
 // here we write out DRF
 
-    vector_sum = vector_leading_edge_index + hdf_i*vector_length; 
+  //  vector_sum = vector_leading_edge_index + hdf_i*vector_length;   // original code
+    vector_sum = vector_leading_edge_index + hdf_i*sampleCount; 
 /*
 
 // in case we have to convert or otherwise interpret the DE buffer, here is a
@@ -381,11 +390,30 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
      }
 */
 
+// debugging code
+
+    for(int i=0; i < (sampleCount * noOfChannels); i=i+noOfChannels)
+ {
+  int k;
+  printf("i= %i ",i);
+
+  for(int j=0;j<noOfChannels;j++) 
+   {
+   k = j + i;
+//   printf("k=%i   \n",k);
+   printf("%f %f",buf_ptr->theDataSample[k].I_val,buf_ptr->theDataSample[k].Q_val);
+   }
+   printf("\n");
+   
+ }
+
+
     fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
-      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
+  //    result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
+      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,sampleCount) ;
 	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
        
@@ -901,7 +929,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
     packetCount = (long) buf_ptr->dval.bufCount;
     printf("bufcount = %ld\n", packetCount);
-
+    printf("Channel count = %i \n",buf_ptr->channelCount);
   /* local variables  for Digital RF */
     uint64_t vector_leading_edge_index = 0;
     uint64_t global_start_sample = 0;
@@ -921,9 +949,15 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     vector_leading_edge_index=0;
     vector_sum = 0;
     hdf_i= 0;
+ //   NUM_SUBCHANNELS = buf_ptr->channelCount;
+/*
     DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
+
+*/    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
+     "TangerineSDR", 0, 0, 1,buf_ptr->channelCount , 1, 1);
       }
 
 // here we write out DRF
