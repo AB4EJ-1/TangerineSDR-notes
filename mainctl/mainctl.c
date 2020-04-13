@@ -390,8 +390,8 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
      }
 */
 
-// debugging code
-
+// debugging code for multi=subchannel support
+/*
     for(int i=0; i < (sampleCount * noOfChannels); i=i+noOfChannels)
  {
   int k;
@@ -406,7 +406,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
    printf("\n");
    
  }
-
+*/
 
     fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is

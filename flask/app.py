@@ -40,13 +40,36 @@ csrf.init_app(app)
 #CsrfProtect(app)
 global theStatus, theDataStatus, thePropStatus
 statusControl = 0
+received = ""
 dataCollStatus = 0;
 theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
 f = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
+# Here are commands that can be sent to mainctl and forwarded to DE.
+# These must be the same as the corresponding mnemonics in the de_signals.h file
+# used for mainctl compilation (also DESimulator, if simulator is being used)
+STATUS_INQUIRY     = "S?"
+LED1_ON            = "Y1"
+LED1_OFF           = "N1"
+TIME_INQUIRY       = "T?"
+TIME_STAMP         = "TS"
+CREATE_CHANNEL     = "CC"
+CONFIG_CHANNELS    = "CH"
+UNDEFINE_CHANNEL   = "UC"
+FIREHOSE_SERVER    = "FH"
+START_DATA_COLL    = "SC"
+STOP_DATA_COLL     = "XC"
+DEFINE_FT8_CHAN    = "FT"
+START_FT8_COLL     = "SF"
+STOP_FT8_COLL      = "XF"
+LED_SET            = "SB"  
+UNLINK             = "UL"
+HALT_DE            = "XX"
+
 def send_to_mainctl(cmdToSend,waitTime):
+  global theStatus
   print("F: sending:" + cmdToSend)
   host_ip, server_port = "127.0.0.1", 6100
   data = cmdToSend + "\n"  
@@ -63,15 +86,18 @@ def send_to_mainctl(cmdToSend,waitTime):
      if(waitTime > 0):
        time.sleep(waitTime)
      print("F: try to receive response")
-     received = "NOTHING"
+     received = "NO RESPONSE"
     # Read data from the TCP server and close the connection
      try:
        received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
        print("F: received data from DE: ", received)
+
      except Exception as e:
        print("F: exception on recv")
        theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
-     print("F: mainctl answered ", received)
+     theStatus = "Active"
+     print("F: mainctl answered ", received, " thestatus = ",theStatus)
+
 #     print("F: LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
 #     if(received[0:3].decode("ASCII") == "ACK"):
 #       print("F: received ACK")
@@ -79,10 +105,10 @@ def send_to_mainctl(cmdToSend,waitTime):
   except Exception as e: 
      print(e)
      print("F: '" + e.errno + "'")
-#     if(str(e.errno) == "111" or str(e.errno == "11")):
-#       theStatus = "Error " + e.errno +  "mainctl program not responding"
-#     else:
-#       theStatus = "Exception " + str(e)
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error " + e.errno +  "mainctl program not responding"
+     else:
+       theStatus = "Exception " + str(e)
   finally:
      tcp_client.close()
 
@@ -94,53 +120,14 @@ def channel_request():
 # ports that mainctl will listen on for traffic from DE
   configPort =  parser['settings']['configport']
   dataPort   =  parser['settings']['dataport']
-  send_to_mainctl(("CC," + configPort + "," + dataPort),1 )
+# commas must separate fields for token processing to work in mainctl
+  send_to_mainctl((CREATE_CHANNEL + "," + configPort + "," + dataPort),1 )
   
-
 def check_status_once():
-  print("F: *********** Status inquiry to LH *********")
-  global theStatus, theDataStatus
-  theStatus = "DE is off or disconnected, or mainctl stopped"
-  theCommand = 'S?'
-  host_ip, server_port = "127.0.0.1", 6100
-  data = theCommand + "\n"  
-    # Initialize a TCP client socket using SOCK_STREAM 
-  try:
-     print("F: define socket")
-     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Establish connection to TCP server and exchange data
-     print("F: *** WC: *** connect to socket ,port ",server_port)
-     tcp_client.connect((host_ip, server_port))
-     print("F: send query")
-     tcp_client.sendall(data.encode())
-     print("F: wait for DE response")
-     time.sleep(4)
-     print("F: try to receive response")
-     received = "NOTHING"
-    # Read data from the TCP server and close the connection
-     try:
-       received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
-       print("F: received data from DE: ", received)
-     except Exception as e:
-       print("F: exception on recv")
-       theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
-     print("F: LH answered ", received, " substr = '", received[0:2].decode("ASCII"), "'")
-     if(received[0:2].decode("ASCII") == "OK"):
-       print("F: status is ON")
-       theStatus = "ON"
-  except Exception as e: 
-     print(e)
-     print("F: '" + e.errno + "'")
-     if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error " + e.errno +  "mainctl program not responding"
-     else:
-       theStatus = "Exception " + str(e)
-  finally:
-     tcp_client.close()
-     return(theStatus)
-
-  theStatus = "Off or not connected. Needs restart."
-
+  global theStatus
+  send_to_mainctl(STATUS_INQUIRY,4)
+  print("after check status once, theStatus=",theStatus)
+  return
 
 #####################################################################
 # Here is the home page
@@ -186,7 +173,7 @@ def sdr():
             else:
           #    startcoll()
           # command mainctl to trigger DE to start sending ringvuffer data
-              send_to_mainctl('SC',1)
+              send_to_mainctl(START_DATA_COLL,1)
 # write metadata describing channels into the drf_properties file
               ant = []
               chf = []
@@ -206,7 +193,8 @@ def sdr():
               f5.attrs.__setitem__('antenna_ports',ant)
               f5.close()
          if(form.stopDC.data ):
-            stopcoll()
+ #           stopcoll()
+            send_to_mainctl(STOP_DATA_COLL,1)
          if(form.startprop.data):
             startprop()
          if(form.stopprop.data) :
@@ -228,7 +216,8 @@ def restart():
    time.sleep(3)
    print("F: after restarting mainctl, retcode=",returned_value)
 #   stopcoll()
-   theStatus = check_status_once()
+   check_status_once()
+   print("RESTART: status = ",theStatus, " received = ", received)
    return redirect('/')
 
 
@@ -241,7 +230,6 @@ def chkstat():
    channel_request()
    return redirect('/')
 
-   
 @app.route("/config",methods=['POST','GET'])
 def config():
    global theStatus, theDataStatus
@@ -361,7 +349,6 @@ def desetup():
    result = request.form
    rgPathExists = os.path.isdir(result.get('ringbufferPath'))
    print("path / directory existence check: ", rgPathExists)
-   
    
    if not form.validate() or rgPathExists == False:
      if rgPathExists == True:
@@ -557,7 +544,7 @@ def desetup():
                    ch6b, ch7b, ch8b, ch9b, ch10b, ch11b,
                    ch12b, ch13b, ch14b, ch15b ]
 
-   configCmd = 'CH'
+   configCmd = CONFIG_CHANNELS
    for i in list(range(16)):
      configCmd = configCmd + ',' + str(i) + ',' + a[i] + ',' + f[i] + ',' + b[i]
 
@@ -640,7 +627,7 @@ def startprop():
   if (ftant7 == 'Off'): 
     ftant7 = '-1'
 
-  theCommand = 'SF' + ' ' + ftant0 + ' ' + ftant1 + ' ' + ftant2 + ' ' + \
+  theCommand = START_FT8_COLL + ' ' + ftant0 + ' ' + ftant1 + ' ' + ftant2 + ' ' + \
                             ftant3 + ' ' + ftant4 + ' ' + ftant5 + ' ' + \
                             ftant6 + ' ' + ftant7 + ' ' + \
                             ft80f  + ' ' + ft81f  + ' ' + ft82f + ' ' + \
@@ -649,6 +636,11 @@ def startprop():
   print("start FT8 monitoring " + theCommand)
   host_ip, server_port = "127.0.0.1", 6100
   data = theCommand + "\n"  
+  send_to_mainctl(theCommand,0)
+  thePropStatus = 1
+  return
+
+# the below taken out of service
     # Initialize a TCP client socket using SOCK_STREAM 
   try:
      print("F: define socket")
@@ -671,30 +663,9 @@ def startprop():
 
 # stop propagation monitoring for FT8
 def stopprop():
-  global thePropStatus
-  theCommand = 'XF'
-  print("stop FT8 monitoring")
-  host_ip, server_port = "127.0.0.1", 6100
-  data = theCommand + "\n"  
-    # Initialize a TCP client socket using SOCK_STREAM 
-  try:
-     print("F: define socket")
-     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Establish connection to TCP server and exchange data
-     print("F: connect to socket, port",server_port)
-     tcp_client.connect((host_ip, server_port))
-     print("F: send command")
-     tcp_client.sendall(data.encode())
-  except Exception as e: 
-     print(e)
-     if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error: mainctl program not responding; please restart it"
-     else:
-       theStatus = "Exception " + str(e)
-  finally:
-     tcp_client.close()
-     thePropStatus = 0
-  return 
+  send_to_mainctl(STOP_FT8_COLL,0)
+  thePropStatus = 0
+  return
 
 
 #@app.route("/startcollection")
@@ -713,60 +684,20 @@ def startcoll():
      dataCollStatus = 0
      form.dataStat = theDataStatus
      return   
-  theCommand = 'SC'
-  host_ip, server_port = "127.0.0.1", 6100
-  data = theCommand + "\n"  
-    # Initialize a TCP client socket using SOCK_STREAM 
-  try:
-     print("F: define socket")
-     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Establish connection to TCP server and exchange data
-     print("F: connect to socket, port", server_port)
-     tcp_client.connect((host_ip, server_port))
-     print("F: send command")
-     tcp_client.sendall(data.encode())
-  except Exception as e: 
-     print(e)
-     if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error: mainctl program not responding; please restart it"
-     else:
-       theStatus = "Exception " + str(e)
-  finally:
-     tcp_client.close()
-     theDataStatus = "Started data collection"
-     dataCollStatus = 1
-     form.dataStat = theDataStatus
-  return 
+  send_to_mainctl(START_DATA_COLL,0)
+  theDataStatus = "Started data collection"
+  dataCollStatus = 1
+  form.dataStat = theDataStatus
+  return
 
 
 #@app.route("/stopcollection")
 def stopcoll():
   form = MainControlForm()
   global theStatus, theDataStatus
-  print("F: Stop Data Collection command")
-  theCommand = 'XC'
-  host_ip, server_port = "127.0.0.1", 6100
-  data = theCommand + "\n"  
-    # Initialize a TCP client socket using SOCK_STREAM 
-  try:
-     print("F: define socket")
-     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Establish connection to TCP server and exchange data
-     print("F: connect to socket, port ",server_port)
-     tcp_client.connect((host_ip, server_port))
-     print("F: send command")
-     tcp_client.sendall(data.encode())
-  except Exception as e: 
-     print(e)
-
-     if(str(e.errno) == "111" or str(e.errno == "11")):
-       theStatus = "Error-mainctl program not responding, please restart it"
-     else:
-       theStatus = "Exception " + str(e)
-  finally:
-     tcp_client.close()
-     theDataStatus = "Stopped data collection"
-     dataCollStat = 0
+  send_to_mainctl(STOP_DATA_COLL,1)
+  theDataStatus = "Stopped data collection"
+  dataCollStat = 0
   return
 
 @app.route("/throttle", methods = ['POST','GET'])
@@ -1059,7 +990,7 @@ def ft8list():
        str(band[i]) + ' - ' + pval + ' ",'
 
     ft8string = ft8string + '"end":" "}'
-    print("string= " , ft8string)
+#    print("string= " , ft8string)
   except Exception as ex:
  #   print(ex)
 # no-op
