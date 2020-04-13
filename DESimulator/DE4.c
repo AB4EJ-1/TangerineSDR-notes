@@ -142,7 +142,7 @@ void *sendFT8(void *threadid) {
          inputCounter++;
          }
          printf("i = %d, j = %d, inputCounter = %ld\n", i, j,  inputCounter);
-         ft8Buffer.bufCount = bufcount++;
+         ft8Buffer.dval.bufCount = bufcount++;
 
          sentBytes = sendto(sock, (const struct dataBuf *)&ft8Buffer, sizeof(ft8Buffer), 0, 
 	      (struct sockaddr*)&client_addr, sizeof(client_addr));
@@ -223,8 +223,9 @@ void *awaitConfig(void *threadid) {
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
 void *sendData(void *threadid) {
   int addr_len;
+  int noOfChannels = 0;
   //memset((void*)&server_addr, 0, addr_len);
-  printf("starting thread, to send to LH port %d, using following chanel layout:\n",LH_DATA_IN_port);
+  printf("starting thread, to send to LH port %d, using following channel layout:\n",LH_DATA_IN_port);
 
     for (int i=0; i<16; i++) 
       {
@@ -233,6 +234,7 @@ void *sendData(void *threadid) {
       else
         printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
         cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
+        noOfChannels++;
       }
 // build an example DE data buffer containing a low freq sine wave
 	float I;
@@ -246,13 +248,28 @@ void *sendData(void *threadid) {
 	printf("unix time = %ld\n", epoch);
     strncpy(myBuffer.bufType,"RG",2);
 	myBuffer.timeStamp = (double) epoch;
+    myBuffer.channelCount = noOfChannels;
+    int sampleCount = 1024 / noOfChannels;
+    printf("Active channels: %i \n",noOfChannels);
+    printf("Sanple count per buffer: %i \n", sampleCount);
+
+/*    original code for outputting single channel
 	for (int i = 0; i < 1024; i++) {
 	  I =  sin ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
 	  Q =  cos ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
 	  myBuffer.theDataSample[i].I_val = I;
 	  myBuffer.theDataSample[i].Q_val = Q;
            }
-
+*/
+	for (int i = 0; i < (sampleCount * noOfChannels); i=i+noOfChannels) {
+     for(int j=0;j<noOfChannels;j++) {
+      // here the float j produces different frequency for each channel
+	  I =  sin ( (double)i * (float)(j+1) * 3.1415926535897932384626433832795 / (double)(sampleCount));
+	  Q =  cos ( (double)i * (float)(j+1) * 3.1415926535897932384626433832795 / (double)(sampleCount));
+	  myBuffer.theDataSample[i+j].I_val = I;
+	  myBuffer.theDataSample[i+j].Q_val = Q;
+           }
+      }
   ssize_t sentBytes;
   long loopstart;
   loopstart = clock();
@@ -262,7 +279,7 @@ void *sendData(void *threadid) {
    // puts("UDP thread start; hit sem_wait");
     //sem_wait(&mutex);
    // puts("passed wait");
-    myBuffer.bufCount = bufcount++;
+    myBuffer.dval.bufCount = bufcount++;
 
     //client_addr.sin_port = htons(LH_port);
  //   client_addr.sin_port = htons(d.myConfigBuf.dataPort);
