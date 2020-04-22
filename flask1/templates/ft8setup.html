@@ -1,0 +1,95 @@
+<html>
+
+<table width="100%">
+   <tbody><tr>
+    <td width="5%">
+     <center>
+      <a href="https://tangerinesdr.com"><img src="/static/tangerine_pix_sm.jpg" alt="TangerineSDR" >
+     </center>
+   </td>
+	<td width="78%">
+   	    <div class="bgtangerine">
+	     <hr class="tanger"><a href="/">
+		    <b style="font-size: 60px">TangerineSDR</b><br> </a>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project (version 0)</div>
+            <div style="font-size: 24px">FT8 Setup Panel</div>
+	     <hr class="tanger">
+	    </div>
+	</td>
+    <td>
+	  <center>
+		  <a href="https://www.tapr.org/"><img src="/static/tapr-logo.png" alt="TAPR"></a>
+	  </center> 
+	</td>
+     </tr>
+      </table>
+      <center>
+      To make a channel active, select antenna#; otherwise, set to off.
+      </center>
+      <form action = "/propagation" method = "POST">
+	  <table style="margin-left:200px" border = "1" width=70% > 
+</td>
+     <td><input type = "submit" name = "csubmit" value = "Save Changes" />  
+         <input type = "submit" name = "csubmit" value = "Discard Changes" /></p>  
+</td>
+	<form action = "/propagation" method = "post">
+	  <table style="margin-left:200px" border = "1" width=70% > 
+	  <tr><font color="white">
+       <th style="width:50px" >Channel</th>
+	   <th style="width:50px" >Antenna Port</th>
+	   <th>Frequency (MHz)</th>
+      </tr>
+	  <tr>
+
+	   <td>0</td> {{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport0 }} </td>
+	   <td style="width:50px"><input type="text" name="ft80f" value={{ ft80f }} /> </td>
+
+	 <tr>
+	   <td>1</td>{{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport1 }} </td>
+	   <td style="width:50px"><input type="text" name="ft81f" value={{ ft81f }} /> </td>
+
+	 <tr>
+	   <td>2</td>{{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport2 }} </td>
+	   <td style="width:50px"><input type="text" name="ft82f" value={{ ft82f }} /> </td>
+
+	 <tr>
+	   <td>3</td>{{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport3 }} </td>>
+	   <td style="width:50px"><input type="text" name="ft83f" value={{ ft83f }} /> </td>
+
+	 <tr>
+	   <td>4</td> {{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport4 }} </td>>
+	   <td style="width:50px"><input type="text" name="ft84f" value={{ ft84f }} /> </td>
+
+	 <tr>
+	   <td>5</td>{{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport5 }} </td>
+	   <td style="width:50px"><input type="text" name="ft85f" value={{ ft85f }} /> </td>
+
+	 <tr>
+	   <td>6</td>{{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport6 }} </td>td>
+	   <td style="width:50px"><input type="text" name="ft86f" value={{ ft86f }} /> </td>
+
+	 <tr>
+	   <td>7</td> {{ form.hidden_tag() }} 
+	   <td style="width:50px">{{ form.antennaport7 }} </td>
+	   <td style="width:50px"><input type="text" name="ft87f" value={{ ft87f }} /> </td>
+
+	  </table>   
+
+           </td>
+  </tbody>
+      <center><tr><font color="black">
+        <label class "psk checkbox">
+        <input type="checkbox">Enable PSK Reporter Spotting
+        <span class = "psk-indicator"></span>
+           
+        </label>
+      </center>
+
+</html>

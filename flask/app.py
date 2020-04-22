@@ -24,17 +24,19 @@ from config import Config
 from flask_wtf import Form
 # following is for future flask upgrade
 #from FlaskForm import Form
-from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField
+from wtforms import TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, DecimalField
 from flask import request, flash
 from forms import MainControlForm, ThrottleControlForm, ChannelControlForm, ServerControlForm
 from forms import CallsignForm
+from forms import ChannelControlForm, ChannelForm, ChannelListForm
 
 from wtforms import validators, ValidationError
+
 from flask_wtf import CSRFProtect
 
 app = Flask(__name__)
-#app.config['SECRET_KEY'] = 'this-is-really-secret'
-#app.secret_key = 'development key'
+app.config['SECRET_KEY'] = 'this-is-really-secret'
+app.secret_key = 'development key'
 app.config.from_object(Config)
 csrf.init_app(app)
 #CsrfProtect(app)
@@ -267,8 +269,85 @@ def channelantennasetup():
    global theStatus, theDataStatus
    return render_template('channelantennasetup.html')
 
+@app.route("/desetup1",methods=['POST','GET'])
+def desetup1():
+   print("hit desetup1; request.method=",request.method)
+   global theStatus, theDataStatus
+   form = ChannelControlForm()
+   channelform = ChannelListForm()
+
+#   form.chp_setting = [('0'),('0')]
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+   ringbufferPath = parser['settings']['ringbuffer_path']
+   theStatus = ""
+   if request.method == 'GET':
+# temporary.   This list must be built based on DE report of available data rates
+    rate =[('4000',4000),('8000',8000),('12000',12000),('24000',24000)]
+    rate_list = []
+    for r in range(3):
+      rate_list.append(rate[r])
+ #   print("rate_list=",rate_list)
+    form.channelrate.choices = rate_list
+    print("channelform channels=",channelform.channels)
+    return render_template('desetup1.html',
+	  ringbufferPath = ringbufferPath,
+      form = form, status = theStatus,
+      channelform = channelform)
+
+   if request.method == 'POST':
+      result = request.form
+      ringbufferPath = parser['settings']['ringbuffer_path']
+      print("F: result=", result.get('csubmit'))
+      if result.get('csubmit') == "Save and Set":
+        channelcount = result.get('channelcount')
+        print("set #channels to ",channelcount)
+        form.port_list = []
+        form.freq_list = []
+        form.rate_list = []       
+        for ch in range(int(channelcount)):
+         form.port_list.append(SelectField('AntennaPort',choices = [('0','0'),('1','1')]))
+         form.freq_list.append(DecimalField('freq'+str(ch)))
+         form.rate_list.append(DecimalField('rate'+str(ch)))
+        print("return to desetup2")
+        return render_template('desetup2.html',
+	      ringbufferPath = ringbufferPath, channelcount = channelcount,
+          form = form, status = theStatus,
+          channelform = channelform)
+
+@app.route("/desetup2",methods=['POST','GET'])
+def desetup2():
+   print("hit desetup2; request.method=",request.method)
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+   ringbufferPath = parser['settings']['ringbuffer_path']
+   theStatus = ""
+   result = request.form
+   form = ChannelControlForm()
+   channelform = ChannelSettingForm()
+   channellineform = ChannelLineForm()
+   channelcount = result.get('channelcount')
+   channelcount = 3
+   form.port_list = []
+   form.freq_list = []
+   form.rate_list = []       
+#   for ch in range(int(channelcount)):
+#         form.port_list.append(SelectField('AntennaPort',choices = [('0','0'),('1','1')]))
+#         form.freq_list.append(DecimalField('freq'+str(ch)))
+#         form.rate_list.append(DecimalField('rate'+str(ch)))
+   print("in desetup2, channelcount=",channelcount)
+   print("Port list = ",form.port_list)
+   if request.method == 'GET':
+    return render_template('desetup2.html',
+	  ringbufferPath = ringbufferPath, channelcount = channelcount,
+      channellineform = channellineform,
+      form = form, status = theStatus,
+      channelform = channelform)
+   
+
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
+   print("hit desetup")
    global theStatus, theDataStatus
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)

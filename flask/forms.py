@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, DecimalField, BooleanField
+from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, DecimalField, BooleanField, FieldList, FormField
 
 from wtforms import validators, ValidationError
 
@@ -14,7 +14,23 @@ class MainControlForm(FlaskForm):
   startprop = SubmitField("Start Monitoring")
   stopprop  = SubmitField("Stop Monitoring")
 
+class ChannelForm(Form):
+  channel_ant = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
+  channel_freq = DecimalField('CH 0 freq',[validators.Optional(),validators.NumberRange(min=0.1, max = 54, message=(u'Freq out of range'))])
+
+class ChannelListForm(Form):
+  channels = FieldList(FormField(ChannelForm), min_entries = 2)
+
 class ChannelControlForm(FlaskForm):
+  channelcount = SelectField('ChannelCount',choices=[('1','1'),('2','2'),('3','3'),
+          ('4','4'),('5','5'),('6','6'),('7','7'),('8','8'),('9','9'),('10','10'),('11','11'),
+          ('12','12'),('13','13'),('14','14'),('15','15'),('`16','16')])
+  channelrate = SelectField(u'Rate', coerce=int)
+# temporary setup for flex form
+  chp_setting = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])
+  antennaport = []
+  for i in range(0,2):
+    antennaport.append(SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')]))
   pskindicator = BooleanField('Active')
   antennaport0 = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])
   antennaport1 = SelectField('AntennaPort',choices = [('Off','Off'),('0','0'),('1','1')])

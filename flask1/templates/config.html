@@ -1,0 +1,43 @@
+<html>
+<table width="100%">
+   <tbody><tr>
+    <td width="5%">
+     <center>
+      <a href="https://tangerinesdr.com"><img src="/static/tangerine_pix_sm.jpg" alt="TangerineSDR" >
+     </center>
+   </td>
+	<td width="78%">
+   	    <div class="bgtangerine">
+	     <hr class="tanger"><a href="http://localhost:5000">
+		    <b style="font-size: 60px">TangerineSDR</b><br> </a>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
+            <div style="font-size: 24px">Configuration</div>
+	     <hr class="tanger">
+	    </div>
+	</td>
+    <td>
+	  <center>
+		  <a href="https://www.tapr.org/"><img src="/static/tapr-logo.png" alt="TAPR"></a>
+	  </center> 
+	</td>
+     </tr>
+       <tr>
+	<td>
+	</td>
+	   <td class="bgtangerine" width="10%" valign="top" align="left">
+      <form action = "http://localhost:5000/config" method = "POST">
+         <p>Security Token <input type = "text" name = "theToken" value = {{ theToken }} /></p>
+         <p>Station Latitude <input type = "text" name = "theLatitude" value = {{ theLatitude }} /></p>
+         <p>Station Longitude <input type = "text" name = "theLongitude" value = {{ theLongitude }} /></p>
+         <p>Station Elevation (meters) <input type = "text" name = "theElevation" value = {{ theElevation }} /></p>
+		 <p class="links"><b><a href="/desetup">Data Engine Setup</a></b></p>
+		 <p class="links"><b><a href="/throttle">Set up Throttling of Upload Data</a></b></p>
+		 <p class="links"><b><a href="/callsign">Callsign Monitor</a></b></p>
+		 <p class="links"><b><a href="/index.html">Set up/Test Magnetometer</a></b></p>
+         <p><input type = "submit" name = "csubmit" value = "Submit" /></p>
+         <p><input type = "submit" name = "csubmit"  value = "Discard Changes" /></p>
+    </form>
+           </td>
+  </tbody>
+   </body>
+</html>

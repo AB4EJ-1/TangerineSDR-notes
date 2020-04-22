@@ -1,0 +1,38 @@
+tHIS FIRST ONE WORKS
+<script type=text/javascript>
+ $(function() {
+   $.getJSON('/_ft8list', { },
+    function(data) {
+      $('#result').text(data.result);
+      } );
+     });
+</script>
+
+<script type=text/javascript>
+ $(function() {
+   $.each(result.line, function(index, value) {
+    $(#result).append('<li>' + value.line + '</li>');
+   });
+  });
+</script>
+
+<script type=text/javascript>
+ $(function() {
+   $.getJSON('/_ft8list', { },
+    function(data) {
+      $.each(result.line, function(index, value) {
+    $('#result').append('<li>' + value.line + '</li>');
+      } );
+     });
+</script>
+
+<script type=text/javascript>
+ $(function() {
+   $.getJSON('/_ft8list', { },
+    function(data) {
+      $('#result').text(data.result);
+      } );
+     });
+</script>
+
+

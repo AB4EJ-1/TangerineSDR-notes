@@ -1,0 +1,41 @@
+<html>
+    <head>
+        <title>Flask FieldList Demo</title>
+    </head>
+    <body>
+        <h1>Add Class</h1>
+        {% if fileform %}
+        <div>
+            <p>Add class from file:</p>
+            <form action="" method="post" enctype="multipart/form-data" name="fileform">
+              
+                <p><input type="submit" name="upload" value="Upload"></p>
+            </form>
+        </div>
+        <hr>
+        {% endif %}
+        <div>
+            <form action="" method="post" name="classform">
+             
+                Class Name: {{ classform.name }}<br>
+                Day: {{ classform.day }}<br>
+                <br>
+                <div>
+                    <table>
+                        <tr>
+                            <th> Student Number </th>
+                            <th> Name </th>
+                        </tr>
+                        {% for student in classform.students %}
+                        <tr>
+                            <td>{{ student.student_id }}</td>
+                            <td>{{ student.student_name }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                <p><input type="submit" name="addclass" value="Add Class"></p>
+            </form>
+        </div>
+    </body>
+</html>

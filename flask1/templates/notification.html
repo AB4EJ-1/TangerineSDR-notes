@@ -1,0 +1,63 @@
+<html>
+<script>
+function goBack() {
+  window.history.back();
+}
+</script>
+<body>
+<table width="100%">
+   <tbody><tr>
+    <td width="5%">
+     <center>
+      <a href="https://tangerinesdr.com"><img src="/static/tangerine_pix_sm.jpg" alt="TangerineSDR" >
+     </center>
+   </td>
+	<td width="78%">
+   	    <div class="bgtangerine">
+	     <hr class="tanger"><a href="/">
+		    <b style="font-size: 60px">TangerineSDR</b><br> </a>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
+            <div style="font-size: 24px">Configure User Notification</div>
+	     <hr class="tanger">
+	    </div>
+	</td>
+    <td>
+	  <center>
+		  <a href="https://www.tapr.org/"><img src="/static/tapr-logo.png" alt="TAPR"></a>
+	  </center> 
+	</td>
+     </tr>
+       <tr>
+	<td>
+	</td>
+	   <td class="bgtangerine" align = "left" width="10%" valign="top" >
+		Configure how you will be notified when monitored station is heard
+
+
+     <form action = "/notification" method = "POST" action="">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+         <fieldset style="width:85%" align="center" >
+            <legend>Email Parameters</legend>
+              Status: <font color="red">  {{ status }} </font>
+            <div style = font-size:20px; font-weight:bold; margin-left:150px;>
+        <p>SMTP Server Hostname<input type = "text" name = "smtpsvr" value = {{ smtpsvr }} ></p>
+		<p>Email from address <input type = "text" name = "emailfrom" value = {{ emailfrom }} ></p>
+		<p>Email to address <input type = "text" name = "emailto" value = {{ emailto }} ></p>
+		<p>SMTP Server Port# <input type = "text" name = "smtpport" value = {{ smtpport }} ></p>
+		<p>SMTP timeout <input type = "text" name = "smtptimeout" value = {{ smtptimeout }} ></p>
+		<p>SMTP User ID<input type = "text" name = "smtpuid" value = {{ smtpuid }} ></p>
+		<p>SMTP Password <input type = "password" name = "smtppw" value = {{ smtppw }} ></p>
+            </div> 
+
+         </fieldset>
+
+         <p><input type = "submit" name = "csubmit" value = "Send test email"/><p>
+         <p><input type = "submit" name = "csubmit" value = "Save Changes" /></p>         
+         <p><input type = "submit" name = "csubmit" value = "Discard Changes" /></p>  
+     </form>
+
+           </td>
+  </tbody>
+
+   </body>
+</html>

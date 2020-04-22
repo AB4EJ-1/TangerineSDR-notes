@@ -1,0 +1,55 @@
+<html>
+
+<table width="100%">
+   <tbody><tr>
+    <td width="5%">
+     <center>
+      <a href="https://tangerinesdr.com"><img src="/static/tangerine_pix_sm.jpg" alt="TangerineSDR" >
+     </center>
+   </td>
+	<td width="78%">
+   	    <div class="bgtangerine">
+	     <hr class="tanger">
+            <a href="/">
+		    <b style="font-size: 60px">TangerineSDR</b><br> </a>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project (version 0)</div>
+            <div style="font-size: 24px">DataEngine Channel/Antenna Setup</div>
+	     <hr class="tanger">
+	    </div>
+	</td>
+    <td>
+	  <center>
+		  <a href="https://www.tapr.org/"><img src="/static/tapr-logo.png" alt="TAPR"></a>
+	  </center> 
+	</td>
+     </tr>
+      </table>
+      <form action = "/desetup1" method = "POST"> {{ form.hidden_tag() }}
+	  <table style="margin-left:200px" border = "1" width=70% > 
+     </td>
+     <td style="margin-left:200px" ><input type = "submit" name = "csubmit" value = "Save Changes" />  
+         <input type = "submit" name = "csubmit" value = "Discard Changes" /></p> 
+         <td style="margin-left:200px" >Status:   {{ status }} </td>
+     </td>
+
+	<form action = "/desetup1" method = "POST">
+	  <table style="margin-left:200px" border = "1" width=70% > 
+ 	   <td style="width:400px">Ringbuffer path<input type="text" name="ringbufferPath" 
+            size = "40" value={{ ringbufferPath }} /> </td>
+
+      </table> 
+      
+	  <table style="margin-left:200px" border = "1" width=70% > 
+	  <tr><font color="white">      
+       <th style="width:300px" >Channels to run: {{ form.channelcount }} </th>
+
+       <th> Data Rate (samples/sec): {{ form.channelrate }} </th>
+      
+	   <th><input type = "submit" name = "csubmit" value = "Save and Set" /> </th>
+
+      </tr>
+
+          
+  </tbody>
+
+</html>

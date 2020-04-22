@@ -1,0 +1,81 @@
+<html>
+<head>
+<style>
+
+.dropdown {
+	position: relative'
+	display: inline-block;
+}
+.dropdown-content {
+	display: none;
+	position: absolute;
+	background-color: lightgrey;
+	min-width: 200px;
+	z-index: 1;
+}
+.dropdown:hover .dropdown-content  {
+
+	display: block;
+}
+.dropdown-content a:hover {background-color: white;)
+.dropdown-hover .dropdown-content {display: block;}
+.dropdown:hover .dropbtn {background-color: grey;}
+
+
+</style>
+</head>
+<body>
+<table width="100%">
+   <tbody><tr>
+    <td width="5%">
+     <center>
+      <a href="https://tangerinesdr.com"><img src="/static/tangerine_pix_sm.jpg" alt="TangerineSDR" >
+     </center>
+   </td>
+	<td width="78%">
+   	    <div class="bgtangerine">
+	     <hr class="tanger">
+		    <b style="font-size: 60px">TangerineSDR</b><br> 
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
+            <br></br>
+            <div style="font-size: 24px">Channel/Antenna Setup</div>
+	     <hr class="tanger">
+	    </div>
+	</td>
+    <td>
+	  <center>
+		  <a href="https://www.tapr.org/"><img src="/static/tapr-logo.png" alt="TAPR"></a>
+	  </center> 
+	</td>
+     </tr>
+       <tr>
+	<td>
+	</td>
+	   <td class="bgtangerine" width="10%" valign="top" align="left">
+      <form action = "/channelantennasetup" method = "POST">
+         <p>Channel 1<input type = "text" name = "channel_0_center" value = {{ channel0center }} ></input> </p>
+	<!--	 <p>Antenna</p> -->
+		<div class="dropdown">
+		 <!-- <span>Antenna</span>  -->
+		 <div class="dropdown-content">
+		<a href="/channelantennasetup" value="CH0ANT0" >xAntenna 0</a>
+		<a href="/channelantennasetup" value="CH0ANT1" >Antenna 1</a>
+		 </div>
+		</div>
+<br> </br>
+		<a href="/channelantennasetup">Antenna 0</a>
+		<a href="/channelantennasetup">Antenna 1</a>
+		</div>
+         <p>IP address of Data Engine <input type = "text" name = "DEIP" value = {{ DEIP }} /></p>
+
+		 <p class="links"><b><a href="/clocksetup">Clock Setup</a></b></p>
+		 <p class="links"><b><a href="/antennasetup">Channel/Antenna Setup</a></b></p>
+         <p><input type = "submit" name = "csubmit" value = "Submit" /></p>
+         <p><input type = "submit" name = "csubmit" value = "Discard Changes and Return" /></p>
+		
+		</div>
+     </form>
+           </td>
+  </tbody>
+   </body>
+</html>
