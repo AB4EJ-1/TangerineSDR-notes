@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, DecimalField, BooleanField, FieldList, FormField
+from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, RadioField, SelectField, StringField, DecimalField, BooleanField, FieldList, FormField, FloatField
 
 from wtforms import validators, ValidationError
 
@@ -16,10 +16,11 @@ class MainControlForm(FlaskForm):
 
 class ChannelForm(Form):
   channel_ant = SelectField('AntennaPort',choices = [('0','0'),('1','1')])
-  channel_freq = DecimalField('CH 0 freq',[validators.Optional(),validators.NumberRange(min=0.1, max = 54, message=(u'Freq out of range'))])
+  channel_freq = FloatField('CH_freq',[validators.Optional(),validators.NumberRange(min=0.1, max = 54, message=(u'Freq out of range'))])
 
 class ChannelListForm(Form):
-  channels = FieldList(FormField(ChannelForm), min_entries = 2)
+#  channels = FieldList(FormField(ChannelForm), min_entries = 1)
+  channels = FieldList(FormField(ChannelForm))
 
 class ChannelControlForm(FlaskForm):
   channelcount = SelectField('ChannelCount',choices=[('1','1'),('2','2'),('3','3'),

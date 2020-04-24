@@ -81,21 +81,21 @@ ft86f = 28.074
 ft87f = 0
 
 [channels]
-numchannels = 2
-datarate = 4000
+numChannels = 2
+dataRate = 4000
 p0 = 0
 f0 = 2.5
 p1 = 1
 f1 = 5.0
 p2 = 0
-f2 = 3.25
+f2 = 0
 p3 = 0
-f3 = 10.0
+f3 = 0
 p4 = 0
 f4 = 0
 p5 = 0
 f5 = 0
-p6 = 0
+p6  = 0
 f6 = 0
 p7 = 0
 f7 = 0
@@ -117,7 +117,7 @@ p15 = 0
 f15 = 0
 
 [datarates]
-numrates = 6
+numRates = 6
 r0 = 4000
 r1 = 8000
 r2 = 12000

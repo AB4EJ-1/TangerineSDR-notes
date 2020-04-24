@@ -28,7 +28,7 @@
       <center>
       To make a channel active, select antenna#; otherwise, set to off.
       </center>
-      <form action = "/desetup1" method = "POST">
+      <form action = "/desetup2" method = "POST">
 	  <table style="margin-left:200px" border = "1" width=70% > 
      </td>
      <td><input type = "submit" name = "csubmit" value = "Save Changes" />  
@@ -46,8 +46,8 @@
 	  <tr><font color="white">      
        <th style="width:300px" >Number of Channels to run: </th>
 	   <th style="width:50px" >{{ form.channelcount }}</th>
-	   <th><input type = "submit" name = "csubmit" value = "Save and Set" /> </th>
-
+       <th> Data Rate (samples/sec): {{ form.channelrate }} </th>
+	   <th><input type = "submit" name = "csubmit" value = "Set no. of channels" /> </th>
       </tr>
 
 	  <table style="margin-left:200px" border = "1" width=70% > 
@@ -61,7 +61,7 @@
 
 
 
-                        {% for channel in channelform.channels %}
+                        {% for channel in channellistform.channels %}
                         <tr>
                             <td>{{ loop.index0 }} </td>
                             <td>{{ channel.channel_ant }} </td>
