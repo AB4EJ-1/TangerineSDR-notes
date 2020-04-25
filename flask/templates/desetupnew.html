@@ -28,14 +28,14 @@
       <center>
       To make a channel active, select antenna#; otherwise, set to off.
       </center>
-      <form action = "/desetup" method = "POST">
+      <form action = "/desetup2" method = "POST">
 	  <table style="margin-left:200px" border = "1" width=70% > 
      </td>
      <td><input type = "submit" name = "csubmit" value = "Save Changes" />  
          <input type = "submit" name = "csubmit" value = "Discard Changes" /></p>  
      </td>
 
-	<form action = "/desetup" method = "POST">
+	<form action = "/desetup1" method = "POST">
 	  <table style="margin-left:200px" border = "1" width=70% > 
  	   <td style="width:400px">Ringbuffer path<input type="text" name="ringbufferPath" 
             size = "40" value={{ ringbufferPath }} /> </td>
@@ -56,14 +56,20 @@
 	   <th style="width:50px" >Antenna Port</th>
 	   <th>Center Frequency (MHz)</th>	 
       </tr>
-         {{ form.hidden_tag() }} 
-         {% for channel in channellistform.channels %}
-           <tr>
-              <td>{{ loop.index0 }} </td>
-              <td>{{ channel.channel_ant }} </td>
-              <td>{{ channel.channel_freq }} </td>    
-               </tr>
-         {% endfor %}
+
+{{ form.hidden_tag() }} 
+
+
+
+                        {% for channel in channellistform.channels %}
+                        <tr>
+                            <td>{{ loop.index0 }} </td>
+                            <td>{{ channel.channel_ant }} </td>
+                            <td>{{ channel.channel_freq }} </td>
+                         
+                        </tr>
+                        {% endfor %}
+
 
            </td>
   </tbody>

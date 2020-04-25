@@ -70,6 +70,14 @@ LED_SET            = "SB"
 UNLINK             = "UL"
 HALT_DE            = "XX"
 
+def is_numeric(s):
+  try:
+   float(s)
+   return True
+  except ValueError:
+   print("Value error")
+   return False
+
 def send_to_mainctl(cmdToSend,waitTime):
   global theStatus
   print("F: sending:" + cmdToSend)
@@ -318,13 +326,14 @@ def desetup1():
           form = form, status = theStatus,
           channellistform = channellistform)
 
-@app.route("/desetup2",methods=['POST','GET'])
-def desetup2():
+@app.route("/desetup",methods=['POST','GET'])
+def desetup():
    global theStatus, theDataStatus
    print("hit desetup2; request.method=",request.method)
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    ringbufferPath = parser['settings']['ringbuffer_path']
+ #  form = ChannelControlForm()
    if request.method == 'GET':
     channellistform = ChannelListForm()
     channelcount = parser['channels']['numChannels']
@@ -332,6 +341,8 @@ def desetup2():
     form.channelcount.data = channelcount
     form.channelrate.data = parser['channels']['dataRate']
     rate_list = []
+# populate rate capabilities from config file.
+# The config file should have been updated from DE sample rate list buffer.
     numRates = parser['datarates']['numRates']
     for r in range(int(numRates)):
       theRate = parser['datarates']['r'+str(r)]
@@ -339,22 +350,16 @@ def desetup2():
       rate_list.append(theTuple)
  #   print("rate list:",rate_list)
     form.channelrate.choices = rate_list
- #   print("data rate =",form.channelrate.data)
- #   print("form =",form)
- #   print("channel list form
- #   form.port_list = []
- #   form.freq_list = []
- #   form.rate_list = []  
+# populate channel settings from config file
     for ch in range(int(channelcount)):
       channelform = ChannelForm()
       channelform.channel_ant  = parser['channels']['p' + str(ch)] 
       channelform.channel_freq = parser['channels']['f' + str(ch)]
       channellistform.channels.append_entry(channelform)
-    return render_template('desetup2.html',
+    return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath, channelcount = channelcount,
       channellistform = channellistform,
       form = form, status = theStatus)
- #     channelform = channelform)
 
 # if we arrive here, user has hit one of the buttons on page
 
@@ -368,7 +373,6 @@ def desetup2():
      channelcount = result.get('channelcount')
      print("set #channels to ",channelcount)
      channellistform = ChannelListForm()
- #    channelcount = parser['channels']['numChannels']
      form = ChannelControlForm()
      form.channelcount.data = channelcount
      form.channelrate.data = parser['channels']['dataRate']
@@ -386,36 +390,52 @@ def desetup2():
       channelform.channel_freq = parser['channels']['f' + str(ch)]
       channellistform.channels.append_entry(channelform)
 
-
- 
-
-
-     print("return to desetup2")
-     return render_template('desetup2.html',
+     print("return to desetup")
+     return render_template('desetup.html',
 	      ringbufferPath = ringbufferPath, channelcount = channelcount,
           form = form, status = theStatus,
           channellistform = channellistform)
 
 # user wants to save changes; update configuration file
 
+# The range validation is done in code here due to problems with the
+# WTForms range validator inside a FieldList
+
    if result.get('csubmit') == "Save Changes":
      channelcount = result.get('channelcount')
+     theStatus = ""
      print("set #channels to ",channelcount)
      parser.set('channels','numChannels',channelcount)
      print("RESULT: ", result) 
+
+     rgPathExists = os.path.isdir(result.get('ringbufferPath'))
+     print("path / directory existence check: ", rgPathExists)
+   
+     if rgPathExists == False:
+      theStatus = "Ringbuffer path invalid or not a directory"
+     else:
+      parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
+
      for ch in range(int(channelcount)):
        p = 'channels-' + str(ch) + '-channel_ant'
        parser.set('channels','p' + str(ch), result.get(p))
        print("p = ",p)
        print("channel #",ch," ant:",result.get(p))
        f = 'channels-' + str(ch) + '-channel_freq'
-       parser.set('channels','f' + str(ch), result.get(f))
-       print("channel #",ch," freq:",result.get(f))
+       fstr = result.get(f)
+       if(is_numeric(fstr)):
+         fval = float(fstr)
+         if(fval < 0.1 or fval > 54.0):
+           theStatus = theStatus +  "Freq for channel "+ str(ch) + " out of range;"
+         else:
+          parser.set('channels','f' + str(ch), result.get(f))
+       else:
+         theStatus = theStatus + "Freq for channel " + str(ch) + " must be numeric;"
+
      parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
      fp = open('config.ini','w')
      parser.write(fp)
      fp.close()
-
 
      channellistform = ChannelListForm()
      channelcount = parser['channels']['numChannels']
@@ -428,9 +448,7 @@ def desetup2():
       theRate = parser['datarates']['r'+str(r)]
       theTuple = [ str(theRate), int(theRate) ]
       rate_list.append(theTuple)
- #   print("rate list:",rate_list)
      form.channelrate.choices = rate_list
-
      form.channelrate.data = parser['channels']['dataRate']
      rate_list = []
      numRates = parser['datarates']['numRates']
@@ -446,48 +464,14 @@ def desetup2():
       channelform.channel_freq = parser['channels']['f' + str(ch)]
       channellistform.channels.append_entry(channelform)
 
-
-
-     print("return to desetup2")
-     return render_template('desetup2.html',
+     print("return to desetup")
+     return render_template('desetup.html',
 	      ringbufferPath = ringbufferPath, channelcount = channelcount,
           form = form, status = theStatus,
           channellistform = channellistform)
 
-
-
-
-
-
-   theStatus = ""
-   result = request.form
-   print("result=",result)
-   form = ChannelControlForm()
-#   channelform = ChannelSettingForm()
-#   channellineform = ChannelLineForm()
-   channelcount = result.get('channelcount')
-   print("in desetup2, #channels =",channelcount)
-
-   print("in desetup2, channelcount=",channelcount)
-   print("Port list = ",form.port_list)
-   if request.method == 'GET':
-    return render_template('desetup2.html',
-	  ringbufferPath = ringbufferPath, channelcount = channelcount,
-      channellineform = channellineform,
-      form = form, status = theStatus,
-      channelform = channelform)
-   if request.method == 'POST':
-    print("result=",result)
-    return render_template('desetup2.html',
-	  ringbufferPath = ringbufferPath, channelcount = channelcount,
-      channellineform = channellineform,
-      form = form, status = theStatus,
-      channelform = channelform)
-   
-   
-
-@app.route("/desetup",methods=['POST','GET'])
-def desetup():
+@app.route("/desetup3",methods=['POST','GET'])
+def desetup3():
    print("hit desetup")
    global theStatus, theDataStatus
    form = ChannelControlForm()
