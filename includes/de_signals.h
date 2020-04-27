@@ -46,13 +46,18 @@ typedef struct dataBuf
     struct dataSample theDataSample[1024];  // should be double the number of samples
 	} DATABUF ;
 
-/*
-typedef struct responseBuf
+struct datarateEntry
+    {
+    int rateNumber;
+    int rateValue;
+    };
+
+typedef struct datarateBuf
 	{
 	char buftype[2];
-	char responseCode[2];
-    } RESPONSEBUF;
-*/
+	struct datarateEntry dataRate[20];
+    } DATARATEBUF;
+
 
 typedef struct configChannelRequest
 	{
