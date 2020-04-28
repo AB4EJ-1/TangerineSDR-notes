@@ -263,6 +263,38 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
   printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
 
+/*
+  if(buf_ptr->bufType[0] == 0x44  && buf_ptr->bufType[1] == 0x52)
+    printf("DR FOUND\n");
+
+  if(strncmp(buf_ptr->bufType, "DR" ,2) ==0)  // this is a DR (Data Rate) buffer
+    {
+    printf("Data Rate Buffer recd\n");
+
+    uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+    puts("set up write_req");
+    uv_buf_t a[]={{.base="DR", .len=2},{.base="\n",.len=1}};
+    puts("forward DR to webcontrol");
+    uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+    puts("free the DE buffer");
+
+    DATARATEBUF *drBufptr;
+    char* pDR;
+    pDR = &myDataRateBuf;
+ //   memcpy(pDR,buf->base,sizeof(DATARATEBUF));
+    strncpy(myDataRateBuf, buf->base,nread);
+    for(int i=0; i < 20; i++)
+      {
+      if (myDataRateBuf.dataRate[i].rateNumber == 0) break;  // we're done here
+      printf("Data rate# %i, speed %i \n",myDataRateBuf.dataRate[i].rateNumber,
+             myDataRateBuf.dataRate[i].rateValue);
+      }
+
+	free(buf->base);  // always release memory before exiting this callback
+    free (buf_ptr);
+	return;
+    }
+*/
 
 ////  start of handling incoming I/Q data //////////////
 
@@ -678,6 +710,25 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     return;
 	}
 
+// this should be in the UDP data handler
+  if(strncmp(mybuf, DATARATE_INQUIRY, 2)==0)
+	{
+	puts("Forward datarate inquiry to DE");
+    uv_udp_send_t send_req;
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+  // status inquiry
+	strcpy(b, "R?");
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+    struct sockaddr_in send_addr;
+    printf("Sending DATARATE INQUIRY to %s  port %u\n", DE_IP, DE_port);
+  //  printf("\t(Listening on port %d )\n", ntohs(recv_addr.sin_port));
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+	}
+
+
   if(strncmp(buf->base,"BYE",3)==0)
     {
     puts("halting");
@@ -819,7 +870,53 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
     puts("Send OK status to webcontrol");
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
-     return;
+    return;
+	}
+
+  if(strncmp(buf_ptr->bufType, DATARATE_RESPONSE, 2)==0)
+	{
+  DATARATEBUF *rbuf_ptr;
+  rbuf_ptr = (DATARATEBUF *)malloc(sizeof(DATARATEBUF));  // allocate memory for working buf
+
+    COMBOBUF cbuf;
+   // *cbuf cbufp;
+
+// TODO: ensure there is a free for this memory before every return
+  memcpy(&cbuf.dbuf, buf->base,nread);    // get data from UDP buffer
+//  strncpy(cbuf.dbufc, buf->base,nread,sizeof(DATARATEBUF));
+  printf("buffer = %s \n",cbuf.dbufc);
+
+  char b[200] = "DR:";
+  char c[20];
+  for(int i = 0; i < 16; i++)
+   {
+    if(cbuf.dbuf.dataRate[i].rateNumber == 0 ) break;
+    sprintf(c,"%i,%i;",cbuf.dbuf.dataRate[i].rateNumber,cbuf.dbuf.dataRate[i].rateValue);
+    strcat(b,c);
+   };
+
+
+
+  printf("DR string= %s\n",b);
+
+ // printf("DR buf type found %s \n",rbuf_ptr->buftype);
+  printf("intial entry %i %i \n",cbuf.dbuf.dataRate[0].rateNumber, cbuf.dbuf.dataRate[0].rateValue);
+
+
+	puts("Forward datarate response to webcontrol");
+    uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
+    puts("set up write_req");
+    uv_buf_t a[]={{.base=b, .len=sizeof(COMBOBUF)},{.base="\n",.len=1}};
+    for(int i=0; i < 16; i++)
+     {
+     printf("%X ",cbuf.dbufc[i]);
+     };
+      printf("\n");
+
+    uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+ //   puts("Send DR list to webcontrol");
+  //  uv_write(write_req, (uv_stream_t*) webStream, buf, sizeof(DATARATEBUF), web_write_complete);
+    return;
 	}
 
   if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)

@@ -3,6 +3,8 @@ de_signals.h
 Maps program mnemonics to 2-byte commands to be passed to DE
 */
 #define STATUS_INQUIRY      "S?"
+#define DATARATE_INQUIRY    "R?"
+#define DATARATE_RESPONSE   "DR"
 #define LED1_ON             "Y1"
 #define LED1_OFF            "N1"
 #define TIME_INQUIRY        "T?"
@@ -58,6 +60,14 @@ typedef struct datarateBuf
 	struct datarateEntry dataRate[20];
     } DATARATEBUF;
 
+typedef struct comboBuf
+    {
+    union
+     {
+      DATARATEBUF dbuf;
+      char dbufc[175];
+     }  ;
+    } COMBOBUF;
 
 typedef struct configChannelRequest
 	{

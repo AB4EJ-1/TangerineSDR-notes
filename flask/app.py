@@ -53,6 +53,8 @@ f = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 # These must be the same as the corresponding mnemonics in the de_signals.h file
 # used for mainctl compilation (also DESimulator, if simulator is being used)
 STATUS_INQUIRY     = "S?"
+DATARATE_INQUIRY   = "R?"
+DATARATE_RESPONSE  = "DR"
 LED1_ON            = "Y1"
 LED1_OFF           = "N1"
 TIME_INQUIRY       = "T?"
@@ -79,7 +81,7 @@ def is_numeric(s):
    return False
 
 def send_to_mainctl(cmdToSend,waitTime):
-  global theStatus
+  global theStatus, rateList
   print("F: sending:" + cmdToSend)
   host_ip, server_port = "127.0.0.1", 6100
   data = cmdToSend + "\n"  
@@ -100,10 +102,40 @@ def send_to_mainctl(cmdToSend,waitTime):
     # Read data from the TCP server and close the connection
      try:
        received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
-       print("F: received data from DE: ", received)
+ #      print("F: received data from DE: ", received)
+       d = received.decode()
+       print("F: decoded:",d)
+       print("F: buftype is '",received[0:2],"'")
+       print("bytes=",received[0],"/",received[1],"/",received[2])
+#       print("find:",received[0:2].find("DR"))
+       if(d.find("DR") !=  -1):
+         print("DR buffer received")
+         parser = configparser.ConfigParser(allow_no_value=True)
+         parser.read('config.ini')
+         rateList = []
+         a = d.split(":")
+         b = a[1].split(";")
+       
+         print("b=",b)
+         rateCount = 0
+         for ratepair in b:
+           c = ratepair.split(',')
+           lenc = len(c[0])
+           print("c[0]=",c[0]," len c[0]=",lenc)
 
+           if(lenc > 3):
+             break
+           rateList.append(c)
+           parser.set('datarates', 'r'+str(rateCount), c[1] )
+           rateCount = rateCount + 1
+           print("ratepair=",ratepair," c=",c, "c[1]=",c[1])
+         print("rateList = ",rateList)
+         parser.set('datarates','numrates',str(rateCount))
+         fp = open('config.ini','w')
+         parser.write(fp)
+         fp.close()
      except Exception as e:
-       print("F: exception on recv")
+       print("F: exception on recv,", e.message)
        theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
      theStatus = "Active"
      print("F: mainctl answered ", received, " thestatus = ",theStatus)
@@ -230,6 +262,13 @@ def restart():
    print("RESTART: status = ",theStatus, " received = ", received)
    return redirect('/')
 
+@app.route("/datarates")
+def datarates():
+  global theStatus
+  print("Request datarates")
+  send_to_mainctl(DATARATE_INQUIRY,0.1)
+#  print("after check status once, theStatus=",theStatus)
+  return redirect('/')
 
 @app.route("/chkstat")
 def chkstat():
