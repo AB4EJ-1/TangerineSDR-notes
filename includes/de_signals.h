@@ -86,7 +86,7 @@ typedef struct channelBuf
 	{
     char chCommand[2];
     int activeChannels;
-    double channelBandwidth;
+    int channelDatarate;
     struct channelBlock channelDef[16];
     } CHANNELBUF;
 
