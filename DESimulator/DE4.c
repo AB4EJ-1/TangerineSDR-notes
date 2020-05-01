@@ -151,12 +151,14 @@ void *sendFT8(void *threadid) {
            htons(client_addr.sin_port), sentBytes); 
     // sleep(1);
          usleep(250000);  // wait for this many microseconds
+         printf("stopft8=%i \n",stopft8);
          if(stopft8)
 	       {
            puts("UDP thread end");
            ft8active = 0;
-           stopft8 = 0;
+
 	       pthread_exit(NULL);
+
 	       }
        }
      }
@@ -203,8 +205,11 @@ void *awaitConfig(void *threadid) {
     count = recvfrom(sock2, cb.configBuffer, sizeof(cb.configBuffer) , 0, 
         (struct sockaddr*)&config_in_addr, &addr_len);
 
-    printf("CHANNEL Setup CH received \n");
-    for (int i=0; i<16; i++) 
+    printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
+    int actChannels = cb.chBuf.activeChannels;
+    int dataRate = cb.chBuf.channelDatarate;
+    printf("active channels: %i, rate = %i\n",actChannels,dataRate);
+    for (int i=0; i<actChannels; i++) 
       {
       if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
         continue;
@@ -422,6 +427,38 @@ int main() {
       continue;
       }
 
+    if(strncmp(buffer, "R?",2) == 0)   // Request for list of data rates
+     {
+     printf("Request for Data Rates\n");
+     DATARATEBUF myDataRateBuf = {0};
+     strncpy(myDataRateBuf.buftype, "DR",2);
+     myDataRateBuf.dataRate[0].rateNumber= 1;
+     myDataRateBuf.dataRate[0].rateValue = 8;
+     myDataRateBuf.dataRate[1].rateNumber= 2;
+     myDataRateBuf.dataRate[1].rateValue = 4000;
+     myDataRateBuf.dataRate[2].rateNumber= 3;
+     myDataRateBuf.dataRate[2].rateValue = 8000;
+     myDataRateBuf.dataRate[3].rateNumber= 4;
+     myDataRateBuf.dataRate[3].rateValue = 48000;
+     myDataRateBuf.dataRate[4].rateNumber= 5;
+     myDataRateBuf.dataRate[4].rateValue = 96000;
+     myDataRateBuf.dataRate[5].rateNumber= 6;
+     myDataRateBuf.dataRate[5].rateValue = 192000;
+     myDataRateBuf.dataRate[6].rateNumber= 7;
+     myDataRateBuf.dataRate[6].rateValue = 384000;
+     myDataRateBuf.dataRate[7].rateNumber= 8;
+     myDataRateBuf.dataRate[7].rateValue = 768000;
+     myDataRateBuf.dataRate[8].rateNumber= 9;
+     myDataRateBuf.dataRate[8].rateValue = 1536000;
+     client_addr.sin_port = htons(LH_CONF_IN_port);
+
+      count = sendto(sock1, (const struct datarateBuf *)&myDataRateBuf, sizeof(DATARATEBUF), 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("response = %d  sent to ",count);
+      printf(" IP: %s, Port: %d\n", 
+      inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+	  continue;
+     }
+
 
     if(strncmp(buffer, CREATE_CHANNEL ,2) == 0)
       {
@@ -438,6 +475,7 @@ int main() {
   //       continue;
   //      }
       LH_CONF_IN_port = d.myConfigBuf.configPort;
+    
       LH_DATA_IN_port = d.myConfigBuf.dataPort;
       client_addr.sin_port = htons(LH_port);  // this may wipe desired port
 
