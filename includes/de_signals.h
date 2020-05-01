@@ -81,11 +81,12 @@ struct channelBlock
 	int channelNo;
     int antennaPort;
     double channelFreq;
-    double channelBandwidth;
     };
 typedef struct channelBuf
 	{
     char chCommand[2];
+    int activeChannels;
+    double channelBandwidth;
     struct channelBlock channelDef[16];
     } CHANNELBUF;
 

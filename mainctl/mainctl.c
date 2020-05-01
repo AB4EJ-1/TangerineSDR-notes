@@ -566,36 +566,37 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 //channelBuf_ptr = (CHANNELBUF *)malloc(sizeof(CHANNELBUF));  // TODO: free this later
     uv_udp_send_t send_req;
     char b[400];
-    printf("Config channels (CH) received\n");
+    printf("Config channels (CH) received=%s\n",mybuf);
 	memcpy(h.channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
+   
     const char comma[2] = ",";
     char *token;
     token = strtok(mybuf, comma);
     printf("initial token = %s\n", token);
-   // token = strtok(NULL, comma);
+    token = strtok(NULL, comma);   // second token is # active channels
+    printf("second token (# channels) = %s\n", token);
+    int activeChannels = atoi(token);
+    token = strtok(NULL, comma);   
+    printf("third token (data rate) = %s\n", token);
+    int dataRate = atoi(token);
 
-    for (int i=0; i < 16; i++)
+    for (int i=0; i < activeChannels; i++)
       {
-      printf("Channel# %i :\n",i);
+
       token = strtok(NULL, comma);
-//printf("next token = %s\n", token);
+      printf("Channel# %s :\n",token);
+ //     printf("next token = %s\n", token);
       int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].channelNo );
       printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
       token = strtok(NULL, comma);
+      printf("port = %s\n", token);
+      ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
+      printf("port converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
+      token = strtok(NULL, comma);
       printf("next token = %s\n", token);
-      if(strcmp(token,"Off")==0)
-		h.channelBuffer.channelDef[i].antennaPort = -1;
-	  else
-        ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
-      printf("converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
-      token = strtok(NULL, comma);
- //     printf("next token = %s\n", token);
       ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelFreq);
- //     printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelFreq);
-      token = strtok(NULL, comma);
- //     printf("next token = %s\n", token);
-      ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelBandwidth);
- //     printf("converted to %lf \n",h.channelBuffer.channelDef[i].channelBandwidth);
+      printf("freq converted to %lf \n",h.channelBuffer.channelDef[i].channelFreq);
+ 
 
       }
     puts("done with conversion");

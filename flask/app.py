@@ -375,10 +375,10 @@ def desetup():
  #  form = ChannelControlForm()
    if request.method == 'GET':
     channellistform = ChannelListForm()
+# populate channel settings from config file
     channelcount = parser['channels']['numChannels']
     form = ChannelControlForm()
     form.channelcount.data = channelcount
-    form.channelrate.data = parser['channels']['dataRate']
     rate_list = []
 # populate rate capabilities from config file.
 # The config file should have been updated from DE sample rate list buffer.
@@ -387,9 +387,12 @@ def desetup():
       theRate = parser['datarates']['r'+str(r)]
       theTuple = [ str(theRate), int(theRate) ]
       rate_list.append(theTuple)
- #   print("rate list:",rate_list)
+
     form.channelrate.choices = rate_list
-# populate channel settings from config file
+    rate1 = int(parser['channels']['datarate'])
+ #   print("rate1 type = ",type(rate1))
+    form.channelrate.data = rate1
+
     for ch in range(int(channelcount)):
       channelform = ChannelForm()
       channelform.channel_ant  = parser['channels']['p' + str(ch)] 
@@ -403,7 +406,7 @@ def desetup():
 # if we arrive here, user has hit one of the buttons on page
 
    result = request.form
- #  ringbufferPath = parser['settings']['ringbuffer_path']
+
    print("F: result=", result.get('csubmit'))
 
 # did user hit the Set channel count button?
@@ -414,7 +417,6 @@ def desetup():
      channellistform = ChannelListForm()
      form = ChannelControlForm()
      form.channelcount.data = channelcount
-     form.channelrate.data = parser['channels']['dataRate']
      rate_list = []
      numRates = parser['datarates']['numRates']
      for r in range(int(numRates)):
@@ -422,13 +424,14 @@ def desetup():
       theTuple = [ str(theRate), int(theRate) ]
       rate_list.append(theTuple)
      form.channelrate.choices = rate_list
+     rate1 = int(parser['channels']['datarate'])
+     form.channelrate.data = rate1
      for ch in range(int(channelcount)):
-      print("add channel ",ch)
+  #    print("add channel ",ch)
       channelform = ChannelForm()
       channelform.channel_ant  = parser['channels']['p' + str(ch)] 
       channelform.channel_freq = parser['channels']['f' + str(ch)]
       channellistform.channels.append_entry(channelform)
-
      print("return to desetup")
      return render_template('desetup.html',
 	      ringbufferPath = ringbufferPath, channelcount = channelcount,
@@ -442,6 +445,9 @@ def desetup():
 
    if result.get('csubmit') == "Save Changes":
      channelcount = result.get('channelcount')
+     channelrate = result.get('channelrate')
+     print("set data rate to ", channelrate)
+     parser.set('channels','datarate',channelrate)
      theStatus = ""
      print("set #channels to ",channelcount)
      parser.set('channels','numChannels',channelcount)
@@ -480,7 +486,6 @@ def desetup():
      channelcount = parser['channels']['numChannels']
      form = ChannelControlForm()
      form.channelcount.data = channelcount
-     form.channelrate.data = parser['channels']['dataRate']
      rate_list = []
      numRates = parser['datarates']['numRates']
      for r in range(int(numRates)):
@@ -488,7 +493,9 @@ def desetup():
       theTuple = [ str(theRate), int(theRate) ]
       rate_list.append(theTuple)
      form.channelrate.choices = rate_list
-     form.channelrate.data = parser['channels']['dataRate']
+     print("set channelrate to ", parser['channels']['datarate'])
+     rate1 = int( parser['channels']['datarate'])
+     form.channelrate.data = rate1
      rate_list = []
      numRates = parser['datarates']['numRates']
      for r in range(int(numRates)):
@@ -496,15 +503,21 @@ def desetup():
       theTuple = [ str(theRate), int(theRate) ]
       rate_list.append(theTuple)
      form.channelrate.choices = rate_list
+
+     configCmd = CONFIG_CHANNELS + "," + channelcount + "," + parser['channels']['datarate'] + ","
+
      for ch in range(int(channelcount)):
       print("add channel ",ch)
       channelform = ChannelForm()
       channelform.channel_ant  = parser['channels']['p' + str(ch)] 
+      configCmd = configCmd + str(ch) + "," + parser['channels']['p' + str(ch)] + ","
       channelform.channel_freq = parser['channels']['f' + str(ch)]
+      configCmd = configCmd + parser['channels']['f' + str(ch)] + ","
       channellistform.channels.append_entry(channelform)
+     send_to_mainctl(configCmd,1);
 
-     print("return to desetup")
-     return render_template('desetup.html',
+   print("return to desetup")
+   return render_template('desetup.html',
 	      ringbufferPath = ringbufferPath, channelcount = channelcount,
           form = form, status = theStatus,
           channellistform = channellistform)
