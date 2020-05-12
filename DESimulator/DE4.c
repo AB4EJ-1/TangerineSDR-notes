@@ -16,7 +16,6 @@
 * along with this program; if not, write to the Free Software
 * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 *
-
 */
 
 #include <assert.h>
@@ -50,6 +49,8 @@ int stopData;
 int stopft8;
 int ft8active;
 int config_busy;
+int noOfChannels;
+int dataRate;  // rate at which activated channel runs
 struct iqpair {
   float ival; 
   float qval;
@@ -167,15 +168,6 @@ void *sendFT8(void *threadid) {
    ft8active = 0;  // done here
 }
 
-/*
-void *awaitCH(void *threadid) {
-  printf("Starting await-CH thread listening on port %d\n",DE_CH_IN_port);
-  printf("... will send data to LH port %d\n",LH_DATA_IN_port);
-  char configBuffer[1024];
-  CHANNELBUF chBuf;
-
-}
-*/
 
 // This thread handles incoming CH  channel setup
 void *awaitConfig(void *threadid) {
@@ -206,10 +198,10 @@ void *awaitConfig(void *threadid) {
         (struct sockaddr*)&config_in_addr, &addr_len);
 
     printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
-    int actChannels = cb.chBuf.activeChannels;
-    int dataRate = cb.chBuf.channelDatarate;
-    printf("active channels: %i, rate = %i\n",actChannels,dataRate);
-    for (int i=0; i<actChannels; i++) 
+    noOfChannels = cb.chBuf.activeChannels;
+    dataRate = cb.chBuf.channelDatarate;
+    printf("active channels: %i, rate = %i\n", noOfChannels, dataRate);
+    for (int i=0; i < noOfChannels; i++) 
       {
       if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
         continue;
@@ -228,19 +220,19 @@ void *awaitConfig(void *threadid) {
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
 void *sendData(void *threadid) {
   int addr_len;
-  int noOfChannels = 0;
+  
   //memset((void*)&server_addr, 0, addr_len);
-  printf("starting thread, to send to LH port %d, using following channel layout:\n",LH_DATA_IN_port);
+  printf("starting thread, to send to LH port %d, using following %i channels:\n",LH_DATA_IN_port, noOfChannels);
 
-    for (int i=0; i<16; i++) 
+    for (int i=0; i < noOfChannels; i++) 
       {
       if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
         continue;
       else
         printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
         cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
-        noOfChannels++;
       }
+
 // build an example DE data buffer containing a low freq sine wave
 	float I;
 	float Q;
@@ -256,16 +248,11 @@ void *sendData(void *threadid) {
     myBuffer.channelCount = noOfChannels;
     int sampleCount = 1024 / noOfChannels;
     printf("Active channels: %i \n",noOfChannels);
-    printf("Sanple count per buffer: %i \n", sampleCount);
+    printf("Sample count per buffer: %i \n", sampleCount);
+    printf("Data rate: %i sps \n",dataRate);
+    double bufferDelay = ((double)sampleCount / (double)dataRate) / 1E-06;
+    printf("Delay per buf, microsec = %.3E \n",bufferDelay);
 
-/*    original code for outputting single channel
-	for (int i = 0; i < 1024; i++) {
-	  I =  sin ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
-	  Q =  cos ( (double)i * 2.0 * 3.1415926535897932384626433832795 / 1024.0);
-	  myBuffer.theDataSample[i].I_val = I;
-	  myBuffer.theDataSample[i].Q_val = Q;
-           }
-*/
 	for (int i = 0; i < (sampleCount * noOfChannels); i=i+noOfChannels) {
      for(int j=0;j<noOfChannels;j++) {
       // here the float j produces different frequency for each channel
@@ -293,10 +280,10 @@ void *sendData(void *threadid) {
     sentBytes = sendto(sock, (const struct dataBuf *)&myBuffer, sizeof(myBuffer), 0, 
 	   (struct sockaddr*)&client_addr, sizeof(client_addr));
 
-    fprintf(stderr,"UDP message sent from thread to port %u. bytes= %ld\n", 
-           LH_DATA_IN_port, sentBytes); 
-    sleep(1);
-    //usleep(528);  // wait for this many microseconds
+ //   fprintf(stderr,"UDP message sent from thread to port %u. bytes= %ld\n", 
+   //        LH_DATA_IN_port, sentBytes); 
+   // sleep(1);
+    usleep(bufferDelay);  // wait for this many microseconds
     if(stopData)
 	{
          puts("UDP thread end");
