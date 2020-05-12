@@ -88,7 +88,7 @@ static  int sampleCounter = 0;
 static	float data_hdf5[3000];  // needs to be at least 4 x vector lenth + ~72
 
 	/* writing parameters */
-static	uint64_t sample_rate_numerator = 48000; // simulating here
+static	uint64_t sample_rate_numerator = 48000; // default
 static	uint64_t sample_rate_denominator = 1;
 static	uint64_t subdir_cadence = 400; /* Number of seconds per subdirectory - typically longer */
 static	uint64_t millseconds_per_file = 4000; /* Each subdirectory will have up to 10 400 ms files */
@@ -387,7 +387,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running.
 // For now, just set to 1.
 
-  global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR /  
+  global_start_sample = buf_ptr->timeStamp * (long double)sample_rate_numerator /  
                  SAMPLE_RATE_DENOMINATOR;
 
   if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
@@ -399,9 +399,15 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
-*/
+
     DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
+     "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
+      }
+*/
+
+    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+      MILLISECS_PER_FILE, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
       }
 
@@ -575,14 +581,14 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     printf("initial token = %s\n", token);
     token = strtok(NULL, comma);   // second token is # active channels
     printf("second token (# channels) = %s\n", token);
-    int activeChannels = atoi(token);
+    h.channelBuffer.activeChannels = atoi(token);
     token = strtok(NULL, comma);   
     printf("third token (data rate) = %s\n", token);
-    int dataRate = atoi(token);
+    h.channelBuffer.channelDatarate = atoi(token);
+    sample_rate_numerator= atoi(token); // set this for data acquisition
 
-    for (int i=0; i < activeChannels; i++)
+    for (int i=0; i < h.channelBuffer.activeChannels; i++)
       {
-
       token = strtok(NULL, comma);
       printf("Channel# %s :\n",token);
  //     printf("next token = %s\n", token);
@@ -597,7 +603,6 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
       ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelFreq);
       printf("freq converted to %lf \n",h.channelBuffer.channelDef[i].channelFreq);
  
-
       }
     puts("done with conversion");
 

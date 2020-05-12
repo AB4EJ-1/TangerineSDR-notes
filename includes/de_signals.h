@@ -2,25 +2,30 @@
 de_signals.h
 Maps program mnemonics to 2-byte commands to be passed to DE
 */
-#define STATUS_INQUIRY      "S?"
-#define DATARATE_INQUIRY    "R?"
-#define DATARATE_RESPONSE   "DR"
-#define LED1_ON             "Y1"
-#define LED1_OFF            "N1"
-#define TIME_INQUIRY        "T?"
-#define TIME_STAMP          "TS"
-#define CREATE_CHANNEL      "CC"
-#define CONFIG_CHANNELS     "CH"
-#define UNDEFINE_CHANNEL    "UC"
-#define FIREHOSE_SERVER     "FH"
-#define START_DATA_COLL     "SC"
-#define STOP_DATA_COLL      "XC"
-#define DEFINE_FT8_CHAN     "FT"
-#define START_FT8_COLL      "SF"
-#define STOP_FT8_COLL       "XF"
+#define STATUS_INQUIRY      "S?"  // asks DE to send "OK" or "AK"
+#define DATARATE_INQUIRY    "R?"  // asks DE to send a table of supported data rates
+#define DATARATE_RESPONSE   "DR"  // response: start of data rate table
+#define LED1_ON             "Y1"  // asks DE to turn on LED1
+#define LED1_OFF            "N1"  // asks DE to turn off LED1
+#define TIME_INQUIRY        "T?"  // asks DE to send the time from GPSDO
+#define TIME_STAMP          "TS"  // response: time of day
+#define CREATE_CHANNEL      "CC"  // asks DE to create set of data channels
+#define CONFIG_CHANNELS     "CH"  // gives DE channel configurations
+#define UNDEFINE_CHANNEL    "UC"  // asks DE to drop its set of data channels
+#define FIREHOSE_SERVER     "FH"  // puts DE into firehose mode
+#define START_DATA_COLL     "SC"  // asks DE to start collecting data in ringbuffer mode
+#define STOP_DATA_COLL      "XC"  // asks DE to stop collecting data in ringbuffer mode
+#define DEFINE_FT8_CHAN     "FT"  // gives DE configuration for one FT8 channel
+#define START_FT8_COLL      "SF"  // asks DE to start collecting FT8 data on all FT8 channels
+#define STOP_FT8_COLL       "XF"  // asks DE to stop collecting FT8 data
 #define LED_SET             "SB"  // in case we need to send a binary LED set byte
-#define UNLINK              "UL"
-#define HALT_DE             "XX"
+#define UNLINK              "UL"  // asks DE to disconnect from this LH
+#define HALT_DE             "XX"  // asks DE to halt
+#define RESTART_DE          "XR"  // asks DE to do a cold start
+#define FT_DATA_BUFFER      "FT"  // this is an FT8 data packet
+#define RG_DATA_BUFFER      "RG"  // this is a ringbuffer (or firehose) data packet
+#define STATUS_OK           "OK"  // or "AK"  // DE is alive / last command was accepted
+
 
 // buffer for A/D data from DE
 struct dataSample
@@ -33,7 +38,7 @@ typedef struct dataBuf
     char bufType[2];
 	union {  // this space contains buffer length for data buffer, error code for NAK
 	  long bufCount;
-      char errorCode[2];
+          char errorCode[2];
 	  } dval;
 	long timeStamp;
     union {
@@ -78,7 +83,7 @@ typedef struct configChannelRequest
 
 struct channelBlock
 	{
-	int channelNo;
+    int channelNo;
     int antennaPort;
     double channelFreq;
     };

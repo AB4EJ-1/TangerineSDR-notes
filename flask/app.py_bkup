@@ -135,7 +135,7 @@ def send_to_mainctl(cmdToSend,waitTime):
          parser.write(fp)
          fp.close()
      except Exception as e:
-       print("F: exception on recv,")    # , e.message)
+       print("F: exception on recv,", e.message)
        theStatus = "Mainctl stopped or DE disconnected , error: " + str(e)
      theStatus = "Active"
      print("F: mainctl answered ", received, " thestatus = ",theStatus)
@@ -146,11 +146,11 @@ def send_to_mainctl(cmdToSend,waitTime):
 #       theStatus = "ON"
   except Exception as e: 
      print(e)
-#     print("F: '" + e.errno + "'")
- #    if(str(e.errno) == "111" or str(e.errno == "11")):
- #      theStatus = "Error " + e.errno +  "mainctl program not responding"
- #    else:
-     theStatus = "Exception " + str(e)
+     print("F: '" + e.errno + "'")
+     if(str(e.errno) == "111" or str(e.errno == "11")):
+       theStatus = "Error " + e.errno +  "mainctl program not responding"
+     else:
+       theStatus = "Exception " + str(e)
   finally:
      tcp_client.close()
 
@@ -235,16 +235,19 @@ def sdr():
 # write metadata describing channels into the drf_properties file
               ant = []
               chf = []
-              chcount = int(parser['channels']['numchannels'])
-              datarate = int(parser['channels']['datarate'])
-              for i in range(0,chcount):
-                ant.append(int(parser['channels']['p' + str(i)]))
-                chf.append(float(parser['channels']['f' + str(i)]))
+              bw = []
+              chcount = 0
+              for i in range(0,15):
+                if(parser['settings']['ant' + str(i)] != 'Off'):
+                  ant.append(int(parser['settings']['ant' + str(i)]))
+                  chf.append(float(parser['settings']['ch' + str(i) + 'f']))
+                  bw.append(float(parser['settings']['ch' + str(i) + 'b']))
+                  chcount = chcount + 1
               print("Record list of subchannels=",chf)
               f5 = h5py.File('/media/odroid/416BFA3A615ACF0E/hamsci/hdf5/drf_properties.h5','r+')
               f5.attrs.__setitem__('no_of_subchannels',chcount)
               f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
-              f5.attrs.__setitem__('data_rate',datarate)
+              f5.attrs.__setitem__('subchannel_bandwidths_KHz',bw)
               f5.attrs.__setitem__('antenna_ports',ant)
               f5.close()
          if(form.stopDC.data ):
