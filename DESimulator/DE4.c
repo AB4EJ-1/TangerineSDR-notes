@@ -253,14 +253,29 @@ void *sendData(void *threadid) {
     double bufferDelay = ((double)sampleCount / (double)dataRate) / 1E-06;
     printf("Delay per buf, microsec = %.3E \n",bufferDelay);
 
+    double theStep = 6.283185307179586476925286766559 * (double)noOfChannels / 1024.0;
+    int k = 0;
+    printf("start data loop\n");
 	for (int i = 0; i < (sampleCount * noOfChannels); i=i+noOfChannels) {
-     for(int j=0;j<noOfChannels;j++) {
+     for(int j = 0; j < noOfChannels;j++) {
+
       // here the float j produces different frequency for each channel
-	  I =  sin ( (double)i * (float)(j+1) * 3.1415926535897932384626433832795 / (double)(sampleCount));
-	  Q =  cos ( (double)i * (float)(j+1) * 3.1415926535897932384626433832795 / (double)(sampleCount));
+	//  I =  sin ( (double)i * (float)(j+1) * 3.1415926535897932384626433832795 / (double)(sampleCount));
+	//  Q =  cos ( (double)i * (float)(j+1) * 3.1415926535897932384626433832795 / (double)(sampleCount));
+
+// simple, single frequency
+     I = cos ((double)k * theStep * (double)(j+1)  );  
+     Q = sin ((double)k * theStep * (double)(j+1)  );  
+  
+
+      I = 0.7 * cos ((double)k * theStep * (double)(j+1) ) + 0.3 * cos((double)k * 3.0 * theStep * (double)(j+1) );  // the real part
+      Q = 0.7 * sin ((double)k * theStep * (double)(j+1) ) + 0.3 * sin((double)k * 3.0 * theStep * (double)(j+1) );  // the imaginary part
+
+      if(i<10) printf("%i  %i   %i    %f    %f   \n",i,j,k,I,Q);
 	  myBuffer.theDataSample[i+j].I_val = I;
 	  myBuffer.theDataSample[i+j].Q_val = Q;
            }
+      k++;
       }
   ssize_t sentBytes;
   long loopstart;
@@ -311,7 +326,7 @@ void discoveryReply(char buffer[1024]) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
-int main() {
+int run_DE() {
 
   stoplink = 0;
   stopData = 0;
@@ -597,3 +612,22 @@ int main() {
 
   } // end of discovery loop
 }
+
+int main() {
+ while(1)
+ {
+ printf("Starting DE\n");
+ int r = run_DE();
+ printf("DE exited, rc = %i; closing sockets & threads\n", r);
+ close(sock);
+ close(sock1);
+ close(sock2);
+ stoplink = 1;
+ stopData = 1;
+ stopft8 = 1;
+ printf("attempting restart\n");
+ }
+
+}
+
+
