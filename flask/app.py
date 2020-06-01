@@ -15,6 +15,7 @@ import sys
 import h5py
 import numpy as np
 import datetime
+from datetime import datetime
 
 #from array import *
 from email.mime.multipart import MIMEMultipart 
@@ -218,20 +219,31 @@ def sdr():
          fp.close()
          print('F: start set to ',form.startDC.data)
          print('F: stop set to ', form.stopDC.data)
-         if(form.startDC.data and form.mode.data =='snapshotter'):
-           process = subprocess.Popen(["./displayFFT.py","/mnt/RAM_disk/snap/fn.dat"], stdout = PIPE, stderr=PIPE)
+
+# following code is a demo for how to make GNURadio show FFT of a file.
+# file name is temporarily hard-coded in displayFFT.py routine
+ #        if(form.startDC.data and form.mode.data =='snapshotter'):
+  #         process = subprocess.Popen(["./displayFFT.py","/mnt/RAM_disk/snap/fn.dat"], stdout = PIPE, stderr=PIPE)
 #           stdout, stderr = process.communicate()
 #           print(stdout)
-           return  render_template('tangerine.html', form = form)
+#        return  render_template('tangerine.html', form = form)
+
          if(form.startDC.data ):
             if ( len(parser['settings']['ringbuffer_path']) < 1 
                    and form.mode.data == 'ringbuffer') :
               print("F: configured ringbuffer path='", parser['settings']['ringbuffer_path'],"'", len(parser['settings']['ringbuffer_path']))
               form.errline = 'ERROR: Path to digital data storage not configured'
             else:
-          #    startcoll()
-          # command mainctl to trigger DE to start sending ringvuffer data
-              send_to_mainctl(START_DATA_COLL,1)
+          # command mainctl to trigger DE to start sending ringbuffer data
+              now = datetime.now()
+              subdir = "D" + now.strftime('%Y%m%d%H%M%S')
+              print("SEND START DATA COLLECTION COMMAND, subdirectory=" + subdir)
+              metadataPath = parser['settings']['ringbuffer_path'] + "/" + subdir
+           #   print("metadata path="+metadataPath)
+              returned_value = os.system("mkdir "+ metadataPath)
+              print("F: after metadata creation, retcode=",returned_value)
+              send_to_mainctl(START_DATA_COLL + "," + subdir,1)
+              dataCollStatus = 1
 # write metadata describing channels into the drf_properties file
               ant = []
               chf = []
@@ -241,15 +253,22 @@ def sdr():
                 ant.append(int(parser['channels']['p' + str(i)]))
                 chf.append(float(parser['channels']['f' + str(i)]))
               print("Record list of subchannels=",chf)
-              f5 = h5py.File('/media/odroid/416BFA3A615ACF0E/hamsci/hdf5/drf_properties.h5','r+')
-              f5.attrs.__setitem__('no_of_subchannels',chcount)
-              f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
-              f5.attrs.__setitem__('data_rate',datarate)
-              f5.attrs.__setitem__('antenna_ports',ant)
-              f5.close()
+              
+              try:
+                print("Update properties file")
+                print("Removed temporarily for debugging")
+           #    f5 = h5py.File(metadataPath + '/drf_properties.h5','r+')
+           #     f5.attrs.__setitem__('no_of_subchannels',chcount)
+           #     f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
+           #     f5.attrs.__setitem__('data_rate',datarate)
+           #     f5.attrs.__setitem__('antenna_ports',ant)
+           #     f5.close()
+              except:
+                print("WARNING: unable to update DRF HDF5 properties file")
+
          if(form.stopDC.data ):
- #           stopcoll()
             send_to_mainctl(STOP_DATA_COLL,1)
+            dataCollStatus = 0;
          if(form.startprop.data):
             startprop()
          if(form.stopprop.data) :
@@ -259,11 +278,19 @@ def sdr():
          form.dataStat = theDataStatus
          return render_template('tangerine.html', form = form)
 
+@app.route("/restart") # tell DE to cold start
+def restartDE():
+   global theStatus, theDataStatus
+   print("F: restart DE")
+   send_to_mainctl("XX",1)
+   return redirect('/')
 
-@app.route("/restart3")
+
+@app.route("/restart3") # restarts mainctl program
 def restart():
    global theStatus, theDataStatus
    print("F: restart")
+  # send_to_mainctl("XX",1)
    returned_value = os.system("killall -9 mainctl")
    print("F: after killing mainctl, retcode=",returned_value)
    print("F: Trying to restart mainctl")
@@ -476,6 +503,8 @@ def desetup():
    
      if rgPathExists == False:
       theStatus = "Ringbuffer path invalid or not a directory"
+     elif dataCollStatus == 1:
+      theStatus = "ERROR: you must stop data collection before saving changes here"
      else:
       parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
 # save channel config to config file
@@ -942,7 +971,7 @@ def stopprop():
   thePropStatus = 0
   return
 
-
+########### following 2 sections are obsolete - need to remove #################
 #@app.route("/startcollection")
 def startcoll():
   form = MainControlForm()
@@ -965,7 +994,6 @@ def startcoll():
   form.dataStat = theDataStatus
   return
 
-
 #@app.route("/stopcollection")
 def stopcoll():
   form = MainControlForm()
@@ -974,6 +1002,7 @@ def stopcoll():
   theDataStatus = "Stopped data collection"
   dataCollStat = 0
   return
+#################################################################################
 
 @app.route("/throttle", methods = ['POST','GET'])
 def throttle():

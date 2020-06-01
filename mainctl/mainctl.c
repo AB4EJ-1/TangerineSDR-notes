@@ -32,6 +32,10 @@
 #include <errno.h>
 #include "de_signals.h"
 #include <unistd.h>
+#include <json.h>
+#include <pthread.h>
+#include <time.h>
+
 #include "CUnit/CUnit.h"
 #include "CUnit/Basic.h"
 #include "discovered.h"
@@ -75,6 +79,7 @@ CONFIGBUF configRequest;
 #define SUBDIR_CADENCE 10
 #define MILLISECS_PER_FILE 1000
 
+
 ///////////////// Digital RF / HDF5 //////////////////////////////////////
 // Based on research with old_protocol_N1.c in pihpsdr-master
 static	Digital_rf_write_object * DRFdata_object = NULL; /* main object created by init */
@@ -91,7 +96,7 @@ static	float data_hdf5[3000];  // needs to be at least 4 x vector lenth + ~72
 static	uint64_t sample_rate_numerator = 48000; // default
 static	uint64_t sample_rate_denominator = 1;
 static	uint64_t subdir_cadence = 400; /* Number of seconds per subdirectory - typically longer */
-static	uint64_t millseconds_per_file = 4000; /* Each subdirectory will have up to 10 400 ms files */
+static	uint64_t milliseconds_per_file = 4000; /* Each subdirectory will have up to 10 400 ms files */
 static	int compression_level = 0; /* low level of compression */
 static	int checksum = 0; /* no checksum */
 static	int is_complex = 1; /* complex values */
@@ -99,7 +104,7 @@ static	int is_continuous = 1; /* continuous data written */
 static	int num_subchannels = 1; /* subchannels */
 static	int marching_periods = 1; /*  marching periods when writing */
 static	char uuid[100] = "DE output";
-static  char hdf5File[50];   // = "/media/odroid/416BFA3A615ACF0E/hamsci/hdf5";  // TODO: set based on python config
+static  char hdf5File[50];  
 //static  char hdf5File1[50] = "/tmp/RAM_disk/ch4_7";
 static uint64_t theUnixTime = 0;
 //static  char hdf5File[50] = "/tmp/ramdisk";
@@ -111,9 +116,10 @@ static  uint64_t vector_sum = 0;
 
 static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
 
-static char ringbuffer_path[50];
+static char ringbuffer_path[80];
+static char total_hdf5_path[100];
 //const  char *ringbufferPath;
-
+static char hdf5subdirectory[16];
 static long packetCount;
 static int recv_port_status = 0;
 ////////////////////////////////////////////////
@@ -173,9 +179,60 @@ static void alloc_data_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf
 }
 
 const char *configPath;
+static int num_items;  // number of config items found
+static char configresult[100];
+static char target[30];
+static int num_items = 0;
 
+// for communications to Central Host
+static char central_host[100];
+static uint16_t central_port;
 
 //// *********************** Start of Code  *******************************//////
+
+////////////// reads config items from the (python) config file /////////
+int rconfig(char * arg, char * result, int testThis) {
+const char delimiters[] = " =";
+printf("start fcn looking for %s\n", arg);
+FILE *fp;
+char *line = NULL;
+size_t len = 0;
+ssize_t read;
+char *token, *cp;
+if (testThis)
+  {
+  fp = fopen( "/home/odroid/projects/TangerineSDR-notes/flask/config.ini", "r");
+  }
+else
+  fp = fopen(configPath, "r");
+if (fp == NULL)
+  {
+  printf("ERROR - could not open config file at %s\n",configPath);
+  exit(-1);
+  }
+//puts("read config");
+while ((read = getline(&line, &len, fp)) != -1) {
+ // printf("line length %zu: ",read);
+ // printf("%s \n",line);
+  cp = strdup(line);  // allocate enuff memory for a copy of this
+  //printf("cp=%s\n",cp);
+  token = strtok(cp, delimiters);
+ // printf("first token='%s'\n",token);
+  if(strcmp(arg,token) == 0)
+   {
+  token = strtok(NULL, delimiters);
+ // printf("second token=%s\n",token);
+ // printf("config value found = '%s', length = %lu\n",token,strlen(token));
+  
+  strncpy(result,token,strlen(token)-1);
+  result[strlen(token)-1] = 0x00;  // terminate the string
+  free(cp);
+  return(1);
+   }
+  }
+  free(cp);
+  return(0);
+}
 
 /////////////////////////////////////////////////////////////////
 //  Callback after packet sent by UDP
@@ -252,49 +309,17 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   int channelPtr;
   if(nread == 0 )
     { 
-      puts("received UDP zero");
+    //  puts("received UDP zero");
       free(buf->base);
 	  return;
     }
-  printf("UDP I/Q data recvd, bytes = %ld\n", nread);
+ // printf("UDP I/Q data recvd, bytes = %ld\n", nread);
 
   DATABUF *buf_ptr;
   buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
-  printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+ // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
 
-/*
-  if(buf_ptr->bufType[0] == 0x44  && buf_ptr->bufType[1] == 0x52)
-    printf("DR FOUND\n");
-
-  if(strncmp(buf_ptr->bufType, "DR" ,2) ==0)  // this is a DR (Data Rate) buffer
-    {
-    printf("Data Rate Buffer recd\n");
-
-    uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
-    puts("set up write_req");
-    uv_buf_t a[]={{.base="DR", .len=2},{.base="\n",.len=1}};
-    puts("forward DR to webcontrol");
-    uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
-    puts("free the DE buffer");
-
-    DATARATEBUF *drBufptr;
-    char* pDR;
-    pDR = &myDataRateBuf;
- //   memcpy(pDR,buf->base,sizeof(DATARATEBUF));
-    strncpy(myDataRateBuf, buf->base,nread);
-    for(int i=0; i < 20; i++)
-      {
-      if (myDataRateBuf.dataRate[i].rateNumber == 0) break;  // we're done here
-      printf("Data rate# %i, speed %i \n",myDataRateBuf.dataRate[i].rateNumber,
-             myDataRateBuf.dataRate[i].rateValue);
-      }
-
-	free(buf->base);  // always release memory before exiting this callback
-    free (buf_ptr);
-	return;
-    }
-*/
 
 ////  start of handling incoming I/Q data //////////////
 
@@ -345,8 +370,8 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   {
    buffers_received++;
   //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
-   fprintf(stderr,"nread = %zd\n", nread);
-   fprintf(stderr,"Buffer starts with: %02x %02X \n",buf->base[0], buf->base[1]);
+ //  fprintf(stderr,"nread = %zd\n", nread);
+ //  fprintf(stderr,"Buffer starts with: %02x %02X \n",buf->base[0], buf->base[1]);
    if (nread < 8000)  // discard this buffer for now 
 	{
 	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
@@ -354,13 +379,24 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
      free (buf_ptr);
 	 return; 
 	}
-   if (nread > 8000)  // looks like a valid databuffer, based on length
-	{
-	puts("DATA BUFFER RECEIVED");
-    fprintf(stderr," DataBuffer starts with: %02x %02X %02X %02X\n",
-	buf->base[0], buf->base[1],buf->base[2], buf->base[3]);
-	//return;
-	}
+
+   num_items = rconfig("mode",configresult,0);
+   if(num_items == 0)
+    {
+    printf("ERROR - mode setting not found in config.ini");
+    }
+   else
+    {
+    printf(" CONFIG RESULT for mode = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    }
+
+   if(strncmp(configresult,"snapshotter",11)==0)
+    {
+    printf("STARTING SNAPHOTTER mode\n");
+    }
+
+
 
 ////////////////////////////////////////////////////////////////////////////////////
 // handle I/Q buffers coming in for storage to Digital RF
@@ -371,10 +407,10 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
     packetCount = (long) buf_ptr->dval.bufCount;
-    printf("bufcount = %ld\n", packetCount);
+ //   printf("bufcount = %ld\n", packetCount);
     int noOfChannels = buf_ptr->channelCount;
     int sampleCount = 1024 / noOfChannels;
-    printf("Channel count = %i\n",buf_ptr->channelCount);
+ //   printf("Channel count = %i\n",buf_ptr->channelCount);
 
   /* local variables  for Digital RF */
     uint64_t vector_leading_edge_index = 0;
@@ -395,19 +431,16 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     vector_leading_edge_index=0;
     vector_sum = 0;
     hdf_i= 0;
-/*
-    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
-      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
 
-    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
-      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
-      }
-*/
-
-    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
-      MILLISECS_PER_FILE, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
+    strcpy(total_hdf5_path,ringbuffer_path);
+    strcat(total_hdf5_path,"/");
+    strcat(total_hdf5_path, hdf5subdirectory);
+    printf("M: Storing to: %s\n",total_hdf5_path);
+//    DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+ //     MILLISECS_PER_FILE, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
+ //    "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
+    DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
+      milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
       }
 
@@ -428,25 +461,8 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
      }
 */
 
-// debugging code for multi=subchannel support
-/*
-    for(int i=0; i < (sampleCount * noOfChannels); i=i+noOfChannels)
- {
-  int k;
-  printf("i= %i ",i);
 
-  for(int j=0;j<noOfChannels;j++) 
-   {
-   k = j + i;
-//   printf("k=%i   \n",k);
-   printf("%f %f",buf_ptr->theDataSample[k].I_val,buf_ptr->theDataSample[k].Q_val);
-   }
-   printf("\n");
-   
- }
-*/
-
-    fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
+//    fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
@@ -562,14 +578,13 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     printf("... at this point, send_config_addr.sin_port= %d\n", ntohs(send_config_addr.sin_port));
+    free(configBuf_ptr);
     return;
 	}
 
 ////////////////////////////////////////////////////////////////////
   if(strncmp(mybuf, CONFIG_CHANNELS, 2)==0) 
     {
-//    CHANNELBUF *channelBuf_ptr;
-//channelBuf_ptr = (CHANNELBUF *)malloc(sizeof(CHANNELBUF));  // TODO: free this later
     uv_udp_send_t send_req;
     char b[400];
     printf("Config channels (CH) received=%s\n",mybuf);
@@ -651,13 +666,21 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
   if(strncmp(mybuf, START_DATA_COLL , 2)==0)
 	{
-
+    printf("M: START DATA COLL COMMAND RECEIVED\n");
     uv_udp_send_t send_req;
-
+ //   printf("M: try to print subdir, 1\n");
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
-
+ //   printf("M: ry to print subdir 2\n");
 	strcpy(b, START_DATA_COLL );
+  //  const char* frombuf = mybuf;
+    for(int z=0; z < 15; z++)
+     {
+     hdf5subdirectory[z] = mybuf[z+3];
+     }
+    hdf5subdirectory[16]=0;
+ //   printf("M: try to print subdir 3\n");
+    printf("HDF5 subdirectory = %s\n",hdf5subdirectory);
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
     if(recv_port_status == 0)   // if port not already open, open it
       {
@@ -692,7 +715,9 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     printf("Sending STOP DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
-    int result = digital_rf_close_write_hdf5(DRFdata_object);
+    sleep(0.25);  // wait for command to be processed
+    // now close the DRF file
+    int result = digital_rf_close_write_hdf5(DRFdata_object);  
     DRFdata_object = NULL;
     fprintf(stderr,"DRF close, result = %d \n",result);
     return;
@@ -711,6 +736,23 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     struct sockaddr_in send_addr;
     printf("Sending STATUS INQUIRY to %s  port %u\n", DE_IP, DE_port);
     printf("\t(Listening on port %d )\n", ntohs(recv_addr.sin_port));
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    return;
+	}
+
+  if(strncmp(mybuf, HALT_DE, 2)==0)  // acts to restart the DE
+	{
+	puts("Forward status inquiry to DE");
+    uv_udp_send_t send_req;
+	char b[60];
+	for(int i=0; i< 60; i++) { b[i] = 0; }
+  // status inquiry
+	strcpy(b, "XX");
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
+    struct sockaddr_in send_addr;
+    printf("Sending RESTART to %s  port %u\n", DE_IP, DE_port);
+  //  printf("\t(Listening on port %d )\n", ntohs(recv_addr.sin_port));
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     return;
@@ -755,13 +797,6 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 	  result = digital_rf_close_write_hdf5(DRFdata_object);
       DRFdata_object = NULL;
 	}
-//  puts("process_command triggered; set up uv_write_t");
-//  uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
-//  puts("set up write_req");
-//  uv_buf_t a[]={{.base=mybuf,.len=nread},{.base="\n",.len=3}};
-// forward command to DE
-//  puts("write to DE");
-
 
   }
 
@@ -853,7 +888,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   int channelPtr;
   if(nread == 0 )
     { 
-      puts("received UDP zero");
+   //   puts("received UDP zero");
       free(buf->base);
 	  return;
     }
@@ -864,7 +899,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 // TODO: ensure there is a free for this memory before every return
   memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
 
-  printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+ // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
 
   // respond to STATUS INQUIRY
 
@@ -876,19 +911,17 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
     puts("Send OK status to webcontrol");
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+    free(buf_ptr);
     return;
 	}
 
   if(strncmp(buf_ptr->bufType, DATARATE_RESPONSE, 2)==0)
 	{
-  DATARATEBUF *rbuf_ptr;
-  rbuf_ptr = (DATARATEBUF *)malloc(sizeof(DATARATEBUF));  // allocate memory for working buf
+     DATARATEBUF *rbuf_ptr;
+     rbuf_ptr = (DATARATEBUF *)malloc(sizeof(DATARATEBUF));  // allocate memory for working buf
 
     COMBOBUF cbuf;
-   // *cbuf cbufp;
-
-// TODO: ensure there is a free for this memory before every return
-  memcpy(&cbuf.dbuf, buf->base,nread);    // get data from UDP buffer
+    memcpy(&cbuf.dbuf, buf->base,nread);    // get data from UDP buffer
 //  strncpy(cbuf.dbufc, buf->base,nread,sizeof(DATARATEBUF));
   printf("buffer = %s \n",cbuf.dbufc);
 
@@ -900,8 +933,6 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     sprintf(c,"%i,%i;",cbuf.dbuf.dataRate[i].rateNumber,cbuf.dbuf.dataRate[i].rateValue);
     strcat(b,c);
    };
-
-
 
   printf("DR string= %s\n",b);
 
@@ -922,6 +953,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
  //   puts("Send DR list to webcontrol");
   //  uv_write(write_req, (uv_stream_t*) webStream, buf, sizeof(DATARATEBUF), web_write_complete);
+    free(rbuf_ptr);
     return;
 	}
 
@@ -931,10 +963,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
            buf->base[0], buf->base[1], buf->base[2],
 			buf->base[3], buf->base[4], buf->base[4]);
 
-/////////////////////////////////////////////////
     if(nread == 6)    // this should be a CC ACK containing DE listening ports
       {
-
       puts("Prep to handle incoming IQ data");
       memcpy(d.mybuf1, buf->base, 6);
       printf("AK received from last command:  %s ,", d.myConfigBuf.cmd);
@@ -974,7 +1004,6 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
        {
         t = time(NULL);
 
-
         if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
         strftime(date, 12, "%y%m%d_%H%M", gmt);
@@ -1001,10 +1030,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
         int ret = system(mycmd);
         puts("ft8 decode ran");
         }
-
       return;
     }
-
 
   buffers_received++;
   //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
@@ -1022,6 +1049,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 	//return;
 	}
 
+
+/*
 ////////////////////////////////////////////////////////////////////////////////////
 // handle I/Q buffers coming in for storage to Digital RF
 
@@ -1033,7 +1062,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     packetCount = (long) buf_ptr->dval.bufCount;
     printf("bufcount = %ld\n", packetCount);
     printf("Channel count = %i \n",buf_ptr->channelCount);
-  /* local variables  for Digital RF */
+  /* local variables  for Digital RF 
     uint64_t vector_leading_edge_index = 0;
     uint64_t global_start_sample = 0;
 
@@ -1058,7 +1087,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
 
-*/    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
+    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
       MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1,buf_ptr->channelCount , 1, 1);
       }
@@ -1077,7 +1106,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
      data_hdf5[j] = buf_ptr->myDataSample[j/2].I_val;
      data_hdf5[j+1] = buf_ptr->myDataSample[j/2].Q_val;
      }
-*/
+
 
     fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is
@@ -1093,54 +1122,131 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
     free (buf_ptr);  // free the work buffer
     }
+*/
 
   free(buf->base);
 
   }
- ////////////// reads config items from the (python) config file /////////
-int rconfig(char * arg, char * result, int testThis) {
-const char delimiters[] = " =";
-printf("start fcn looking for %s\n", arg);
-FILE *fp;
-char *line = NULL;
-size_t len = 0;
-ssize_t read;
-char *token, *cp;
-if (testThis)
-  {
-  fp = fopen( "/home/odroid/projects/TangerineSDR-notes/flask/config.ini", "r");
-  }
-else
-  fp = fopen(configPath, "r");
-if (fp == NULL)
-  {
-  printf("ERROR - could not open config file at %s\n",configPath);
-  exit(-1);
-  }
-//puts("read config");
-while ((read = getline(&line, &len, fp)) != -1) {
-//  printf("line length %zu: ",read);
-//  printf("%s \n",line);
-  cp = strdup(line);  // allocate enuff memory for a copy of this
-//  printf("cp=%s\n",cp);
-  token = strtok(cp, delimiters);
-//  printf("first token='%s'\n",token);
-  if(strcmp(arg,token) == 0)
-   {
-  token = strtok(NULL, delimiters);
-//  printf("second token=%s\n",token);
-  printf("config value found = '%s', length = %lu\n",token,strlen(token));
-  
-  strncpy(result,token,strlen(token)-1);
-  result[strlen(token)-1] = 0x00;  // terminate the string
-  free(cp);
-  return(1);
-   }
-  }
-  free(cp);
-  return(0);
+
+////////////// Comm to Central Host
+
+void *heartbeat(void *threadid) {
+
+int portno = 5000;
+//char *host = "192.168.1.208";
+char *host = "192.168.1.67";
+//char *message_fmt = "POST /apikey=%s&command=%s HTTP/1.0\r\n\r\n";
+char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
+//char *message_fmt = "GET /apikey=SHGJKD HTTP/1.0\r\n\r\n";
+
+struct hostent *server;
+struct sockaddr_in serv_addr;
+int sockfd, bytes, sent, received, total;
+char message[1024],response[4096];
+
+//if (argc < 3) { puts("Parameters: <apikey> <command>"); exit(0); }
+
+/* fill in the parameters */
+//sprintf(message,message_fmt,argv[1],argv[2]);
+//sprintf(message,message_fmt);
+
+char tbuf[30];
+struct timeval tv;
+time_t curtime;
+
+
+while(1==1)  // heartbeat loop
+{
+  char mytoken[75];
+
+  num_items = rconfig("token_value",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - token_value setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    strcpy(mytoken, configresult);
+    }
+
+
+
+ gettimeofday(&tv, NULL);
+ curtime = tv.tv_sec;
+ strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
+ printf("Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
+ sprintf(message,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n",mytoken,tbuf);
+//strcpy(message,"HB!");
+printf("M: hearbeat - send request\n");
+/* create the socket */
+sockfd = socket(AF_INET, SOCK_STREAM, 0);
+if (sockfd < 0) printf("M: Heartbeat thread- ERROR opening socket\n");
+
+/* lookup the ip address */
+server = gethostbyname(host);
+if (server == NULL) printf("M: Heartbead thready - ERROR, no such host\n");
+
+/* fill in the structure */
+memset(&serv_addr,0,sizeof(serv_addr));
+serv_addr.sin_family = AF_INET;
+serv_addr.sin_port = htons(portno);
+memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
+
+/* connect the socket */
+if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
+  printf("M: Heartbeat - ERROR connecting");
+  else
+  printf("Heartbeat socket connected\n");
+
+
+
+/* send the request */
+total = strlen(message);
+sent = 0;
+do {
+ bytes = write(sockfd,message+sent,total-sent);
+ if (bytes < 0)
+  printf("M: Heartbeat - ERROR writing message to socket");
+ else
+  printf("Heartbeat sent byte\n");
+ if (bytes == 0)
+  break;
+ sent+=bytes;
+ } while (sent < total);
+
+/* receive the response */
+memset(response,0,sizeof(response));
+total = sizeof(response)-1;
+received = 0;
+do {
+ bytes = read(sockfd,response+received,total-received);
+ if (bytes < 0)
+  printf("M: Heartbeat - ERROR reading response from socket");
+ else
+  printf("M: Heartbeat got from Central %i bytes\n",bytes);
+ if (bytes == 0)
+  break;
+ received+=bytes;
+ } while (received < total);
+
+if (received == total)
+  printf("M: Heartbeat - ERROR storing complete response from socket");
+
+/* process response */
+printf("M: Heartbeat Response:\n%s\n",response);
+sleep(1.0);
+
+/* close the socket */
+close(sockfd);
 }
 
+return 0;
+
+}  // end of heartbeat thread
+
+ 
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
 
@@ -1328,86 +1434,120 @@ int main(int argc, char *argv[]) {
   else
     fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
 
-  char result[100];
-  char target[30];
- // strcpy(target,"configport");
-  int num_items = 0;
+
   puts("start");
  // printf("looking for '%s'\n",target);
-  num_items = rconfig("configport",result,0);
+  num_items = rconfig("configport",configresult,0);
   if(num_items == 0)
     {
     printf("ERROR - configport setting not found in config.ini");
     }
   else
     {
-    printf(" CONFIG RESULT = '%s'\n",result);
+    printf(" CONFIG RESULT = '%s'\n",configresult);
  //   printf("len =%lu\n",strlen(result));
-    LH_CONF_IN_port = atoi(result);
-    num_items = rconfig("dataport",result,0);
-    LH_DATA_IN_port = atoi(result);
+    LH_CONF_IN_port = atoi(configresult);
+    num_items = rconfig("dataport",configresult,0);
+    LH_DATA_IN_port = atoi(configresult);
     }
 
 //  strcpy(target,"DE_ip");
 //  int num_items = 0;
   puts("start");
  // printf("looking for '%s'\n",target);
-  num_items = rconfig("DE_ip",result,0);
+  num_items = rconfig("DE_ip",configresult,0);
   if(num_items == 0)
     {
     printf("ERROR - DE_ip setting not found in config.ini");
     }
   else
     {
-    printf(" CONFIG RESULT for DE_ip = '%s'\n",result);
-    printf("len =%lu\n",strlen(result));
-    strcpy(DE_ip_str, result);
+    printf(" CONFIG RESULT for DE_ip = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    strcpy(DE_ip_str, configresult);
     }
 
- // strcpy(target,"DE_port");
-//  puts("start");
- // printf("looking for '%s'\n",target);
-
-  num_items = rconfig("DE_port",result,0);
+  num_items = rconfig("DE_port",configresult,0);
   if(num_items == 0)
     {
     printf("ERROR - DE_ip setting not found in config.ini");
     }
   else
     {
-    printf(" CONFIG RESULT for DE_port = '%s'\n",result);
-    printf("len =%lu\n",strlen(result));
-    DE_port = atoi(result);
+    printf(" CONFIG RESULT for DE_port = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    DE_port = atoi(configresult);
     }
 
- // strcpy(target,"controlport");
-
-  num_items = rconfig("controlport",result,0);
+  num_items = rconfig("controlport",configresult,0);
   if(num_items == 0)
     {
     printf("ERROR - controlport setting not found in config.ini");
     }
   else
     {
-    printf(" CONFIG RESULT = '%s'\n",result);
-    printf("len =%lu\n",strlen(result));
-    controller_port = atoi(result);
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    controller_port = atoi(configresult);
     }
 
-
- // strcpy(target,"ringbuffer_path");
-  num_items = rconfig("ringbuffer_path",result,0);
+  num_items = rconfig("ringbuffer_path",configresult,0);
   if(num_items == 0)
     {
     printf("ERROR - ringbuffer_path setting not found in config.ini");
     }
   else
     {
-    printf(" CONFIG RESULT = '%s'\n",result);
-    printf("len =%lu\n",strlen(result));
-    strcpy(ringbuffer_path, result);
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    strcpy(ringbuffer_path, configresult);
     }
 
+  num_items = rconfig("subdir_cadence",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - subdir_cadence setting not found in config.ini");
+    }
+  else
+    {
+    printf(" subdir cadence CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    subdir_cadence = atoi(configresult);
+    }
+
+  num_items = rconfig("milliseconds_per_file",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - milliseconds_per_file setting not found in config.ini\n");
+    }
+  else
+    {
+    printf(" subdir cadence CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    milliseconds_per_file  = atoi(configresult);
+    }
+
+  num_items = rconfig("central_host",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - central host setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("central host CONFIG RESULT = '%s'\n",configresult);
+    strcpy(central_host, configresult);
+    }
+
+  num_items = rconfig("central_port",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - central port setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("central port CONFIG RESULT = '%s'\n",configresult);
+    central_port = atoi(configresult);
+    }  
 
   loop = uv_default_loop();
 
@@ -1487,9 +1627,12 @@ int main(int argc, char *argv[]) {
 	pclose(fp2);
 	}
 
+    int hbrc = 0;
+    long h;
+    pthread_t hbthread;
+    printf("M: Start hearbeat thread\n");
+    hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
 
-
-	
 
 
 ////////////////////////////////////////////////////////////////

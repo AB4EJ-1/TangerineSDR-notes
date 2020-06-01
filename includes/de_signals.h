@@ -38,7 +38,7 @@ typedef struct dataBuf
     char bufType[2];
 	union {  // this space contains buffer length for data buffer, error code for NAK
 	  long bufCount;
-          char errorCode[2];
+      char errorCode[2];
 	  } dval;
 	long timeStamp;
     union {

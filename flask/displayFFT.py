@@ -16,6 +16,7 @@ if __name__ == '__main__':
     import sys
     print("script name= ",sys.argv[0])
     print("no args =",len(sys.argv))
+# NOTE! See Line 126 for actual data file location
     if(len(sys.argv) == 2):
       datfile = sys.argv[1]
       print("data file name = ",datfile)
