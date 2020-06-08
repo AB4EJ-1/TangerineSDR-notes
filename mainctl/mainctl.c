@@ -183,10 +183,11 @@ static int num_items;  // number of config items found
 static char configresult[100];
 static char target[30];
 static int num_items = 0;
-static int snaphotterMode = 0;
+static int snapshotterMode = 0;
 static int ringbufferMode = 0;
 static int firehoseMode = 0;
-
+static char pathToRAMdisk[50];
+static int uploadInProgress = 0;
 // for communications to Central Host
 static char central_host[100];
 static uint16_t central_port;
@@ -248,7 +249,6 @@ void on_UDP_send(uv_udp_send_t* req, int status)
   return;
 }
 
-
 //////////////////////////////////////////////////////////
 // callback routine for after write to webcontrol is complete
 ////////////////////////////////////////////////////////
@@ -274,7 +274,6 @@ void DE_write_cb(uv_write_t *req, int status) {
   free(req);
 }
 
-
 //////////////////////////////////////////////////////////////
 // callback for when TCP data is received from DE
 /////////////////////////////////////////////////////////////
@@ -287,7 +286,6 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   strncpy(reply,DEbuf->base, nread);
   fprintf(stderr,"DE sent %zd: bytes:\n", nread);
   puts(reply); 
-
 
 /////////////////////////////////////////////////////////////////
 //////////  forward a status message from DE to webcontrol
@@ -397,14 +395,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
    if(strncmp(configresult,"snapshotter",11)==0)
     {
     printf("STARTING SNAPHOTTER mode\n");
-    snaphotterMode = 1;
+    snapshotterMode = 1;
     ringbufferMode = 0;
     }
-   if(strncmp(configresult."ringbuffer",10) == 0)
+   if(strncmp(configresult, "ringbuffer",10) == 0)
     {
     printf("STARTING RINGBUFFER mode\n");
     ringbufferMode = 1;
-    snaphotterMode = 0;
+    snapshotterMode = 0;
     }
    if(strncmp(configresult,"r+s",3)==0)
     {
@@ -412,7 +410,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     ringbufferMode = 1;
     snapshotterMode = 1;
     }
-
 
 
 
@@ -500,6 +497,60 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   free(buf->base);  // free the callback buffer
   return;  // end of callback for handling incoming I/Q data
   }
+
+int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
+ {
+  char fcommand[100];
+  strcpy(fcommand, "drf ls ");
+  printf("start = %s, end = %s \n", startDT, endDT);
+  printf("path: ");
+  printf("%s\n",ringbuffer_path);
+  
+  printf("command = %s\n",fcommand);
+  printf("now concat ringbuffer_path -\n");
+  strcat(fcommand, ringbuffer_path);
+  strcat(fcommand, "/TangerineData");
+  strcat(fcommand, " > ");
+  strcat(fcommand, pathToRAMdisk);
+  strcat(fcommand, "/dataFileList");
+  printf("command = %s\n",fcommand);
+  int retcode = system(fcommand); 
+  printf("drf ls retcode = %i\n",retcode);
+  strcpy(fcommand, "./filecompress.sh");
+  retcode = retcode + system(fcommand); 
+  printf("tar retcode = %i\n",retcode);
+  return(retcode);
+ }
+
+int getDataDates(char *input, char* startpoint, char* endpoint)
+ {
+  printf("input to extract from= '%s'\n", input);
+  int theLen = strlen(input);
+  printf("len = %i\n",theLen);
+  if(theLen < 180)
+   {
+   return(0);  // this is not a DR command
+   }
+  printf("last char = %c\n",input[theLen - 1]);
+  int s = 0;
+  int e = theLen;
+  int j = 0;
+  for(int i = theLen-20; i < theLen -1; i++)
+   {
+   endpoint[j] = input[i];
+   j++;
+   } 
+  endpoint[j] = 0;
+  j = 0;
+  for(int i = theLen-40; i < theLen -21; i++)
+   {
+   startpoint[j] = input[i];
+   j++;
+   } 
+  startpoint[j] = 0;
+  return(1);
+  
+ }
 
 void recv_port_check() {
   if(recv_port_status == 0)   // if port not already open, open it
@@ -1146,16 +1197,22 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
   }
 
-////////////// Comm to Central Host
+////////////// Data Uploader /////////////////////////////////////
+void *dataUpload(void *threadid) {
+uploadInProgress = 1;
+
+}
+
+
+////////////// Heartbeat to Central Host ////////////////////
 
 void *heartbeat(void *threadid) {
 
-int portno = 5000;
-//char *host = "192.168.1.208";
-char *host = "192.168.1.67";
-//char *message_fmt = "POST /apikey=%s&command=%s HTTP/1.0\r\n\r\n";
+int portno = 5000;  // TODO: use config value here
+
+char *host = "192.168.1.67";  // TODO: use config value here
+
 char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
-//char *message_fmt = "GET /apikey=SHGJKD HTTP/1.0\r\n\r\n";
 
 struct hostent *server;
 struct sockaddr_in serv_addr;
@@ -1278,6 +1335,24 @@ while(1==1)  // heartbeat loop
 
 /* process response */
   printf("M: Heartbeat Response:\n%s\n",response);
+
+  char theStart[30];
+  char theEnd[30];
+  if(getDataDates(response, &theStart[0], &theEnd[0]))
+   {
+   printf("M: Received a DR data request from Central\n");
+
+   if(!uploadInProgress)
+    {
+    int rp = prep_data_files(theStart, theEnd, ringbuffer_path);
+    int uplrc = 0;
+    long h;
+    pthread_t uplthread;
+    printf("M: Start upload thread\n");
+    uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
+    }
+   }
+
   sleep(heartbeat_interval);
 
 /* close the socket */
@@ -1287,7 +1362,6 @@ while(1==1)  // heartbeat loop
 return 0;
 
 }  // end of heartbeat thread
-
  
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
@@ -1345,6 +1419,35 @@ void test_get_config(void) {
   CU_ASSERT_STRING_EQUAL(tresult,"T123"); 
 
 }
+void test_data_prep(void) {
+  char startDT[20];
+  char endDT[20];
+  char rbufp[50];
+  char rdp[50];
+  strcpy(startDT, "2020-06-08T00:00:00");
+  strcpy(endDT, "2020-06-08T23:59:59");
+  strcpy(rbufp,"/home/odroid/share1/TangerineData");
+  strcpy(pathToRAMdisk, "/mnt/RAM_disk");
+  int r1 = prep_data_files(startDT, endDT, rbufp);
+  CU_ASSERT_EQUAL(r1,0);   // dummy statement for now
+}
+
+void date_test(void) {
+  char theInput[300] = "HTTP/1.0 200 OK\nConnection: close\nContent-Length: 42\nContent-Type: text/html; charset=utf-8\nDate: Mon, 08 Jun 2020 20:40:53 GMT\nServer: waitress\n\nDR2020-06-08T00:00:00Z2020-06-08T23:59:59Z";
+  char theStart[30];
+  char theEnd[30];
+
+ int r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
+ CU_ASSERT_EQUAL(r2,1);  // here we have found a DR command
+ printf("In test, endpoint = %s\n", theEnd);
+ printf("In test, startpoint = %s\n", theStart);
+ CU_ASSERT_STRING_EQUAL(theStart, "2020-06-08T00:00:00");
+ CU_ASSERT_STRING_EQUAL(theEnd, "2020-06-08T23:59:59");
+
+ strcpy(theInput, "HTTP/1.0 200 OK\nConnection: close\nContent-Length: 42\nContent-Type: text/html; charset=utf-8\nDate: Mon, 08 Jun 2020 20:40:53 GMT\nServer: waitress\n\n");
+ r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
+ CU_ASSERT_EQUAL(r2,0);  // here we have found no command
+}
 //////////////////////////////////////////////////////
 int run_all_tests()
 {
@@ -1369,7 +1472,9 @@ int run_all_tests()
    	  if ( (NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
           (NULL == CU_add_test(pSuite, "max_test_2", max_test_2))  ||
           (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))  ||
-		  (NULL == CU_add_test(pSuite, "config_test1", test_get_config))
+		  (NULL == CU_add_test(pSuite, "config_test1", test_get_config)) ||
+          (NULL == CU_add_test(pSuite, "data_prep_test", test_data_prep)) ||
+          (NULL == CU_add_test(pSuite, "date_extract", date_test))
       )
    {
       CU_cleanup_registry();
@@ -1539,11 +1644,11 @@ int main(int argc, char *argv[]) {
     printf("ERROR - ringbuffer_path setting not found in config.ini");
     }
   else
-    {
+    { strcpy(ringbuffer_path, configresult);
+    }
     printf(" CONFIG RESULT = '%s'\n",configresult);
     printf("len =%lu\n",strlen(configresult));
-    strcpy(ringbuffer_path, configresult);
-    }
+   
 
   num_items = rconfig("subdir_cadence",configresult,0);
   if(num_items == 0)
@@ -1590,6 +1695,17 @@ int main(int argc, char *argv[]) {
     printf("central port CONFIG RESULT = '%s'\n",configresult);
     central_port = atoi(configresult);
     }  
+
+  num_items = rconfig("ramdisk_path",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - RAMdisk path setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("central port CONFIG RESULT = '%s'\n",configresult);
+    strcpy(pathToRAMdisk,configresult);
+    } 
 
   loop = uv_default_loop();
 

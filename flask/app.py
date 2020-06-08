@@ -234,9 +234,16 @@ def sdr():
               print("F: configured ringbuffer path='", parser['settings']['ringbuffer_path'],"'", len(parser['settings']['ringbuffer_path']))
               form.errline = 'ERROR: Path to digital data storage not configured'
             else:
+          # User wants to start data collection. Is there an existing drf_properties file?
+    #          if (os.path.isfile(parser['settings']['ringbuffer_path'] + "/experiment/drf_properties.h5")):
+     #           propertiesCrdat = os.path.getmtime((parser['settings']['ringbuffer_path'] + "/drf_properties.h5"))
+      #          print("F: Existing properties file crdat=" + propertiesCrdat)
+       #         os.rename(parser['settings']['ringbuffer_path'] + "/" + propertiesCrdat + "_" + "drf_properties.h5")
+       #         print("F: renamed.")
           # command mainctl to trigger DE to start sending ringbuffer data
               now = datetime.now()
-              subdir = "D" + now.strftime('%Y%m%d%H%M%S')
+         #     subdir = "D" + now.strftime('%Y%m%d%H%M%S')
+              subdir = "TangerineData"
               print("SEND START DATA COLLECTION COMMAND, subdirectory=" + subdir)
               metadataPath = parser['settings']['ringbuffer_path'] + "/" + subdir
            #   print("metadata path="+metadataPath)
@@ -256,13 +263,13 @@ def sdr():
               
               try:
                 print("Update properties file")
-                print("Removed temporarily for debugging")
-           #    f5 = h5py.File(metadataPath + '/drf_properties.h5','r+')
-           #     f5.attrs.__setitem__('no_of_subchannels',chcount)
-           #     f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
-           #     f5.attrs.__setitem__('data_rate',datarate)
-           #     f5.attrs.__setitem__('antenna_ports',ant)
-           #     f5.close()
+           #     print("Removed temporarily for debugging")
+                f5 = h5py.File(metadataPath + '/drf_properties.h5','r+')
+                f5.attrs.__setitem__('no_of_subchannels',chcount)
+                f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
+                f5.attrs.__setitem__('data_rate',datarate)
+                f5.attrs.__setitem__('antenna_ports',ant)
+                f5.close()
               except:
                 print("WARNING: unable to update DRF HDF5 properties file")
 
