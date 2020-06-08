@@ -183,6 +183,9 @@ static int num_items;  // number of config items found
 static char configresult[100];
 static char target[30];
 static int num_items = 0;
+static int snaphotterMode = 0;
+static int ringbufferMode = 0;
+static int firehoseMode = 0;
 
 // for communications to Central Host
 static char central_host[100];
@@ -394,7 +397,22 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
    if(strncmp(configresult,"snapshotter",11)==0)
     {
     printf("STARTING SNAPHOTTER mode\n");
+    snaphotterMode = 1;
+    ringbufferMode = 0;
     }
+   if(strncmp(configresult."ringbuffer",10) == 0)
+    {
+    printf("STARTING RINGBUFFER mode\n");
+    ringbufferMode = 1;
+    snaphotterMode = 0;
+    }
+   if(strncmp(configresult,"r+s",3)==0)
+    {
+    printf("STARTING SNAPSHOTTER AND RINGBUFFER modes\n");
+    ringbufferMode = 1;
+    snapshotterMode = 1;
+    }
+
 
 
 
@@ -1141,8 +1159,12 @@ char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
 
 struct hostent *server;
 struct sockaddr_in serv_addr;
+struct timeval timeout;
 int sockfd, bytes, sent, received, total;
 char message[1024],response[4096];
+
+timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
+timeout.tv_usec = 0;  //  and will try again after the pause time
 
 //if (argc < 3) { puts("Parameters: <apikey> <command>"); exit(0); }
 
@@ -1153,7 +1175,7 @@ char message[1024],response[4096];
 char tbuf[30];
 struct timeval tv;
 time_t curtime;
-
+int heartbeat_interval = 60;  // seconds
 
 while(1==1)  // heartbeat loop
 {
@@ -1171,75 +1193,95 @@ while(1==1)  // heartbeat loop
     strcpy(mytoken, configresult);
     }
 
+  num_items = rconfig("heartbeat_interval",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - heartbeat_interval setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    heartbeat_interval = atoi(configresult);
+    }
 
-
- gettimeofday(&tv, NULL);
- curtime = tv.tv_sec;
- strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
- printf("Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
- sprintf(message,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n",mytoken,tbuf);
+  gettimeofday(&tv, NULL);
+  curtime = tv.tv_sec;
+  strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
+  printf("Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
+  sprintf(message,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n",mytoken,tbuf);
 //strcpy(message,"HB!");
-printf("M: hearbeat - send request\n");
+  printf("M: hearbeat - set up socket\n");
 /* create the socket */
-sockfd = socket(AF_INET, SOCK_STREAM, 0);
-if (sockfd < 0) printf("M: Heartbeat thread- ERROR opening socket\n");
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) printf("M: Heartbeat thread- ERROR opening socket\n");
+/* set up to allow timeouts, in case we can't hit Central Control */
+  if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+        sizeof(timeout)) < 0)
+       printf("M: Set socket option rcv timeout failed\n");
+  if (setsockopt (sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+        sizeof(timeout)) < 0)
+       printf("M: Set socket option send timeout failed\n");
 
 /* lookup the ip address */
-server = gethostbyname(host);
-if (server == NULL) printf("M: Heartbead thready - ERROR, no such host\n");
+  server = gethostbyname(host);
+  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host\n");
 
 /* fill in the structure */
-memset(&serv_addr,0,sizeof(serv_addr));
-serv_addr.sin_family = AF_INET;
-serv_addr.sin_port = htons(portno);
-memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
+  memset(&serv_addr,0,sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(portno);
+  memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
 
 /* connect the socket */
-if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
-  printf("M: Heartbeat - ERROR connecting");
+  if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
+    {
+    printf("M: Heartbeat - ERROR connecting\n");
+    sleep(heartbeat_interval);
+    continue;
+    }
   else
-  printf("Heartbeat socket connected\n");
-
-
+    printf("Heartbeat socket connected\n");
 
 /* send the request */
-total = strlen(message);
-sent = 0;
-do {
- bytes = write(sockfd,message+sent,total-sent);
- if (bytes < 0)
-  printf("M: Heartbeat - ERROR writing message to socket");
- else
-  printf("Heartbeat sent byte\n");
- if (bytes == 0)
-  break;
- sent+=bytes;
- } while (sent < total);
+  printf("M: hearbeat - send request: %s\n",message);
+  total = strlen(message);
+  sent = 0;
+  do {
+   bytes = write(sockfd,message+sent,total-sent);
+   if (bytes < 0)
+     printf("M: Heartbeat - ERROR writing message to socket\n");
+   else
+      printf("Heartbeat sent byte, return = %i\n", bytes);
+   if (bytes == 0)
+      break;
+   sent+=bytes;
+  } while (sent < total);
 
 /* receive the response */
-memset(response,0,sizeof(response));
-total = sizeof(response)-1;
-received = 0;
-do {
- bytes = read(sockfd,response+received,total-received);
- if (bytes < 0)
-  printf("M: Heartbeat - ERROR reading response from socket");
- else
-  printf("M: Heartbeat got from Central %i bytes\n",bytes);
- if (bytes == 0)
-  break;
- received+=bytes;
- } while (received < total);
+  memset(response,0,sizeof(response));
+  total = sizeof(response)-1;
+  received = 0;
+  do {
+   bytes = read(sockfd,response+received,total-received);
+   if (bytes < 0)
+    printf("M: Heartbeat - ERROR reading response from socket\n");
+   else
+    printf("M: Heartbeat got from Central %i bytes\n",bytes);
+   if (bytes == 0)
+     break;
+  received+=bytes;
+  } while (received < total);
 
-if (received == total)
-  printf("M: Heartbeat - ERROR storing complete response from socket");
+  if (received == total)
+    printf("M: Heartbeat - ERROR storing complete response from socket");
 
 /* process response */
-printf("M: Heartbeat Response:\n%s\n",response);
-sleep(1.0);
+  printf("M: Heartbeat Response:\n%s\n",response);
+  sleep(heartbeat_interval);
 
 /* close the socket */
-close(sockfd);
+  close(sockfd);
 }
 
 return 0;
