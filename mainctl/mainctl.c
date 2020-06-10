@@ -435,9 +435,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // we also check buffers_received, so we can start recording even if we missed
 // one or more buffers at start-up.
 
-// TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running.
-// For now, just set to 1.
-
   global_start_sample = buf_ptr->timeStamp * (long double)sample_rate_numerator /  
                  SAMPLE_RATE_DENOMINATOR;
 
@@ -498,25 +495,57 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   return;  // end of callback for handling incoming I/Q data
   }
 
+///////////////// create file name for upload data //////////////////
+const char * buildFileName(char * node, char * grid){
+
+ static char thefilename[100] = "";
+ time_t t= time(NULL);
+ struct tm *tm = localtime(&t);
+ char s[64];
+ assert(strftime(s, sizeof(s), "%FT%H%M%SZ", tm));
+ printf("computed time=%s\n",s);
+ strcpy(thefilename, s);
+ strcat(thefilename, "_");
+ printf("the node = %s\n", node);
+ strcat(thefilename, node);
+ strcat(thefilename, "_T1_");
+ strcat(thefilename, grid);
+ strcat(thefilename, "_DRF.tar");
+ printf("filename: %s\n", thefilename);
+ return (char *)thefilename;
+
+}
+
 int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
  {
-  char fcommand[100];
+// build a drf ls command to find the files within time frame
+  char fcommand[150];
+  char packfilename[100] = "";
   strcpy(fcommand, "drf ls ");
   printf("start = %s, end = %s \n", startDT, endDT);
   printf("path: ");
   printf("%s\n",ringbuffer_path);
-  
-  printf("command = %s\n",fcommand);
-  printf("now concat ringbuffer_path -\n");
   strcat(fcommand, ringbuffer_path);
-  strcat(fcommand, "/TangerineData");
+  strcat(fcommand,"/TangerineData -r -s ");
+  strcat(fcommand,startDT);
+  strcat(fcommand," -e ");
+  strcat(fcommand,endDT);
   strcat(fcommand, " > ");
+  strcat(fcommand,pathToRAMdisk);
+  strcat(fcommand,"/dataFileList");
+  printf("DRF command: %s\n",fcommand);
+  int retcode = system(fcommand);
+
+  strcpy(fcommand, "./filecompress.sh ");  // start of file compress command
+  strcat(fcommand, ringbuffer_path);       // first arg is path to ringbuffer
+  strcat(fcommand, "/TangerineData ");
+
   strcat(fcommand, pathToRAMdisk);
-  strcat(fcommand, "/dataFileList");
-  printf("command = %s\n",fcommand);
-  int retcode = system(fcommand); 
-  printf("drf ls retcode = %i\n",retcode);
-  strcpy(fcommand, "./filecompress.sh");
+  strcat(fcommand, "/dataFileList ");
+  char fn[100] = "";
+  strcpy(fn, (char *)buildFileName("N1234", "EM63fj"));
+  strcat(fcommand, fn);
+  printf("File compress command: %s\n",fcommand);
   retcode = retcode + system(fcommand); 
   printf("tar retcode = %i\n",retcode);
   return(retcode);
@@ -1006,8 +1035,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
   printf("DR string= %s\n",b);
 
  // printf("DR buf type found %s \n",rbuf_ptr->buftype);
-  printf("intial entry %i %i \n",cbuf.dbuf.dataRate[0].rateNumber, cbuf.dbuf.dataRate[0].rateValue);
-
+  printf("intial entry %i %i \n",cbuf.dbuf.dataRate[0].rateNumber,                  cbuf.dbuf.dataRate[0].rateValue); 
 
 	puts("Forward datarate response to webcontrol");
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
@@ -1112,96 +1140,25 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 	}
   if (nread > 8000)  // looks like a valid databuffer, based on length
 	{
-	puts("DATA BUFFER RECEIVED");
-    fprintf(stderr," DataBuffer starts with: %02x %02X %02X %02X\n",
-	buf->base[0], buf->base[1],buf->base[2], buf->base[3]);
-	//return;
+	printf("\n\n*** ERROR *** - Data buffer incorrectly processed\n\n");
 	}
-
-
-/*
-////////////////////////////////////////////////////////////////////////////////////
-// handle I/Q buffers coming in for storage to Digital RF
-
-    {
-    // set up memory and get a copy of the data (may be possible to eliminate this step)
-  //  DATABUF *buf_ptr;
-  //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-  //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
-    packetCount = (long) buf_ptr->dval.bufCount;
-    printf("bufcount = %ld\n", packetCount);
-    printf("Channel count = %i \n",buf_ptr->channelCount);
-  /* local variables  for Digital RF 
-    uint64_t vector_leading_edge_index = 0;
-    uint64_t global_start_sample = 0;
-
-// if bufCount is zero, it is first data packet; create the Digital RF file
-// we also check buffers_received, so we can start recording even if we missed
-// one or more buffers at start-up.
-
-// TODO: NUM_SUBCHANNELS needs to be set based on actual # channels running.
-// For now, just set to 1.
-
-  global_start_sample = buf_ptr->timeStamp * (long double)SAMPLE_RATE_NUMERATOR /  
-                 SAMPLE_RATE_DENOMINATOR;
-
-  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
-    fprintf(stderr,"Create HDF5 file group, start time: %ld \n",global_start_sample);
-    vector_leading_edge_index=0;
-    vector_sum = 0;
-    hdf_i= 0;
- //   NUM_SUBCHANNELS = buf_ptr->channelCount;
-/*
-    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
-      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", 0, 0, 1, NUM_SUBCHANNELS, 1, 1);
-
-    DRFdata_object = digital_rf_create_write_hdf5(ringbuffer_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
-      MILLISECS_PER_FILE, global_start_sample, SAMPLE_RATE_NUMERATOR, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", 0, 0, 1,buf_ptr->channelCount , 1, 1);
-      }
-
-// here we write out DRF
-
-    vector_sum = vector_leading_edge_index + hdf_i*vector_length; 
-/*
-
-// in case we have to convert or otherwise interpret the DE buffer, here is a
-// way to iterate through it
-
-    puts("copy data");   // this can be eliminated by setting up buffer descrip better
-    for(int j=0; j < 2048; j=j+2)
-     {
-     data_hdf5[j] = buf_ptr->myDataSample[j/2].I_val;
-     data_hdf5[j+1] = buf_ptr->myDataSample[j/2].Q_val;
-     }
-
-
-    fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
-// push buffer directly to DRF just like it is
-    if(DRFdata_object != NULL)  // make sure there is an open DRF file
-	  {
-      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
-	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
-	  }
-       
-  //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
-
-    hdf_i++;
-
-    free (buf_ptr);  // free the work buffer
-    }
-*/
 
   free(buf->base);
 
   }
 
+
+
 ////////////// Data Uploader /////////////////////////////////////
 void *dataUpload(void *threadid) {
 uploadInProgress = 1;
+// TODO: add code here to upload the tar'd data files
+// include throttling (curl?); resume where left off if interrupted
+
+
 
 }
+
 
 
 ////////////// Heartbeat to Central Host ////////////////////
@@ -1443,11 +1400,27 @@ void date_test(void) {
  printf("In test, startpoint = %s\n", theStart);
  CU_ASSERT_STRING_EQUAL(theStart, "2020-06-08T00:00:00");
  CU_ASSERT_STRING_EQUAL(theEnd, "2020-06-08T23:59:59");
-
  strcpy(theInput, "HTTP/1.0 200 OK\nConnection: close\nContent-Length: 42\nContent-Type: text/html; charset=utf-8\nDate: Mon, 08 Jun 2020 20:40:53 GMT\nServer: waitress\n\n");
  r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
  CU_ASSERT_EQUAL(r2,0);  // here we have found no command
 }
+
+void buildFileName_test(void) {
+// test assumes the tested code will complete in same second as test code runs
+ char fn[75] = "";
+ strcpy(fn, (char *)buildFileName("N1234", "EM63fj"));
+ printf("computed filename = '%s'\n", fn);
+ char testfilename[100] = "";
+ time_t t= time(NULL);
+ struct tm *tm = localtime(&t);
+ char s[64];
+ assert(strftime(s, sizeof(s), "%FT%H%M%SZ", tm));
+ strcpy(testfilename, s);
+ strcat(testfilename, "_N1234_T1_EM63fj_DRF.tar");
+ strcat(testfilename, "\0");
+ CU_ASSERT_STRING_EQUAL(fn, testfilename);
+}
+
 //////////////////////////////////////////////////////
 int run_all_tests()
 {
@@ -1469,12 +1442,13 @@ int run_all_tests()
    }
 
    // add the tests to the suite 
-   	  if ( (NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
+   	  if ((NULL == CU_add_test(pSuite, "max_test_1", max_test_1)) ||
           (NULL == CU_add_test(pSuite, "max_test_2", max_test_2))  ||
           (NULL == CU_add_test(pSuite, "max_test_3", max_test_3))  ||
 		  (NULL == CU_add_test(pSuite, "config_test1", test_get_config)) ||
           (NULL == CU_add_test(pSuite, "data_prep_test", test_data_prep)) ||
-          (NULL == CU_add_test(pSuite, "date_extract", date_test))
+          (NULL == CU_add_test(pSuite, "date_extract", date_test)) ||
+          (NULL == CU_add_test(pSuite, "buildFileName", buildFileName_test))
       )
    {
       CU_cleanup_registry();
