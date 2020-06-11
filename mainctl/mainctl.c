@@ -191,6 +191,9 @@ static int uploadInProgress = 0;
 // for communications to Central Host
 static char central_host[100];
 static uint16_t central_port;
+// the configuration file
+static config_t cfg;
+static config_setting_t *setting;
 
 //// *********************** Start of Code  *******************************//////
 
@@ -516,41 +519,35 @@ const char * buildFileName(char * node, char * grid){
 
 }
 
+// the following function prepares data in ring buffer for upload 
 int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
  {
+// first: build list of data files for uplad using DRF "ls" utility
 // build a drf ls command to find the files within time frame
   char fcommand[150];
-  char packfilename[100] = "";
-  strcpy(fcommand, "drf ls ");
-  printf("start = %s, end = %s \n", startDT, endDT);
-  printf("path: ");
-  printf("%s\n",ringbuffer_path);
-  strcat(fcommand, ringbuffer_path);
-  strcat(fcommand,"/TangerineData -r -s ");
-  strcat(fcommand,startDT);
-  strcat(fcommand," -e ");
-  strcat(fcommand,endDT);
-  strcat(fcommand, " > ");
-  strcat(fcommand,pathToRAMdisk);
-  strcat(fcommand,"/dataFileList");
-  printf("DRF command: %s\n",fcommand);
-  int retcode = system(fcommand);
-
-  strcpy(fcommand, "./filecompress.sh ");  // start of file compress command
-  strcat(fcommand, ringbuffer_path);       // first arg is path to ringbuffer
-  strcat(fcommand, "/TangerineData ");
-
-  strcat(fcommand, pathToRAMdisk);
-  strcat(fcommand, "/dataFileList ");
+ // char fcommand1[150];
   char fn[100] = "";
-  strcpy(fn, (char *)buildFileName("N1234", "EM63fj"));
-  strcat(fcommand, fn);
-  printf("File compress command: %s\n",fcommand);
-  retcode = retcode + system(fcommand); 
-  printf("tar retcode = %i\n",retcode);
+  char theNode[10] = "";
+  char theGrid[10] = "";
+  printf("ringbuffer_path=%s\n",ringbuffer_path);
+// store the list of file names in the RAMdisk
+  sprintf(fcommand,"drf ls %s -r -s %s -e %s > %s/dataFileList", ringbuffer_path, startDT, endDT, pathToRAMdisk);
+  printf(" ** drf fcommand1='%s'\n",fcommand);
+  int retcode = system(fcommand);  // execute the command
+  printf("drf return code=%i\n",retcode);
+// build arguments for a script that will tar the files, saving
+// the compressed (tar) file in same location as the ringbuffer
+  int num_items = rconfig("node",theNode,0);
+  num_items = rconfig("grid",theGrid,0);
+  strcpy(fn, (char *)buildFileName(theNode, theGrid));
+  sprintf(fcommand,"./filecompress.sh %s  %s/dataFileList %s ", ringbuffer_path, pathToRAMdisk, fn);
+  printf("** file compress command=%s\n",fcommand);
+  retcode = retcode + system(fcommand); // execute the command
+  printf("compress retcode = %i\n",retcode);
   return(retcode);
  }
 
+// the following function parses input to get start and end date-times for data upload
 int getDataDates(char *input, char* startpoint, char* endpoint)
  {
   printf("input to extract from= '%s'\n", input);
@@ -1151,9 +1148,21 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
 ////////////// Data Uploader /////////////////////////////////////
 void *dataUpload(void *threadid) {
-uploadInProgress = 1;
-// TODO: add code here to upload the tar'd data files
-// include throttling (curl?); resume where left off if interrupted
+  uploadInProgress = 1;
+  char uploadCommand[150]="";
+  char hostURL[80];
+  printf("Upload thread starting\n");
+  num_items = rconfig("central_host",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - Central Host setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("central host CONFIG RESULT = '%s'\n",configresult);
+    strcpy(hostURL,configresult);
+    } 
+  
 
 
 
@@ -1319,7 +1328,35 @@ while(1==1)  // heartbeat loop
 return 0;
 
 }  // end of heartbeat thread
- 
+
+int openConfigFile()
+{
+  printf("test - config init\n");
+  config_init(&cfg);
+
+  /* Read the file. If there is an error, report it and exit. */
+
+// The only thing we use this config file for is to get the path to the
+// python config file. Seems like a kludge, but allows flexibility in
+// system directory structure.
+  printf("test - read config file\n");
+  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
+  {
+    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
+            config_error_line(&cfg), config_error_text(&cfg));
+    puts("ERROR - there is a problem with main.cfg configuration file");
+    config_destroy(&cfg);
+    return(EXIT_FAILURE);
+  }
+  printf("test - look up config path\n");
+  if(config_lookup_string(&cfg, "config_path", &configPath))
+    printf("Setting config file path to: %s\n\n", configPath);
+  else
+    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
+    return(EXIT_FAILURE);
+  printf("test - config path=%s\n",configPath);
+  return(0);
+} 
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
 
@@ -1385,6 +1422,8 @@ void test_data_prep(void) {
   strcpy(endDT, "2020-06-08T23:59:59");
   strcpy(rbufp,"/home/odroid/share1/TangerineData");
   strcpy(pathToRAMdisk, "/mnt/RAM_disk");
+
+  int r = openConfigFile();
   int r1 = prep_data_files(startDT, endDT, rbufp);
   CU_ASSERT_EQUAL(r1,0);   // dummy statement for now
 }
@@ -1407,6 +1446,18 @@ void date_test(void) {
 
 void buildFileName_test(void) {
 // test assumes the tested code will complete in same second as test code runs
+// set up config file for the test
+
+  int r = openConfigFile();
+
+  char theNode[10] = "";
+  char theGrid[10] = "";
+  printf("look in config for node\n");
+  int num_items = rconfig("node",theNode,0);
+  printf("node found: %s\n",theNode);
+  num_items = rconfig("grid",theGrid,0);
+
+//
  char fn[75] = "";
  strcpy(fn, (char *)buildFileName("N1234", "EM63fj"));
  printf("computed filename = '%s'\n", fn);
@@ -1420,6 +1471,17 @@ void buildFileName_test(void) {
  strcat(testfilename, "\0");
  CU_ASSERT_STRING_EQUAL(fn, testfilename);
 }
+
+void testUploadThread(){
+
+    int uplrc = 0;
+    long h;
+    pthread_t uplthread;
+    printf("M: Start upload thread\n");
+    uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
+
+}
+
 
 //////////////////////////////////////////////////////
 int run_all_tests()
@@ -1448,7 +1510,8 @@ int run_all_tests()
 		  (NULL == CU_add_test(pSuite, "config_test1", test_get_config)) ||
           (NULL == CU_add_test(pSuite, "data_prep_test", test_data_prep)) ||
           (NULL == CU_add_test(pSuite, "date_extract", date_test)) ||
-          (NULL == CU_add_test(pSuite, "buildFileName", buildFileName_test))
+          (NULL == CU_add_test(pSuite, "buildFileName", buildFileName_test)) ||
+          (NULL == CU_add_test(pSuite, "testUploadThread", testUploadThread))
       )
    {
       CU_cleanup_registry();
@@ -1524,15 +1587,20 @@ int main(int argc, char *argv[]) {
 	  }
 	}
 
-// get the configuration file
+/*
+// the configuration file
   config_t cfg;
   config_setting_t *setting;
- // char *DE_ip_str;
+*/
+
   char DE_ip_str[20];
   packetCount = 0;
   int DE_port;
   int controller_port;
 
+  int rc = openConfigFile();
+
+/*
   config_init(&cfg);
 
   /* Read the file. If there is an error, report it and exit. */
@@ -1540,7 +1608,7 @@ int main(int argc, char *argv[]) {
 // The only thing we use this config file for is to get the path to the
 // python config file. Seems like a kludge, but allows flexibility in
 // system directory structure.
-
+/*
   if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
   {
     fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
@@ -1554,7 +1622,7 @@ int main(int argc, char *argv[]) {
     printf("Setting config file path to: %s\n\n", configPath);
   else
     fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
-
+*/
 
   puts("start");
  // printf("looking for '%s'\n",target);
