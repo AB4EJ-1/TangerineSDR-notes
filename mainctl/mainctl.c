@@ -1144,14 +1144,49 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 
   }
 
+///////////////////// open config file ///////////////
+int openConfigFile()
+{
+  printf("test - config init\n");
+  config_init(&cfg);
 
+  /* Read the file. If there is an error, report it and exit. */
 
-////////////// Data Uploader /////////////////////////////////////
+// The only thing we use this config file for is to get the path to the
+// python config file. Seems like a kludge, but allows flexibility in
+// system directory structure.
+  printf("test - read config file\n");
+  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
+  {
+    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
+            config_error_line(&cfg), config_error_text(&cfg));
+    puts("ERROR - there is a problem with main.cfg configuration file");
+    config_destroy(&cfg);
+    return(EXIT_FAILURE);
+  }
+  printf("test - look up config path\n");
+  if(config_lookup_string(&cfg, "config_path", &configPath))
+    printf("Setting config file path to: %s\n\n", configPath);
+  else
+    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
+    return(EXIT_FAILURE);
+  printf("test - config path=%s\n",configPath);
+  return(0);
+} 
+
+////////////// Data Uploader thread /////////////////////////////////////
 void *dataUpload(void *threadid) {
   uploadInProgress = 1;
-  char uploadCommand[150]="";
-  char hostURL[80];
+  char uploadCommand[300]="";
+  char uploadPath[100]="";
+  char logPath[100]="";
+  char hostURL[80]="";
+  char throttle[12]="";
+  char node[10]="";
+  char logEntry[100]="Upload requested,";
   printf("Upload thread starting\n");
+  int rc = openConfigFile();
+  printf("retcode from config file open=%i\n",rc);
   num_items = rconfig("central_host",configresult,0);
   if(num_items == 0)
     {
@@ -1162,12 +1197,58 @@ void *dataUpload(void *threadid) {
     printf("central host CONFIG RESULT = '%s'\n",configresult);
     strcpy(hostURL,configresult);
     } 
+  num_items = rconfig("upload_path",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - upload workarea path not found in config.ini\n");
+    }
+  else
+    {
+    printf("upload path CONFIG RESULT = '%s'\n",configresult);
+    strcpy(uploadPath,configresult);
+    }
+  num_items = rconfig("log_path",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - upload log path not found in config.ini\n");
+    }
+  else
+    {
+    printf("upload log path CONFIG RESULT = '%s'\n",configresult);
+    strcpy(logPath,configresult);
+    }
+  num_items = rconfig("throttle",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - throttle setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("throttle CONFIG RESULT = '%s'\n",configresult);
+    strcpy(throttle,configresult);
+    }
+  num_items = rconfig("node",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - node setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("node CONFIG RESULT = '%s'\n",configresult);
+    strcpy(node,configresult);
+    }
+
+  rc = system(logEntry);  // tell log what this is
+  sprintf(logEntry,"date -u >>%s/upload.log",logPath);  // log time & date of upload attempt
+  printf("log update: %s\n",logEntry);
+  rc = system(logEntry);
   
-
-
+// TODO: password for account needs to be included correctly (may use token)
+  sprintf(uploadCommand,"lftp -e 'set net:limit-rate %s;mirror -R --Remove-source-files --verbose %s %s/sftp-test;exit' -u %s,%s sftp://%s >> %s/upload.log",throttle,uploadPath,node,node,"odroid",hostURL,logPath);
+  printf("Upload command=%s\n",uploadCommand);
+  rc = system(uploadCommand);  // just do it
 
 }
-
 
 
 ////////////// Heartbeat to Central Host ////////////////////
@@ -1329,34 +1410,7 @@ return 0;
 
 }  // end of heartbeat thread
 
-int openConfigFile()
-{
-  printf("test - config init\n");
-  config_init(&cfg);
 
-  /* Read the file. If there is an error, report it and exit. */
-
-// The only thing we use this config file for is to get the path to the
-// python config file. Seems like a kludge, but allows flexibility in
-// system directory structure.
-  printf("test - read config file\n");
-  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
-  {
-    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
-            config_error_line(&cfg), config_error_text(&cfg));
-    puts("ERROR - there is a problem with main.cfg configuration file");
-    config_destroy(&cfg);
-    return(EXIT_FAILURE);
-  }
-  printf("test - look up config path\n");
-  if(config_lookup_string(&cfg, "config_path", &configPath))
-    printf("Setting config file path to: %s\n\n", configPath);
-  else
-    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
-    return(EXIT_FAILURE);
-  printf("test - config path=%s\n",configPath);
-  return(0);
-} 
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
 
@@ -1420,7 +1474,7 @@ void test_data_prep(void) {
   char rdp[50];
   strcpy(startDT, "2020-06-08T00:00:00");
   strcpy(endDT, "2020-06-08T23:59:59");
-  strcpy(rbufp,"/home/odroid/share1/TangerineData");
+  strcpy(rbufp,"/home/odroid/share1/TangerineData/uploads");
   strcpy(pathToRAMdisk, "/mnt/RAM_disk");
 
   int r = openConfigFile();
@@ -1473,13 +1527,16 @@ void buildFileName_test(void) {
 }
 
 void testUploadThread(){
-
-    int uplrc = 0;
-    long h;
-    pthread_t uplthread;
-    printf("M: Start upload thread\n");
-    uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
-
+  int r = openConfigFile();
+  int uplrc = 0;
+  long h= 60;
+  void *ret;
+  pthread_t uplthread;
+  printf("M: Start upload thread\n");
+  uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
+  printf("thread rd %i\n",uplrc);
+  uplrc = pthread_join(uplthread, &ret);
+  printf("M: join complete\n");
 }
 
 
