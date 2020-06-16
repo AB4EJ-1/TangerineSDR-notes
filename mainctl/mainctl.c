@@ -384,6 +384,10 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	 return; 
 	}
 
+   // printf("buffer# %li\n",buf_ptr->dval.bufCount);
+   //  printf("#subchannels = %i\n",buf_ptr->channelCount);
+
+/*
    num_items = rconfig("mode",configresult,0);
    if(num_items == 0)
     {
@@ -413,7 +417,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     ringbufferMode = 1;
     snapshotterMode = 1;
     }
-
+*/
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -442,7 +446,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
                  SAMPLE_RATE_DENOMINATOR;
 
   if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
+    char cleanup[100]="";
+    sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
+    printf("deleting old propeties file: %s\n",cleanup);
+    int retcode = system(cleanup);
     fprintf(stderr,"Create HDF5 file group, start time: %ld \n",global_start_sample);
+    fprintf(stderr,"data rate = %li\n",sample_rate_numerator);
     vector_leading_edge_index=0;
     vector_sum = 0;
     hdf_i= 0;
