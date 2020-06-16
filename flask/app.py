@@ -267,7 +267,7 @@ def sdr():
                 f5 = h5py.File(metadataPath + '/drf_properties.h5','r+')
                 f5.attrs.__setitem__('no_of_subchannels',chcount)
                 f5.attrs.__setitem__('subchannel_frequencies_MHz', chf)
-                f5.attrs.__setitem__('data_rate',datarate)
+              #  f5.attrs.__setitem__('data_rate',datarate)
                 f5.attrs.__setitem__('antenna_ports',ant)
                 f5.close()
               except:
