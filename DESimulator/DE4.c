@@ -34,6 +34,10 @@
 //#define IP_FOUND_ACK "IP_FOUND_ACK"
 #define PORT 1024
 
+#define UDPPORT 7100
+
+static struct dataBuf iqbuffer;
+
 static int LH_port;
 struct sockaddr_in client_addr;
 struct sockaddr_in server_addr;
@@ -42,6 +46,7 @@ struct sockaddr_in config_in_addr;
 int sock;
 int sock1;
 int sock2;
+int sock3;
 long cmdthreadID;
 int cmdport;
 int stoplink;
@@ -215,6 +220,83 @@ void *awaitConfig(void *threadid) {
     count = sendto(sock, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
     printf("response = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port) ;
     }
+}
+
+// this thread gets UDP packets being sent by pihpsdr, forwards to mainctl on command
+void *sendData1(void *threadid) {
+
+
+  int yes = 1;
+ // struct sockaddr_in client_addr3;
+  struct sockaddr_in server_addr3;
+  int addr_len;
+  int count;
+  int ret;
+  long bufcount = 0;
+  int sentBytes = 0;
+  fd_set readfd;
+  //char buffer[9000];
+
+  sock3 = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock3 < 0) {
+    perror("sock1 error\n");
+ 
+    return -1 ;
+  }
+
+  addr_len = sizeof(struct sockaddr_in);
+
+  memset((void*)&server_addr3, 0, addr_len);
+  server_addr3.sin_family = AF_INET;
+  server_addr3.sin_addr.s_addr = htons(INADDR_ANY);
+  server_addr3.sin_port = htons(UDPPORT);
+
+  ret = bind(sock3, (struct sockaddr*)&server_addr3, addr_len);
+  if (ret < 0) {
+    perror("UDP bind error\n");
+
+    return -1 ;
+  }
+  while (1) {
+    FD_ZERO(&readfd);
+    FD_SET(sock3, &readfd);
+    printf("read from port %i\n",UDPPORT);
+  //  ret = select(sock3, &readfd, NULL, NULL, 0);
+    ret = 1;
+  //  printf("ret = %i\n",ret);
+    if (ret > 0) {
+      if (FD_ISSET(sock3, &readfd)) {
+        printf("attempt read\n");
+        count = recvfrom(sock3, &iqbuffer, sizeof(iqbuffer), 0, (struct sockaddr*)&server_addr3, &addr_len);
+        printf("bytes received:  %i\n",count);
+	    time_t epoch = time(NULL);
+	//printf("unix time = %ld\n", epoch);
+        strncpy(iqbuffer.bufType,"RG",2);
+	    iqbuffer.timeStamp = (double) epoch;
+        iqbuffer.channelCount = 1;
+        iqbuffer.dval.bufCount = bufcount++;
+      //  iqbuffer.channelNo = 0;
+        client_addr.sin_port = htons(LH_DATA_IN_port);
+        printf("forwarding bytes %i, count=%li\n",count,bufcount);
+        sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer, sizeof(iqbuffer), 0, 
+	        (struct sockaddr*)&client_addr, sizeof(client_addr));
+        printf("port %i, bytes sent: %i \n",LH_DATA_IN_port, sentBytes); 
+
+        if(stopData)
+	    {
+         puts("UDP thread end; close socket");
+         close(sock3);
+	     pthread_exit(NULL);
+	    }
+
+         //   memcpy(buffer, IP_FOUND_ACK, strlen(IP_FOUND_ACK)+1);
+         //   count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr, addr_len);
+        
+      }
+    }
+
+  }
+
 }
 
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
@@ -585,7 +667,7 @@ int run_DE() {
 	  stopData = 0;
   	  long j = 1;
   	  pthread_t datathread;
-  	  int rc = pthread_create(&datathread, NULL, sendData, (void *)j);
+  	  int rc = pthread_create(&datathread, NULL, sendData1, (void *)j);
   	  printf("thread start rc = %d\n",rc);
 	  printf("SEND ACK to port %u\n",LH_CONF_IN_port);
       client_addr.sin_port = htons(LH_CONF_IN_port);  // this may wipe desired port

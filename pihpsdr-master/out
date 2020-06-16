@@ -1,0 +1,9 @@
+Start (Unix) time: 1563820037llWriting complex to multiple files and subdirectores in 
+/tmp/ramdisk/ch0_3
+old data removed
+create: 
+mkdir /tmp/ramdisk/ch0_3
+create: 
+mkdir /tmp/ramdisk/ch0_3/junk0
+UNIX Timestamp = 1563820037
+.....................
