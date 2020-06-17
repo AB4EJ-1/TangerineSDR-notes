@@ -35,7 +35,7 @@
 #include <json.h>
 #include <pthread.h>
 #include <time.h>
-
+#include <complex.h>
 #include "CUnit/CUnit.h"
 #include "CUnit/Basic.h"
 #include "discovered.h"
@@ -122,6 +122,12 @@ static char total_hdf5_path[100];
 static char hdf5subdirectory[16];
 static long packetCount;
 static int recv_port_status = 0;
+
+//static struct dataSample snapshot[32767];  // temporary for DFT
+static double complex snapshotIQ[32767];
+static double complex snapshotDFT[32767];
+static int snapcount = 0;
+
 ////////////////////////////////////////////////
 
 // uncomment to enable specific tests
@@ -162,6 +168,7 @@ char name[8][64];
 time_t t;
 struct tm *gmt;
 FILE *fp[8];
+FILE *fftfp;
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
@@ -303,6 +310,20 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   free(DEbuf->base);    
 }
 
+void compute_dft_complex(const double complex input[], double complex output[], size_t n) {
+    printf("starting DFT\n");
+	for (size_t k = 0; k < n; k++) {  // For each output element
+		double complex sum = 0.0;
+		for (size_t t = 0; t < n; t++) {  // For each input element
+			double angle = 2 * M_PI * t * k / n;
+			sum += input[t] * cexp(-angle * I);
+		}
+       
+		output[k] = sum;
+	}
+    printf("end of DFT\n");
+}
+
 /////////////////////////////////////////////////////////////
 //  Callback for when UDP I/Q data packets received from DE 
 //  A separate callback handles incoming ACK data.
@@ -384,50 +405,62 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	 return; 
 	}
 
-   // printf("buffer# %li\n",buf_ptr->dval.bufCount);
-   //  printf("#subchannels = %i\n",buf_ptr->channelCount);
+   if(snapshotterMode)
+    {
+    if (packetCount == 0 || buffers_received == 1) 
+     {
+     fftfp = fopen("/tmp/fft1.csv","w+");
+     }
+    for(int i=0; i < 1024; i++)
+      {
+  //    snapshot[snapcount].I_val = buf_ptr->theDataSample[i].I_val;
+  //    snapshot[snapcount].Q_val = buf_ptr->theDataSample[i].Q_val;
+      snapshotIQ[snapcount] = buf_ptr->theDataSample[i].I_val + buf_ptr->theDataSample[i].Q_val * I; 
+      snapcount++;
+      }
+    if(snapcount >= 32767)
+      {
+      printf("DFT here\n");
+      size_t n = 32767;
+   //   compute_dft_complex(snapshotIQ, snapshotDFT, n);
 
-/*
-   num_items = rconfig("mode",configresult,0);
-   if(num_items == 0)
-    {
-    printf("ERROR - mode setting not found in config.ini");
-    }
-   else
-    {
-    printf(" CONFIG RESULT for mode = '%s'\n",configresult);
-    printf("len =%lu\n",strlen(configresult));
+	for (size_t k = 0; k < n; k++) {  // For each output element
+		double complex sum = 0.0;
+		for (size_t t = 0; t < n; t++) {  // For each input element
+			double angle = 2 * M_PI * t * k / n;
+			sum += snapshotIQ[t] * cexp(-angle * I);
+		}
+        printf("%li ",k);
+		snapshotDFT[k] = sum;
+	}
+
+
+      printf("DFT done\n");
+      for(int k=16000; k<17000;k++)
+       {
+        printf("%i ",k);
+        fprintf(fftfp,"%f,",sqrt(creal(snapshotDFT[k])*creal(snapshotDFT[k]) + cimag(snapshotDFT[k])*cimag(snapshotDFT[k])));
+        
+       }
+      fprintf(fftfp,"\n");
+      printf("DFT output\n");
+      snapcount = 0;
+      }
+
     }
 
-   if(strncmp(configresult,"snapshotter",11)==0)
-    {
-    printf("STARTING SNAPHOTTER mode\n");
-    snapshotterMode = 1;
-    ringbufferMode = 0;
-    }
-   if(strncmp(configresult, "ringbuffer",10) == 0)
-    {
-    printf("STARTING RINGBUFFER mode\n");
-    ringbufferMode = 1;
-    snapshotterMode = 0;
-    }
-   if(strncmp(configresult,"r+s",3)==0)
-    {
-    printf("STARTING SNAPSHOTTER AND RINGBUFFER modes\n");
-    ringbufferMode = 1;
-    snapshotterMode = 1;
-    }
-*/
 
 
 ////////////////////////////////////////////////////////////////////////////////////
 // handle I/Q buffers coming in for storage to Digital RF
 
     {
+
     // set up memory and get a copy of the data (may be possible to eliminate this step)
   //  DATABUF *buf_ptr;
   //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
+
     packetCount = (long) buf_ptr->dval.bufCount;
  //   printf("bufcount = %ld\n", packetCount);
     int noOfChannels = buf_ptr->channelCount;
@@ -460,9 +493,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
     printf("M: Storing to: %s\n",total_hdf5_path);
-//    DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, SUBDIR_CADENCE,
- //     MILLISECS_PER_FILE, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
- //    "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
+
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
@@ -470,7 +501,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
 // here we write out DRF
 
-  //  vector_sum = vector_leading_edge_index + hdf_i*vector_length;   // original code
     vector_sum = vector_leading_edge_index + hdf_i*sampleCount; 
 /*
 
@@ -486,7 +516,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 */
 
 
-//    fprintf(stderr,"Write HDF5 data to %s \n", ringbuffer_path);
 // push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
@@ -771,6 +800,30 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   if(strncmp(mybuf, START_DATA_COLL , 2)==0)
 	{
     printf("M: START DATA COLL COMMAND RECEIVED\n");
+// determine what mode to run
+   num_items = rconfig("mode",configresult,0);
+   if(strncmp(configresult,"snapshotter",11)==0)
+    {
+    printf("STARTING SNAPHOTTER mode\n");
+    snapshotterMode = 1;
+    ringbufferMode = 0;
+    snapcount = 0;
+    }
+   if(strncmp(configresult, "ringbuffer",10) == 0)
+    {
+    printf("STARTING RINGBUFFER mode\n");
+    ringbufferMode = 1;
+    snapshotterMode = 0;
+    }
+   if(strncmp(configresult,"r+s",3)==0)
+    {
+    printf("STARTING SNAPSHOTTER AND RINGBUFFER modes\n");
+    ringbufferMode = 1;
+    snapshotterMode = 1;
+    snapcount = 0;
+    }
+
+
     uv_udp_send_t send_req;
  //   printf("M: try to print subdir, 1\n");
 	char b[60];
