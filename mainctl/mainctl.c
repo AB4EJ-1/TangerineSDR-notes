@@ -36,6 +36,8 @@
 #include <pthread.h>
 #include <time.h>
 #include <complex.h>
+#include <math.h>
+#include <fftw3.h>
 #include "CUnit/CUnit.h"
 #include "CUnit/Basic.h"
 #include "discovered.h"
@@ -123,10 +125,12 @@ static char hdf5subdirectory[16];
 static long packetCount;
 static int recv_port_status = 0;
 
-//static struct dataSample snapshot[32767];  // temporary for DFT
-static double complex snapshotIQ[32767];
-static double complex snapshotDFT[32767];
+//  for FFT
+#define FFT_N 1024
+static fftwf_complex *FFTin, *FFTout;
+static fftwf_plan FFTp;
 static int snapcount = 0;
+static int fft_busy = 0;
 
 ////////////////////////////////////////////////
 
@@ -310,18 +314,38 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   free(DEbuf->base);    
 }
 
-void compute_dft_complex(const double complex input[], double complex output[], size_t n) {
-    printf("starting DFT\n");
-	for (size_t k = 0; k < n; k++) {  // For each output element
-		double complex sum = 0.0;
-		for (size_t t = 0; t < n; t++) {  // For each input element
-			double angle = 2 * M_PI * t * k / n;
-			sum += input[t] * cexp(-angle * I);
-		}
-       
-		output[k] = sum;
-	}
-    printf("end of DFT\n");
+/*
+void *doFFT(void *threadid){
+  printf("doFFT thread started\n");
+  fft_busy = 1; // indicate FFT in progress
+  fftfp = fopen("/tmp/fft1.csv","w+");
+  fprintf(fftfp,"FFT\n");
+  printf("starting FFT execute \n");
+  fftwf_execute(FFTp);
+  printf("FFT done");
+  fclose(fftfp);
+  fft_busy = 0;
+
+}
+*/
+
+void doFFT(void *arg){
+  printf("doFFT thread started\n");
+  fft_busy = 1; // indicate FFT in progress
+  fftfp = fopen("/tmp/fft1.csv","a");
+  fprintf(fftfp,"\nFFT\n");
+  printf("starting FFT execute \n");
+  fftwf_execute(FFTp);
+  printf("FFT done\n");
+  for(int i=0;i < FFT_N;i++)
+   {
+    fprintf(fftfp,"%15.10f,",sqrt(creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) ));
+   }
+    fprintf(fftfp,"\n");
+  fclose(fftfp);
+  fft_busy = 0;
+  
+
 }
 
 /////////////////////////////////////////////////////////////
@@ -405,44 +429,29 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	 return; 
 	}
 
-   if(snapshotterMode)
+   if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     {
-    if (packetCount == 0 || buffers_received == 1) 
-     {
-     fftfp = fopen("/tmp/fft1.csv","w+");
-     }
+    fft_busy = 1;  // block further use of this until the thread completes
     for(int i=0; i < 1024; i++)
       {
-  //    snapshot[snapcount].I_val = buf_ptr->theDataSample[i].I_val;
-  //    snapshot[snapcount].Q_val = buf_ptr->theDataSample[i].Q_val;
-      snapshotIQ[snapcount] = buf_ptr->theDataSample[i].I_val + buf_ptr->theDataSample[i].Q_val * I; 
+
+      FFTin[snapcount] = buf_ptr->theDataSample[i].I_val + buf_ptr->theDataSample[i].Q_val * I; 
       snapcount++;
       }
-    if(snapcount >= 32767)
+    if(snapcount >= FFT_N)
       {
-      printf("DFT here\n");
-      size_t n = 32767;
-   //   compute_dft_complex(snapshotIQ, snapshotDFT, n);
+      printf("start FFT thread\n");
+ //     pthread_t FFTthread;
+  //    long ftid = 71; 
+  //    int rc = pthread_create(&FFTthread, NULL, doFFT, (void *)ftid);
 
-	for (size_t k = 0; k < n; k++) {  // For each output element
-		double complex sum = 0.0;
-		for (size_t t = 0; t < n; t++) {  // For each input element
-			double angle = 2 * M_PI * t * k / n;
-			sum += snapshotIQ[t] * cexp(-angle * I);
-		}
-        printf("%li ",k);
-		snapshotDFT[k] = sum;
-	}
+      uv_thread_t ftid;
+      int t = 1;
+      uv_thread_create(&ftid, doFFT, &t);
 
+     // printf("FFT thread start rc = %i\n", rc);
 
-      printf("DFT done\n");
-      for(int k=16000; k<17000;k++)
-       {
-        printf("%i ",k);
-        fprintf(fftfp,"%f,",sqrt(creal(snapshotDFT[k])*creal(snapshotDFT[k]) + cimag(snapshotDFT[k])*cimag(snapshotDFT[k])));
-        
-       }
-      fprintf(fftfp,"\n");
+   //   fprintf(fftfp,"\n");
       printf("DFT output\n");
       snapcount = 0;
       }
@@ -1951,6 +1960,11 @@ int main(int argc, char *argv[]) {
     pthread_t hbthread;
     printf("M: Start hearbeat thread\n");
     hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
+
+// Set up memory & plan for FFT
+    FFTin =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+    FFTout =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+    FFTp = fftwf_plan_dft_1d(FFT_N, FFTin, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
 
 
 
