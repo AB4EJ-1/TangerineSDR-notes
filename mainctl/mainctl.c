@@ -126,7 +126,8 @@ static long packetCount;
 static int recv_port_status = 0;
 
 //  for FFT
-#define FFT_N 1024
+#define FFT_N 1048576
+//#define FFT_N 8192
 static fftwf_complex *FFTin, *FFTout;
 static fftwf_plan FFTp;
 static int snapcount = 0;
@@ -315,38 +316,120 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 }
 
 /*
-void *doFFT(void *threadid){
-  printf("doFFT thread started\n");
-  fft_busy = 1; // indicate FFT in progress
-  fftfp = fopen("/tmp/fft1.csv","w+");
-  fprintf(fftfp,"FFT\n");
-  printf("starting FFT execute \n");
-  fftwf_execute(FFTp);
-  printf("FFT done");
-  fclose(fftfp);
-  fft_busy = 0;
-
-}
-*/
-
-void doFFT(void *arg){
+void doFFT_orig(void *arg){
   printf("doFFT thread started\n");
   fft_busy = 1; // indicate FFT in progress
   fftfp = fopen("/tmp/fft1.csv","a");
   fprintf(fftfp,"\nFFT\n");
   printf("starting FFT execute \n");
+  clock_t begin = clock();
   fftwf_execute(FFTp);
-  printf("FFT done\n");
-  for(int i=0;i < FFT_N;i++)
+  clock_t end = clock();
+  double time_spent = (double)(end - begin);
+  printf("FFT done, took %f usec\n",time_spent);
+  int lowerbin = 0;
+//  int upperbin = FFT_N/2;
+  int upperbin = 100;
+  float maxval = 0;
+  long maxbin = 0;
+  float M = 0;
+  for(int i=upperbin;i >= lowerbin;i=i-1)
    {
-    fprintf(fftfp,"%15.10f,",sqrt(creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) ));
+    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
+    if(M>maxval)
+      {
+      maxval = M;
+      maxbin = i;
+      }
+   // if (M>0)
+   //    fprintf(fftfp,"%15.10f,",M);
    }
+ // lowerbin = FFT_N/2;
+  lowerbin = FFT_N-1;
+  for(int i=upperbin;i >= lowerbin;i=i-1)
+   {
+    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
+    if(M>maxval)
+      {
+      maxval = M;
+      maxbin = i;
+      }
+  //  if (M>0)
+   //    fprintf(fftfp,"%15.10f,",M);
+   }
+
     fprintf(fftfp,"\n");
   fclose(fftfp);
+  printf("maxbin = %li\n",maxbin);
   fft_busy = 0;
   
-
 }
+*/
+
+void doFFT(void *arg){
+
+  fft_busy = 1; // indicate FFT in progress
+  printf("doFFT thread started\n");
+  fftwf_complex *FFTin1;               // declare this pointer
+  FFTin1 = ((fftwf_complex *) arg);    // get pointer that was passed to thread
+   //   for(int n = 0; n < 10; n++)
+   //     printf("%15.10f ",creal(FFTin1[n]));
+   //   printf("\n");
+  FFTout =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+  FFTp = fftwf_plan_dft_1d(FFT_N, FFTin1, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftfp = fopen("/tmp/fft1.csv","a");
+// TODO: output time stamp @ start of each analysis
+ // fprintf(fftfp,"\nFFT\n");
+  printf("starting FFT execute \n");
+  clock_t begin = clock();
+  fftwf_execute(FFTp);
+  clock_t end = clock();
+  double time_spent = (double)(end - begin);
+  printf("FFT done, took %f usec\n",time_spent);
+  int lowerbin = 0;
+  //int upperbin = FFT_N/2;
+  int upperbin = 100;
+  float maxval = 0;
+  long maxbin = 0;
+  float M = 0;
+/*
+  for(int i=upperbin;i >= lowerbin;i=i-1)
+   {
+    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
+    if(M>maxval)
+      {
+      maxval = M;
+      maxbin = i;
+      }
+    if (M>0)
+       fprintf(fftfp,"%15.10f,",M);
+   }
+*/
+  //lowerbin = FFT_N/2;
+  lowerbin = FFT_N - 900;
+  upperbin = FFT_N - 700;
+ // lowerbin = FFT_N-1;
+  for(int i=upperbin;i >= lowerbin;i=i-1)
+   {
+    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
+    if(M>maxval)
+      {
+      maxval = M;
+      maxbin = i;
+      }
+    if (M>0)
+       fprintf(fftfp,"%15.10f,",M);
+   }
+
+  fprintf(fftfp,"%li\n",maxbin);
+  fclose(fftfp);
+  printf("maxbin = %li\n",maxbin);
+  fftwf_destroy_plan(FFTp);
+  fftwf_free(FFTout);
+  fft_busy = 0;
+  
+}
+
 
 /////////////////////////////////////////////////////////////
 //  Callback for when UDP I/Q data packets received from DE 
@@ -431,27 +514,26 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     {
-    fft_busy = 1;  // block further use of this until the thread completes
+
     for(int i=0; i < 1024; i++)
       {
 
       FFTin[snapcount] = buf_ptr->theDataSample[i].I_val + buf_ptr->theDataSample[i].Q_val * I; 
       snapcount++;
       }
+
     if(snapcount >= FFT_N)
       {
-      printf("start FFT thread\n");
- //     pthread_t FFTthread;
-  //    long ftid = 71; 
-  //    int rc = pthread_create(&FFTthread, NULL, doFFT, (void *)ftid);
+      fft_busy = 1;  // block further use of this until the thread completes
+      printf("**start FFT thread ***\n");
+    //  for(int n = 0; n < 10; n++)
+    //    printf("%15.10f ",creal(FFTin[n]));
+      printf("\n");
 
       uv_thread_t ftid;
-      int t = 1;
-      uv_thread_create(&ftid, doFFT, &t);
 
-     // printf("FFT thread start rc = %i\n", rc);
+      uv_thread_create(&ftid, doFFT, FFTin);
 
-   //   fprintf(fftfp,"\n");
       printf("DFT output\n");
       snapcount = 0;
       }
@@ -465,10 +547,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     {
 
-    // set up memory and get a copy of the data (may be possible to eliminate this step)
-  //  DATABUF *buf_ptr;
-  //  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-  //  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
 
     packetCount = (long) buf_ptr->dval.bufCount;
  //   printf("bufcount = %ld\n", packetCount);
@@ -524,16 +602,13 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
      }
 */
 
-
 // push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
   //    result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,vector_length);
       result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,sampleCount) ;
-	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
+	//  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
-       
-  //  result = digital_rf_write_hdf5(data_object, vector_sum, data_hdf5,vector_length); 
 
     hdf_i++;  // increment count of hdf buffers processed
 
@@ -1963,8 +2038,8 @@ int main(int argc, char *argv[]) {
 
 // Set up memory & plan for FFT
     FFTin =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
-    FFTout =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
-    FFTp = fftwf_plan_dft_1d(FFT_N, FFTin, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
+  //  FFTout =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+   // FFTp = fftwf_plan_dft_1d(FFT_N, FFTin, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
 
 
 
