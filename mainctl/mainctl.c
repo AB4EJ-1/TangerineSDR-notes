@@ -126,12 +126,22 @@ static long packetCount;
 static int recv_port_status = 0;
 
 //  for FFT
-#define FFT_N 1048576
-//#define FFT_N 8192
+//#define FFT_N 1048576
+#define FFT_N 4096
 static fftwf_complex *FFTin, *FFTout;
-static fftwf_plan FFTp;
+//static fftwf_plan FFTp;
 static int snapcount = 0;
-static int fft_busy = 0;
+static int fft_busy = 0;  // may need to support max # of possible channels
+static char FFToutputPath[75] = "/mnt/RAM_disk/";  // TODO: must come from config file
+//  structure to contain data to pass to FFTanalyze thread
+struct specPackage
+  {
+  int channelNo;
+  float centerFrequency;
+  fftwf_complex *spectrum_in;
+  } ;
+// set up memory for up to 8 FFTs
+struct specPackage spectrumPackage[8];
 
 ////////////////////////////////////////////////
 
@@ -173,7 +183,7 @@ char name[8][64];
 time_t t;
 struct tm *gmt;
 FILE *fp[8];
-FILE *fftfp;
+
 
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
@@ -315,38 +325,57 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   free(DEbuf->base);    
 }
 
-/*
-void doFFT_orig(void *arg){
-  printf("doFFT thread started\n");
-  fft_busy = 1; // indicate FFT in progress
-  fftfp = fopen("/tmp/fft1.csv","a");
-  fprintf(fftfp,"\nFFT\n");
-  printf("starting FFT execute \n");
-  clock_t begin = clock();
-  fftwf_execute(FFTp);
-  clock_t end = clock();
-  double time_spent = (double)(end - begin);
-  printf("FFT done, took %f usec\n",time_spent);
-  int lowerbin = 0;
-//  int upperbin = FFT_N/2;
-  int upperbin = 100;
-  float maxval = 0;
-  long maxbin = 0;
-  float M = 0;
-  for(int i=upperbin;i >= lowerbin;i=i-1)
-   {
-    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
-    if(M>maxval)
-      {
-      maxval = M;
-      maxbin = i;
-      }
-   // if (M>0)
-   //    fprintf(fftfp,"%15.10f,",M);
-   }
- // lowerbin = FFT_N/2;
-  lowerbin = FFT_N-1;
-  for(int i=upperbin;i >= lowerbin;i=i-1)
+void FFTanalyze(void *args){
+  struct specPackage *threadPkg = args;
+  fftwf_complex  *out;
+  fftwf_plan p;
+  FILE *fftfp;
+ // fft_busy[threadPkg->channelNo] = 1; // indicate FFT in progress
+  time_t T = time(NULL);
+  struct tm tm = *gmtime(&T);  // UTC
+  char FFToutputFile[75] = "";
+  
+ // printf("In FFTanalyze Thread; Channel#= %i\n",threadPkg->channelNo);
+
+  printf("in thread %i, first part of array=\n",threadPkg->channelNo);
+  for(int i=0; i < 8; i++)
+    printf("%f ",creal(threadPkg->spectrum_in[i]));
+  printf(" \n");
+  printf("opening fft file: %s\n",FFToutputFile);
+  sprintf(FFToutputFile,"%sfft%i.csv",FFToutputPath,threadPkg->channelNo);
+  
+  fftfp = fopen(FFToutputFile,"a");
+  fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+ // printf("Freq = %f\n",threadPkg->centerFrequency);
+  //printf("declare out \n");
+    FFTout = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+ // printf("create plan \n");
+    p = fftwf_plan_dft_1d(FFT_N, threadPkg->spectrum_in, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
+    printf("exec fft \n");
+    fftwf_execute(p);
+ // printf("print result %i\n",threadPkg->channelNo);
+ //   for (int i = 0; i < N; i++) {
+ //         printf("%2d %15.10f \n", i, sqrt(creal(out[i])*creal(out[i]) + cimag(out[i])*cimag(out[i]) ));
+   // }
+ printf("FFT analysis complete\n");
+ int lowerbin = 0;
+  //int upperbin = FFT_N/2;
+ int upperbin = 100;
+ float maxval = 0;
+ long maxbin = 0;
+ float M = 0;
+
+//  TODO: code below based on empirical approach (Red Pitaya). Must be fixed for Tangerine
+  lowerbin = FFT_N - 900;
+  upperbin = FFT_N - 700;
+
+  lowerbin = 0; // temporary
+  upperbin = FFT_N;
+ // lowerbin = FFT_N-1;
+ // for(int i=upperbin;i >= lowerbin;i=i-1)
+  printf("output FFT results\n");
+  for(int i=lowerbin;i < upperbin;i++)
    {
     M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
     if(M>maxval)
@@ -355,80 +384,56 @@ void doFFT_orig(void *arg){
       maxbin = i;
       }
   //  if (M>0)
-   //    fprintf(fftfp,"%15.10f,",M);
-   }
-
-    fprintf(fftfp,"\n");
-  fclose(fftfp);
-  printf("maxbin = %li\n",maxbin);
-  fft_busy = 0;
-  
-}
-*/
-
-void doFFT(void *arg){
-
-  fft_busy = 1; // indicate FFT in progress
-  printf("doFFT thread started\n");
-  fftwf_complex *FFTin1;               // declare this pointer
-  FFTin1 = ((fftwf_complex *) arg);    // get pointer that was passed to thread
-   //   for(int n = 0; n < 10; n++)
-   //     printf("%15.10f ",creal(FFTin1[n]));
-   //   printf("\n");
-  FFTout =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
-  FFTp = fftwf_plan_dft_1d(FFT_N, FFTin1, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
-  fftfp = fopen("/tmp/fft1.csv","a");
-// TODO: output time stamp @ start of each analysis
- // fprintf(fftfp,"\nFFT\n");
-  printf("starting FFT execute \n");
-  clock_t begin = clock();
-  fftwf_execute(FFTp);
-  clock_t end = clock();
-  double time_spent = (double)(end - begin);
-  printf("FFT done, took %f usec\n",time_spent);
-  int lowerbin = 0;
-  //int upperbin = FFT_N/2;
-  int upperbin = 100;
-  float maxval = 0;
-  long maxbin = 0;
-  float M = 0;
-/*
-  for(int i=upperbin;i >= lowerbin;i=i-1)
-   {
-    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
-    if(M>maxval)
-      {
-      maxval = M;
-      maxbin = i;
-      }
-    if (M>0)
        fprintf(fftfp,"%15.10f,",M);
    }
-*/
-  //lowerbin = FFT_N/2;
-  lowerbin = FFT_N - 900;
-  upperbin = FFT_N - 700;
- // lowerbin = FFT_N-1;
-  for(int i=upperbin;i >= lowerbin;i=i-1)
-   {
-    M = sqrt( creal(FFTout[i])*creal(FFTout[i])+cimag(FFTout[i])*cimag(FFTout[i]) );
-    if(M>maxval)
-      {
-      maxval = M;
-      maxbin = i;
-      }
-    if (M>0)
-       fprintf(fftfp,"%15.10f,",M);
-   }
-
+  printf("maxbin = %li, maxval = %f\n",maxbin,maxval);
   fprintf(fftfp,"%li\n",maxbin);
   fclose(fftfp);
-  printf("maxbin = %li\n",maxbin);
-  fftwf_destroy_plan(FFTp);
-  fftwf_free(FFTout);
-  fft_busy = 0;
-  
+
+/*
+// code to display freq. histogram (needs fixed)
+  float scale = 25.0 / maxval;
+  char display[25][100];
+  int avg_ct = 0;
+  float mag = 0;
+  char space[1] = " ";
+  char aster[1] = "*";
+  // clear array
+  for (int y=0; y < 24; y++) {
+   for (int x=0; x < 100; x++) {
+    display[y][x]=32;
+    }
+   }
+  for(int bin=FFT_N; bin > FFT_N/2; bin--)
+   {
+   mag = mag + FFTout[bin];
+   avg_ct ++;
+   if(avg_ct == 5)
+     {
+     mag = 25 * mag / (avg_ct * 0.3);
+     for(int i = 0; i < mag; i++)
+       display[i][bin]=42;
+     avg_ct = 0;
+     mag = 0.0;
+     }
+   }
+
+   for(int y = 24; y > 0; y--)
+    {
+    for(int x=0;x<100;x++)
+     printf("%c",display[x][y]);
+    printf("\n");
+    }
+*/
+
+  fftwf_destroy_plan(p);
+// free memory allocated for this FFT. 
+// Note: if same memory to be used for multiple runs, this must be done in calling pgm.
+  fftwf_free(threadPkg->spectrum_in);
+  fftwf_free(out);
+ // fft_busy[threadPkg->channelNo] = 0;
 }
+
 
 
 /////////////////////////////////////////////////////////////
@@ -513,29 +518,63 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	}
 
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
+    { 
+
+    if(snapcount == 0)  // do this only at start of filling analysis array
     {
-
-    for(int i=0; i < 1024; i++)
+     for (int i = 0; i < buf_ptr->channelCount; i++)  // allocate memory for FFT(s)
       {
-
-      FFTin[snapcount] = buf_ptr->theDataSample[i].I_val + buf_ptr->theDataSample[i].Q_val * I; 
-      snapcount++;
+      printf("allocate pkg %i\n",i);
+      spectrumPackage[i].channelNo = i;
+      spectrumPackage[i].centerFrequency = buf_ptr->centerFreq;
+      spectrumPackage[i].spectrum_in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+       printf("allocated mem for fft %i\n",i);
       }
+     }
+    int numSamples = 1024 / buf_ptr->channelCount;  // how many IQ pairs in this buffer
+    //printf("Num samples = %i\n",numSamples);
+    
+    for(int j=0; j < numSamples; j=j+buf_ptr->channelCount)  // iteration based on # channels running  
+      {
+       //  if(j > 500)
+        //   printf("%i   %i   \n",j,snapcount);
+          for (int i = 0; i < buf_ptr->channelCount; i++)  
+           {
+    //  printf("%i   %i   %i \n",j,i,snapcount);
+      spectrumPackage[i].spectrum_in[snapcount] = buf_ptr->theDataSample[j+i].I_val + buf_ptr->theDataSample[j+i].Q_val * I; ;
+
+           }
+         snapcount++;
+
+      }
+      
 
     if(snapcount >= FFT_N)
       {
-      fft_busy = 1;  // block further use of this until the thread completes
-      printf("**start FFT thread ***\n");
-    //  for(int n = 0; n < 10; n++)
-    //    printf("%15.10f ",creal(FFTin[n]));
-      printf("\n");
+      fft_busy = 1;  // block further use of this until the thread(s) complete
+      printf("**prep to start FFT thread ***\n");\
 
-      uv_thread_t ftid;
+      uv_thread_t analyzethread[8];
 
-      uv_thread_create(&ftid, doFFT, FFTin);
+      for(int i=0; i < buf_ptr->channelCount; i++)
+       {
 
-      printf("DFT output\n");
+       printf("calling pgm, channel %i; first part of array=\n",i);
+       for(int j=0; j < 18; j++)
+         {
+       //  printf("j=%i \n",j);
+         printf("%f ",creal(spectrumPackage[i].spectrum_in[j]));
+         }
+       printf(" \n");
+       printf("start thread %i\n",i);
+       uv_thread_create(&analyzethread[i], FFTanalyze, &spectrumPackage[i]);
+       printf("join thread %i\n",i);
+       uv_thread_join(&analyzethread[i]);
+       printf("DFT # %i done\n", i);
+       }
+ 
       snapcount = 0;
+      fft_busy = 0;
       }
 
     }
@@ -546,7 +585,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // handle I/Q buffers coming in for storage to Digital RF
 
     {
-
 
     packetCount = (long) buf_ptr->dval.bufCount;
  //   printf("bufcount = %ld\n", packetCount);
@@ -898,6 +936,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     printf("STARTING RINGBUFFER mode\n");
     ringbufferMode = 1;
     snapshotterMode = 0;
+    snapcount = 0;
     }
    if(strncmp(configresult,"r+s",3)==0)
     {
