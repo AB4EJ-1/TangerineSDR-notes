@@ -126,8 +126,8 @@ static long packetCount;
 static int recv_port_status = 0;
 
 //  for FFT
-//#define FFT_N 1048576
-#define FFT_N 4096
+#define FFT_N 1048576
+//#define FFT_N 4096
 static fftwf_complex *FFTin, *FFTout;
 //static fftwf_plan FFTp;
 static int snapcount = 0;
@@ -142,6 +142,7 @@ struct specPackage
   } ;
 // set up memory for up to 8 FFTs
 struct specPackage spectrumPackage[8];
+static   fftwf_complex  *FFTout;
 
 ////////////////////////////////////////////////
 
@@ -327,20 +328,20 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 
 void FFTanalyze(void *args){
   struct specPackage *threadPkg = args;
-  fftwf_complex  *out;
+//  fftwf_complex  *FFTout;
   fftwf_plan p;
   FILE *fftfp;
- // fft_busy[threadPkg->channelNo] = 1; // indicate FFT in progress
+
   time_t T = time(NULL);
   struct tm tm = *gmtime(&T);  // UTC
   char FFToutputFile[75] = "";
   
  // printf("In FFTanalyze Thread; Channel#= %i\n",threadPkg->channelNo);
 
-  printf("in thread %i, first part of array=\n",threadPkg->channelNo);
-  for(int i=0; i < 8; i++)
-    printf("%f ",creal(threadPkg->spectrum_in[i]));
-  printf(" \n");
+ //  printf("in thread %i, first part of array=\n",threadPkg->channelNo);
+ //  for(int i=0; i < 8; i++)
+ //   printf("%f ",creal(threadPkg->spectrum_in[i]));
+ // printf(" \n");
   printf("opening fft file: %s\n",FFToutputFile);
   sprintf(FFToutputFile,"%sfft%i.csv",FFToutputPath,threadPkg->channelNo);
   
@@ -349,7 +350,7 @@ void FFTanalyze(void *args){
 
  // printf("Freq = %f\n",threadPkg->centerFrequency);
   //printf("declare out \n");
-    FFTout = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+  //  FFTout = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
  // printf("create plan \n");
     p = fftwf_plan_dft_1d(FFT_N, threadPkg->spectrum_in, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
     printf("exec fft \n");
@@ -370,8 +371,8 @@ void FFTanalyze(void *args){
   lowerbin = FFT_N - 900;
   upperbin = FFT_N - 700;
 
-  lowerbin = 0; // temporary
-  upperbin = FFT_N;
+ // lowerbin = 0; // temporary
+//  upperbin = FFT_N;
  // lowerbin = FFT_N-1;
  // for(int i=upperbin;i >= lowerbin;i=i-1)
   printf("output FFT results\n");
@@ -387,7 +388,7 @@ void FFTanalyze(void *args){
        fprintf(fftfp,"%15.10f,",M);
    }
   printf("maxbin = %li, maxval = %f\n",maxbin,maxval);
-  fprintf(fftfp,"%li\n",maxbin);
+  fprintf(fftfp,"%li,%f\n",maxbin,maxval);
   fclose(fftfp);
 
 /*
@@ -429,8 +430,8 @@ void FFTanalyze(void *args){
   fftwf_destroy_plan(p);
 // free memory allocated for this FFT. 
 // Note: if same memory to be used for multiple runs, this must be done in calling pgm.
-  fftwf_free(threadPkg->spectrum_in);
-  fftwf_free(out);
+
+ // fftwf_free(FFTout);
  // fft_busy[threadPkg->channelNo] = 0;
 }
 
@@ -520,15 +521,16 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     { 
 
-    if(snapcount == 0)  // do this only at start of filling analysis array
-    {
+    if(buf_ptr->dval.bufCount == 0)  // do this only at start of filling analysis array
+    {  // TODO: need to free all these allocations at time of XC stop collection
      for (int i = 0; i < buf_ptr->channelCount; i++)  // allocate memory for FFT(s)
       {
       printf("allocate pkg %i\n",i);
       spectrumPackage[i].channelNo = i;
       spectrumPackage[i].centerFrequency = buf_ptr->centerFreq;
       spectrumPackage[i].spectrum_in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
-       printf("allocated mem for fft %i\n",i);
+      FFTout = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
+      printf("allocated mem for fft %i\n",i);
       }
      }
     int numSamples = 1024 / buf_ptr->channelCount;  // how many IQ pairs in this buffer
@@ -562,14 +564,17 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        printf("calling pgm, channel %i; first part of array=\n",i);
        for(int j=0; j < 18; j++)
          {
-       //  printf("j=%i \n",j);
+         printf("j=%i \n",j);
          printf("%f ",creal(spectrumPackage[i].spectrum_in[j]));
          }
-       printf(" \n");
-       printf("start thread %i\n",i);
+      printf(" \n");
+      printf("start thread %i\n",i);
        uv_thread_create(&analyzethread[i], FFTanalyze, &spectrumPackage[i]);
+      
        printf("join thread %i\n",i);
        uv_thread_join(&analyzethread[i]);
+// TODO: this must be executed as part of the XC stop collection process
+   //    fftwf_free(spectrumPackage[i].spectrum_in );
        printf("DFT # %i done\n", i);
        }
  
