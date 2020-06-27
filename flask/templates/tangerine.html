@@ -78,16 +78,15 @@ setInterval("updateList()",15000)
            <p style="margin-left:200px" class="links"><b><a href="/restart3">Restart Main Control</a> (Please allow 7 seconds) &nbsp; &nbsp; &nbsp;
            <a href="/propagation">Local Propagation Analyzer</a>
            </b></p>
-    <form style="margin-left:200px" width = 75% action = "/" method = post>
+    <form style="width:500px;margin-left:200px" width = 90% action = "/" method = post>
        <table>
         <td> 
-         <fieldset style="width:40%" align="center" >
+         <fieldset style="width:300px" align="center" >
             <legend>Data Collection</legend>
             {{ form.hidden_tag() }}    
-            <div style = font-size:20px; font-weight:bold; margin-left:150px;>
+            <div style = font-size:20px; font-weight:bold; margin-left:100px;>
                {{ form.mode.label }}<br>
-               {{ form.mode }}
-               <br><br>
+               {{ form.mode }} <input type = "submit" name = "csubmit" value = "Save" />
                {{ form.startDC }}
                {{ form.stopDC  }}
             </div>

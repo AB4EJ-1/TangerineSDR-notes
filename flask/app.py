@@ -213,7 +213,7 @@ def sdr():
       else:
          result = request.form
          print('F: mode set to:"',form.mode.data,'"')
-         parser.set('settings','mode',form.mode.data)
+         parser.set('settings','mode',form.mode.data)  # update config file to reflect mode setting
          fp = open('config.ini','w')
          parser.write(fp)
          fp.close()

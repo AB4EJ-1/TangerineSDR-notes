@@ -1,2 +1,2 @@
-drf ringbuffer -z 500MB -v /media/odroid/416BFA3A615ACF0E/hamsci/hdf5
+drf ringbuffer -z 1GB -v /media/odroid/416BFA3A615ACF0E/hamsci/hdf5
 

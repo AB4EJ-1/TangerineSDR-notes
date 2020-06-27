@@ -6,7 +6,7 @@ from wtforms import validators, ValidationError
 
 class MainControlForm(FlaskForm):
   mode = SelectField('Mode', choices = [('snapshotter','Snapshotter'),
-     ('ringbuffer','Ringbuffer'), ('firehose','Firehose')])
+     ('ringbuffer','Ringbuffer'), ('snapring','SnapRing'), ('firehose','Firehose')])
 #  submit = SubmitField("Set Mode")
   startDC = SubmitField("Start Data Collection")
   stopDC = SubmitField("Stop Data Collection")

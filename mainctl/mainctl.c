@@ -154,10 +154,20 @@ struct specPackage
   {
   int channelNo;
   float centerFrequency;
+  fftwf_complex FFT_data[FFT_N];
+  fftwf_plan p;
+  } ;
+
+/*
+struct specPackage
+  {
+  int channelNo;
+  float centerFrequency;
   fftwf_complex spectrum_in[FFT_N];
   fftwf_complex FFTout[FFT_N];
   fftwf_plan p;
   } ;
+*/
 
 // set up array for up to 8 FFTs
 struct specPackage spectrumPackage[8];
@@ -353,16 +363,19 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   time_t T = time(NULL);
   struct tm tm = *gmtime(&T);  // UTC
   char FFToutputFile[75] = ""; 
-  printf("opening fft file: %s\n",FFToutputFile);
+
+  printf("start FFT for channel %i, freq %f \n",threadPkg->channelNo, threadPkg->centerFrequency);
+  printf("opening fft file: %s, time=",FFToutputFile);
   sprintf(FFToutputFile,"%sfft%i.csv",FFToutputPath,threadPkg->channelNo);  
   fftfp = fopen(FFToutputFile,"a");
   fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
-   // printf("in thread: exec fft \n");
-    fftwf_execute(threadPkg->p);
+  printf("%04d-%02d-%02d %02d:%02d:%02d \n", tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+  printf("in thread: exec fft \n");
+  fftwf_execute(threadPkg->p);
    // }
- printf("thread FFT analysis complete\n");
+  printf("thread FFT analysis complete\n");
 
- float M = 0;
+  float M = 0;
 
 //  TODO: code below based on empirical approach (Red Pitaya). Must be fixed for Tangerine
 // assumes 1,048,572 bins per FFT
@@ -389,7 +402,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 
   for(int i=lowerbin;i < upperbin;i++)  // frequencies above center freq. ignoring DC
    {
-    M = sqrt( creal(threadPkg->FFTout[i])*creal(threadPkg->FFTout[i])+cimag(threadPkg->FFTout[i])*cimag(threadPkg->FFTout[i]) );
+    M = sqrt( creal(threadPkg->FFT_data[i])*creal(threadPkg->FFT_data[i])+cimag(threadPkg->FFT_data[i])*cimag(threadPkg->FFT_data[i]) );
     if(M > maxvalT)
      {
       maxbinT = i;
@@ -530,9 +543,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
   {
    buffers_received++;
-  //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
- //  fprintf(stderr,"nread = %zd\n", nread);
- //  fprintf(stderr,"Buffer starts with: %02x %02X \n",buf->base[0], buf->base[1]);
+
    if (nread < 8000)  // discard this buffer for now 
 	{
 	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
@@ -543,18 +554,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     { 
-
-    int numSamples = 1024 / buf_ptr->channelCount;  // how many IQ pairs in this buffer
-    //printf("Num samples = %i\n",numSamples);
-    
+    int numSamples = 1024 / buf_ptr->channelCount;  // how many IQ pairs in this buffer  
     for(int j=0; j < numSamples; j=j+buf_ptr->channelCount)  // iteration based on # channels running  
       {
-
           for (int i = 0; i < buf_ptr->channelCount; i++)  
            {
-    //  printf("%i   %i   %i \n",j,i,snapcount);
-            spectrumPackage[i].spectrum_in[snapcount] = buf_ptr->theDataSample[j+i].I_val + buf_ptr->theDataSample[j+i].Q_val * I; ;
-
+            spectrumPackage[i].FFT_data[snapcount] = buf_ptr->theDataSample[j+i].I_val + buf_ptr->theDataSample[j+i].Q_val * I; ;
            }
          snapcount++;
       }    
@@ -566,25 +571,28 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
       uv_thread_t analyzethread[8];
 
-      for(int i=0; i < buf_ptr->channelCount; i++)
+      for(int i=0; i < buf_ptr->channelCount-1; i++)
        {
-
        printf(" \n");
        printf("start thread %i\n",i);
        spectrumPackage[i].centerFrequency = buf_ptr->centerFreq;
        uv_thread_create(&analyzethread[i], FFTanalyze, &spectrumPackage[i]);    
        printf("join thread %i\n",i);
        uv_thread_join(&analyzethread[i]);
-
        printf("DFT # %i done\n", i);
        }
  
       snapcount = 0;
       fft_busy = 0;
       }
-
+// we are done with snapshotter handing of this buffer; if user doesn't want ringbuffer also, free memory & exit
+    if(!ringbufferMode)
+      {
+	   free(buf->base);  // always release memory before exiting this callback
+	   free(buf_ptr);
+       return;
+      } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
     }
-
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -705,7 +713,7 @@ int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
 // the following function parses input to get start and end date-times for data upload
 int getDataDates(char *input, char* startpoint, char* endpoint)
  {
-  printf("input to extract from= '%s'\n", input);
+ // printf("input to extract from= '%s'\n", input);
   int theLen = strlen(input);
   printf("len = %i\n",theLen);
   if(theLen < 180)
@@ -933,7 +941,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     snapshotterMode = 0;
     snapcount = 0;
     }
-   if(strncmp(configresult,"r+s",3)==0)
+   if(strncmp(configresult,"snapring",8)==0)
     {
     printf("STARTING SNAPSHOTTER AND RINGBUFFER modes\n");
     ringbufferMode = 1;
@@ -963,9 +971,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
         {
         printf("FFTW create plans %i\n",i);
         spectrumPackage[i].channelNo = i;
-    //    spectrumPackage[i].spectrum_in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * FFT_N);
-    //    spectrumPackage[i].FFTout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * FFT_N);
-        spectrumPackage[i].p = fftwf_plan_dft_1d(FFT_N, spectrumPackage[i].spectrum_in, spectrumPackage[i].FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
+        spectrumPackage[i].p = fftwf_plan_dft_1d(FFT_N, spectrumPackage[i].FFT_data, spectrumPackage[i].FFT_data, FFTW_FORWARD, FFTW_ESTIMATE);
         printf("plans created for fft %i\n",i);
         }
        FFTmemset = 1; // indicate that memory is allocated
@@ -1569,7 +1575,7 @@ while(1==1)  // heartbeat loop
 /* connect the socket */
   if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
     {
-    printf("M: Heartbeat - ERROR connecting\n");
+    printf("M: Heartbeat - Could not reach Central Controln");
     sleep(heartbeat_interval);
     continue;
     }
@@ -1600,7 +1606,7 @@ while(1==1)  // heartbeat loop
    if (bytes < 0)
     printf("M: Heartbeat - ERROR reading response from socket\n");
    else
-    printf("M: Heartbeat got from Central %i bytes\n",bytes);
+    printf("M: Heartbeat reecived from Central Control - %i bytes\n",bytes);
    if (bytes == 0)
      break;
   received+=bytes;
@@ -1610,7 +1616,8 @@ while(1==1)  // heartbeat loop
     printf("M: Heartbeat - ERROR storing complete response from socket");
 
 /* process response */
-  printf("M: Heartbeat Response:\n%s\n",response);
+ // printf("M: Heartbeat Response:\n%s\n",response);
+  printf("M: Heartbeat Response received from Central Control\n");
 
   char theStart[30];
   char theEnd[30];
