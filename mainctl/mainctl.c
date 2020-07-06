@@ -125,12 +125,14 @@ static long packetCount;
 static int recv_port_status = 0;
 
 ///////////////////////// FFT //////////////////////////////////////
-#define FFT_N 1048576
+//#define FFT_N 1048576
 //#define FFT_N 8192
+#define FFT_N 4096
 
 static int snapcount = 0;
 static int fft_busy = 0;  // may need to support max # of possible channels
-static char FFToutputPath[75] = "/mnt/RAM_disk/";  // TODO: must come from config file
+static char FFToutputPath[75] = "";  
+
 static int numchannels = 1;  // how many channels currently running
 static int FFTmemset = 0; // indicates whether FFT plans have been created (TODO: may not be needed)
 
@@ -236,7 +238,7 @@ static int num_items = 0;
 static int snapshotterMode = 0;
 static int ringbufferMode = 0;
 static int firehoseMode = 0;
-static char pathToRAMdisk[50];
+static char pathToRAMdisk[100];
 static int uploadInProgress = 0;
 // for communications to Central Host
 static char central_host[100];
@@ -363,16 +365,22 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   time_t T = time(NULL);
   struct tm tm = *gmtime(&T);  // UTC
   char FFToutputFile[75] = ""; 
-
   printf("start FFT for channel %i, freq %f \n",threadPkg->channelNo, threadPkg->centerFrequency);
   printf("opening fft file: %s, time=",FFToutputFile);
-  sprintf(FFToutputFile,"%sfft%i.csv",FFToutputPath,threadPkg->channelNo);  
+  sprintf(FFToutputFile,"%s/fft%i.csv",FFToutputPath,threadPkg->channelNo);  
   fftfp = fopen(FFToutputFile,"a");
   fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
   printf("%04d-%02d-%02d %02d:%02d:%02d \n", tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+//  printf("before fft \n");
+//  for(int k=0; k < 10; k++)
+ //  printf("%f %f \n",creal(threadPkg->FFT_data[k]),cimag(threadPkg->FFT_data[k]));   
   printf("in thread: exec fft \n");
   fftwf_execute(threadPkg->p);
-   // }
+   
+
+ // printf("after fft \n");
+ // for(int k=0; k < 10; k++)
+ //  printf("%f %f \n",creal(threadPkg->FFT_data[k]),cimag(threadPkg->FFT_data[k]));
   printf("thread FFT analysis complete\n");
 
   float M = 0;
@@ -381,57 +389,86 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 // assumes 1,048,572 bins per FFT
   int lowerbin = 20000 ;
   int upperbin = 22000 ;
+// new concept:  find max bin, and output 100 bins on either side of it
 
+
+//  int lowerbin = 0;
+//  int upperbin = 8191 ;
+
+  float maxval = 0;
+  long maxbin = 0;
   float maxvalT = 0.0;
   long maxbinT = 0;
 
-/*
+
 // find max signal bin
-  for(int i=lowerbin; i < F; i++)  // find maximum bin in positive frequency sectino
+  for(int i=0; i < FFT_N; i++)  // find maximum bin in entire histogram
    {
-       M = sqrt( creal(threadPkg->FFTout[i])*creal(threadPkg->FFTout[i])+cimag(threadPkg->FFTout[i])*cimag(threadPkg->FFTout[i]) );
+    M = sqrt( creal(threadPkg->FFT_data[i])*creal(threadPkg->FFT_data[i])+cimag(threadPkg->FFT_data[i])*cimag(threadPkg->FFT_data[i]) );
     if(M>maxvalT)
       {
       maxvalT = M;
       maxbinT = i ;
       }
    }
-*/
+
+  if(maxbinT < 100)
+    maxbinT = 100;   // if maxbin < 100, then avoid having pointer go outside array
+   
 
   printf("output FFT results\n");
 
-  for(int i=lowerbin;i < upperbin;i++)  // frequencies above center freq. ignoring DC
+// this section is for outputting entire histogram in correct order
+  for(int i=FFT_N/2;i >=0;i--)  // frequencies above center freq. ignoring DC
    {
     M = sqrt( creal(threadPkg->FFT_data[i])*creal(threadPkg->FFT_data[i])+cimag(threadPkg->FFT_data[i])*cimag(threadPkg->FFT_data[i]) );
-    if(M > maxvalT)
+    if(M > maxval)
      {
-      maxbinT = i;
-      maxvalT = M;
+      maxbin = i;
+      maxval = M;
      }
 
-       fprintf(fftfp,"%15.10f,",M);
+     fprintf(fftfp,"%15.10f,",M);
+
    }
 
-
-
-/*  the following puts out the entire FFTout array
-  for(int i=1;i < FFT_N/2;i++)  // frequencies above center freq. ignoring DC
+  for(int i=FFT_N;i >=FFT_N/2;i--)  // frequencies above center freq. ignoring DC
    {
-    M = sqrt( creal(threadPkg->FFTout[i])*creal(threadPkg->FFTout[i])+cimag(threadPkg->FFTout[i])*cimag(threadPkg->FFTout[i]) );
+    M = sqrt( creal(threadPkg->FFT_data[i])*creal(threadPkg->FFT_data[i])+cimag(threadPkg->FFT_data[i])*cimag(threadPkg->FFT_data[i]) );
+    if(M > maxval)
+     {
+      maxbin = i;
+      maxval = M;
+     }
 
-       fprintf(fftfp,"%15.10f,",M);
+     fprintf(fftfp,"%15.10f,",M);
+
    }
-  for(int i=FFT_N-1;i > FFT_N/2;i--)  // frequencies below center in reverse order
+
+
+
+// this section is for outputting +/- 5 hz around center freq with FFT_N=1,048,576
+/*
+  for(int i=maxbinT-100;i < maxbinT+100;i++)  
    {
-    M = sqrt( creal(threadPkg->FFTout[i])*creal(threadPkg->FFTout[i])+cimag(threadPkg->FFTout[i])*cimag(threadPkg->FFTout[i]) );
+    M = sqrt( creal(threadPkg->FFT_data[i])*creal(threadPkg->FFT_data[i])+cimag(threadPkg->FFT_data[i])*cimag(threadPkg->FFT_data[i]) );
+    if(M > maxval)
+     {
+      maxbin = i;
+      maxval = M;
+     }
 
-       fprintf(fftfp,"%15.10f,",M);
+     fprintf(fftfp,"%15.10f,",M);
+
    }
+
+     if(maxbin != maxbinT)
+        printf("** WARNING - overall maxbin (%li) outside of focus area max (%li)\n",maxbinT, maxbin);
 */
 
 
   printf("maxbin = %li, maxval = %f\n",maxbinT,maxvalT);
-  fprintf(fftfp,"%li,%f,\n",maxbinT,maxvalT);
+  fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
   fclose(fftfp);
 
 /*
@@ -476,6 +513,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 /////////////////////////////////////////////////////////////
 //  Callback for when UDP I/Q data packets received from DE 
 //  A separate callback handles incoming ACK data.
+//  These packets come into LH Port F.
 /////////////////////////////////////////////////////////////
 void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
@@ -487,12 +525,17 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
       free(buf->base);
 	  return;
     }
- // printf("UDP I/Q data recvd, bytes = %ld\n", nread);
+
 
   DATABUF *buf_ptr;
   buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
  // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+
+// temporary until we find out what is zeroing out channelCount    * * * * * *
+  buf_ptr->channelCount = 1;
+
+ // printf("UDP I/Q data recvd, bytes = %ld; type=%s; channelcount=%i\n", nread,buf_ptr->bufType, buf_ptr->channelCount);
 
 
 ////  start of handling incoming I/Q data //////////////
@@ -509,7 +552,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
         if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
         strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[channelPtr], "/mnt/RAM_disk/FT8/ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
+        sprintf(name[channelPtr], "%s/FT8/ft8_%d_%f_%d_%s.c2", pathToRAMdisk, 1, buf_ptr->centerFreq,1,date);
        if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
         { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
 		  free(buf->base);  // always release memory before exiting this callback
@@ -527,13 +570,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
         char mycmd[100];
         strcpy(mycmd, "./ft8d ");
         strcat(mycmd,name[channelPtr]);
-        strcat(mycmd, "  > /mnt/RAM_disk/FT8/decoded");
+        strcat(mycmd," > ");
+        strcat(mycmd,pathToRAMdisk);
+        strcat(mycmd, "/FT8/decoded");
         strcat(mycmd, chstr);
         strcat(mycmd, ".txt &");
-        printf("the command: %s\n",mycmd);
+        printf("issue command: %s\n",mycmd);
         int ret = system(mycmd);
         puts("ft8 decode ran");
-
         }
 	free(buf->base);  // always release memory before exiting this callback
     free (buf_ptr);
@@ -554,11 +598,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     { 
-    int numSamples = 1024 / buf_ptr->channelCount;  // how many IQ pairs in this buffer  
+    int numSamples = 1024 / numchannels;  // how many IQ pairs in this buffer  
     for(int j=0; j < numSamples; j=j+buf_ptr->channelCount)  // iteration based on # channels running  
       {
-          for (int i = 0; i < buf_ptr->channelCount; i++)  
+          for (int i = 0; i < numchannels; i++)  
            {
+          //  printf("value %i %f ",j, buf_ptr->theDataSample[j+i].I_val);
             spectrumPackage[i].FFT_data[snapcount] = buf_ptr->theDataSample[j+i].I_val + buf_ptr->theDataSample[j+i].Q_val * I; ;
            }
          snapcount++;
@@ -571,7 +616,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
       uv_thread_t analyzethread[8];
 
-      for(int i=0; i < buf_ptr->channelCount-1; i++)
+      for(int i=0; i <= numchannels-1; i++)
        {
        printf(" \n");
        printf("start thread %i\n",i);
@@ -602,7 +647,9 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     packetCount = (long) buf_ptr->dval.bufCount;
  //   printf("bufcount = %ld\n", packetCount);
-    int noOfChannels = buf_ptr->channelCount;
+    if(buf_ptr->channelCount != numchannels)
+      printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",buf_ptr->channelCount, numchannels);
+    int noOfChannels = numchannels;
     int sampleCount = 1024 / noOfChannels;
  //   printf("Channel count = %i\n",buf_ptr->channelCount);
 
@@ -832,20 +879,22 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
 	const uv_buf_t a[] = {{.base = b, .len = sizeof(CONFIGBUF)}};
 
-    printf("Sending CREATE CHANNEL to %s  port %u\n", DE_IP, DE_port);
+    printf("Sending CREATE CHANNEL (CC) to %s  port A=%u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
-    printf("... at this point, send_config_addr.sin_port= %d\n", ntohs(send_config_addr.sin_port));
+    printf("After CC, Port D set to %d\n", ntohs(send_config_addr.sin_port));
+    DE_CONF_IN_port = send_config_addr.sin_port;  // save this for later use
     free(configBuf_ptr);
     return;
 	}
 
-////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////
+////////////////// Process CH arriving from app /////////////////////
   if(strncmp(mybuf, CONFIG_CHANNELS, 2)==0) 
     {
     uv_udp_send_t send_req;
     char b[400];
-    printf("Config channels (CH) received=%s\n",mybuf);
+    printf("Config channels (CH) received from app.py=%s\n",mybuf);
 	memcpy(h.channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
    
     const char comma[2] = ",";
@@ -880,17 +929,15 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     puts("done with conversion");
 
     memcpy(b,h.mybuf2,sizeof(CHANNELBUF));
-    puts("port C print done");
 
 	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
 
-    printf("Sending CONFIG CHANNELS to %s  port %u\n", DE_IP, d.myConfigBuf.dataPort);
-    uv_ip4_addr(DE_IP, d.myConfigBuf.dataPort, &send_config_addr);  
-      
- //   uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
-    printf("port in the addr = %i\n",ntohs(send_config_addr.sin_port));
-    uv_udp_send(&send_req, &send_config_socket, a, 1, (const struct sockaddr *)&send_config_addr, on_UDP_send);
-    printf("after sending, port in the addr = %i\n",ntohs(send_config_addr.sin_port));
+    struct sockaddr_in send_addr;
+    printf("Sending CONFIG CHANNELS (CH) to %s  port %u\n", DE_IP, DE_port);
+
+    uv_ip4_addr(DE_IP, DE_port, &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+
     }
 
   if(strncmp(mybuf, START_FT8_COLL , 2)==0)
@@ -901,8 +948,18 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     recv_port_check();  // ensure receive port is open (LH_DATA_IN_port)
 	strncpy(b, mybuf, nread-1 );
 	const uv_buf_t a[] = {{.base = b, .len = nread-1}};
-    int rt =     system("mkdir /mnt/RAM_disk/FT8");
-    rt = system("rm /mnt/RAM_disk/FT8/*.*");
+    char mkcommand[20] = "mkdir ";
+    strcat(mkcommand,pathToRAMdisk);
+    strcat(mkcommand,"/FT8");
+  //  int rt =     system("mkdir /mnt/RAM_disk/FT8");
+    printf("issue command: %s\n",mkcommand);
+    int rt = system(mkcommand);
+    strcpy(mkcommand,"rm ");
+    strcat(mkcommand,pathToRAMdisk);
+    strcat(mkcommand,"/FT8/*.*");
+  //  rt = system("rm /mnt/RAM_disk/FT8/*.*");
+    printf("issue command: %s\n",mkcommand);
+    rt = system(mkcommand);
     printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
@@ -998,16 +1055,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
       {
 // start a listener on Port F
       recv_port_check(); // ensure port is open exactly once
-/*
-      uv_udp_init(loop, &data_socket);
-      uv_ip4_addr("0.0.0.0", LH_DATA_IN_port, &recv_data_addr);
-      printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
-      int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
-      printf("bind retcode = %d\n",retcode);
-      retcode = uv_udp_recv_start(&data_socket, alloc_data_buffer, on_UDP_data_read);
-      printf("recv retcode = %d\n",retcode);
-      if (retcode == 0) recv_port_status = 1;
-*/
+
       }
 
     printf("Sending START DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
@@ -1086,7 +1134,6 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     return;
 	}
 
-// this should be in the UDP data handler
   if(strncmp(mybuf, DATARATE_INQUIRY, 2)==0)
 	{
 	puts("Forward datarate inquiry to DE");
@@ -1583,7 +1630,7 @@ while(1==1)  // heartbeat loop
     printf("Heartbeat socket connected\n");
 
 /* send the request */
-  printf("M: hearbeat - send request: %s\n",message);
+  printf("M: send heartbeat... \n");
   total = strlen(message);
   sent = 0;
   do {
@@ -1591,7 +1638,7 @@ while(1==1)  // heartbeat loop
    if (bytes < 0)
      printf("M: Heartbeat - ERROR writing message to socket\n");
    else
-      printf("Heartbeat sent byte, return = %i\n", bytes);
+      printf("M: Heartbeat sent, # bytes = %i\n", bytes);
    if (bytes == 0)
       break;
    sent+=bytes;
@@ -1606,7 +1653,7 @@ while(1==1)  // heartbeat loop
    if (bytes < 0)
     printf("M: Heartbeat - ERROR reading response from socket\n");
    else
-    printf("M: Heartbeat reecived from Central Control - %i bytes\n",bytes);
+    printf("M: Heartbeat Response received from Central Control - %i bytes\n",bytes);
    if (bytes == 0)
      break;
   received+=bytes;
@@ -2038,9 +2085,21 @@ int main(int argc, char *argv[]) {
     }
   else
     {
-    printf("central port CONFIG RESULT = '%s'\n",configresult);
+    printf("RAMdisk path CONFIG RESULT = '%s'\n",configresult);
     strcpy(pathToRAMdisk,configresult);
     } 
+
+  num_items = rconfig("fftoutput_path",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - FFT output path setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("FFToutput path CONFIG RESULT = '%s'\n",configresult);
+    strcpy(FFToutputPath,configresult);
+    } 
+
 
   loop = uv_default_loop();
 

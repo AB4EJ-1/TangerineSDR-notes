@@ -3,11 +3,12 @@ from wtforms import Form, TextField, IntegerField, TextAreaField, SubmitField, R
 
 from wtforms import validators, ValidationError
 
-
 class MainControlForm(FlaskForm):
+  class Meta:
+    csrf = True
+    csrf_time_limit = None
   mode = SelectField('Mode', choices = [('snapshotter','Snapshotter'),
      ('ringbuffer','Ringbuffer'), ('snapring','SnapRing'), ('firehose','Firehose')])
-#  submit = SubmitField("Set Mode")
   startDC = SubmitField("Start Data Collection")
   stopDC = SubmitField("Stop Data Collection")
   prop = SelectField('Type', choices = [('FT8','FT8'),('WSPR','WSPR')])
@@ -19,7 +20,6 @@ class ChannelForm(Form):
   channel_freq = FloatField('CH_freq',[validators.DataRequired(),validators.NumberRange(min=0.1, max = 54, message=(u'Freq out of range'))])
 
 class ChannelListForm(Form):
-#  channels = FieldList(FormField(ChannelForm), min_entries = 1)
   channels = FieldList(FormField(ChannelForm))
 
 class ChannelControlForm(FlaskForm):
