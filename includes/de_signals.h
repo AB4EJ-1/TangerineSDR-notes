@@ -53,6 +53,18 @@ typedef struct dataBuf
     struct dataSample theDataSample[1024];  // should be double the number of samples
 	} DATABUF ;
 
+typedef struct VITAdataBuf
+ {
+ char VITA_hdr1[2];  // rightmost 4 bits is a packet counter
+ int16_t  VITA_packetsize;
+ char stream_ID[4];
+ uint32_t time_stamp;
+ uint64_t sample_count;
+ struct dataSample theDataSample[1024];
+ } VITABUF;
+
+
+
 struct datarateEntry
     {
     int rateNumber;

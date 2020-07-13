@@ -884,34 +884,34 @@ def propagation():
 @app.route('/_ft8list')
 def ft8list():
   ft8string = ""
-  band = [ 7, 10, 14, 18, 21, 24, 28]
+# TODO: this needs to come from configuration
+  band = [ 14, 18]
+#  band = [ 14, 18, 14, 18, 21, 24, 28]
   try:
-#   f = open("/mnt/RAM_disk/FT8/decoded0.txt","r")
-#   x = f.readlines()
-#   f.close()
+
     plist = []
-    for fno in range(7):
+    for fno in range(len(band)):
+# TODO: following needs to come from configuration
      fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
- #    print("checking file",fname)
+#     print("checking file",fname)
      f = open(fname,"r")
+     #print(len(f.readlines()))
      plist.append(len(f.readlines()))
+ #    print(plist)
      f.close()
       
 # here we build a JSON string to populate the FT8 panel
     ft8string = '{'
-#   for i in range(0,len(x)):
-#    ft8string = ft8string + '"' + str(i) + '":"' +  \
-#      x[i][39:46] + ' ' + x[i][53:57] + ' ' + x[i][30:32] + ' MHz",'
     ft8string = ft8string + '"0":"MHz  spots",'
-    for i in range(7):
+    for i in range(len(band)):
      pval = str(plist[i])
      ft8string = ft8string + '"' + str(i+1) + '":"' +  \
        str(band[i]) + ' - ' + pval + ' ",'
 
     ft8string = ft8string + '"end":" "}'
-#    print("string= " , ft8string)
+  #  print("ft8string= " , ft8string)
   except Exception as ex:
- #   print(ex)
+    print(ex)
 # no-op
     z=1
 

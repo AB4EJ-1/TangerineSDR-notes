@@ -1,6 +1,6 @@
 /* Copyright (C) 2019 The University of Alabama
 * Author: William (Bill) Engelke, AB4EJ
-* With funding from the Center for Advanced Public Safety and
+* With funding from the Center for Advanced Public Safety and 
 * The National Science Foundation.
 *
 * This program is free software; you can redistribute it and/or
@@ -38,6 +38,7 @@
 #include <complex.h>
 #include <math.h>
 #include <fftw3.h>
+#include <time.h>
 #include "CUnit/CUnit.h"
 #include "CUnit/Basic.h"
 #include "discovered.h"
@@ -136,18 +137,7 @@ static char FFToutputPath[75] = "";
 static int numchannels = 1;  // how many channels currently running
 static int FFTmemset = 0; // indicates whether FFT plans have been created (TODO: may not be needed)
 
-//  structure to contain data to pass to FFTanalyze thread
-// To be used only in the case of dynamic memory management for the FFT
-/*
-struct specPackage
-  {
-  int channelNo;
-  float centerFrequency;
-  fftw_complex *spectrum_in;
-  fftw_complex *FFTout;
-  fftw_plan p;
-  } ;
-*/
+
 
 // The following purportedly can be done using dynamic mamory allocation utiltes
 // provided with FFTW package; however, this is very tricky to get to work without
@@ -160,16 +150,6 @@ struct specPackage
   fftwf_plan p;
   } ;
 
-/*
-struct specPackage
-  {
-  int channelNo;
-  float centerFrequency;
-  fftwf_complex spectrum_in[FFT_N];
-  fftwf_complex FFTout[FFT_N];
-  fftwf_plan p;
-  } ;
-*/
 
 // set up array for up to 8 FFTs
 struct specPackage spectrumPackage[8];
@@ -213,6 +193,13 @@ char name[8][64];
 time_t t;
 struct tm *gmt;
 FILE *fp[8];
+float complex IQval;
+double dialfreq[8];  // array of dial frequencies for FT8
+
+int ft8active[8];    // flag to indicate if a given ft8 channel is collecting data
+int ft8counter[8];   // counter of how many ft8 samples saved in this collection period
+int inputcount[8];   // temporary, to reduce sample rate
+
 
 // Set up memory to handle data traffic passing via libuv asynchronous calls
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
@@ -471,41 +458,6 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
   fclose(fftfp);
 
-/*
-// code to display freq. histogram (needs fixed)
-  float scale = 25.0 / maxval;
-  char display[25][100];
-  int avg_ct = 0;
-  float mag = 0;
-  char space[1] = " ";
-  char aster[1] = "*";
-  // clear array
-  for (int y=0; y < 24; y++) {
-   for (int x=0; x < 100; x++) {
-    display[y][x]=32;
-    }
-   }
-  for(int bin=FFT_N; bin > FFT_N/2; bin--)
-   {
-   mag = mag + FFTout[bin];
-   avg_ct ++;
-   if(avg_ct == 5)
-     {
-     mag = 25 * mag / (avg_ct * 0.3);
-     for(int i = 0; i < mag; i++)
-       display[i][bin]=42;
-     avg_ct = 0;
-     mag = 0.0;
-     }
-   }
-
-   for(int y = 24; y > 0; y--)
-    {
-    for(int x=0;x<100;x++)
-     printf("%c",display[x][y]);
-    printf("\n");
-    }
-*/
 
 }
 
@@ -537,9 +489,117 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
  // printf("UDP I/Q data recvd, bytes = %ld; type=%s; channelcount=%i\n", nread,buf_ptr->bufType, buf_ptr->channelCount);
 
-
+/////////////////////////////////////////////////////////
 ////  start of handling incoming I/Q data //////////////
 
+
+// code update for handing data in VITA format
+
+  if(buf_ptr->bufType[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
+    {
+    struct VITAdataBuf FT8dataBuf;
+
+    char FT8sig[2] = "FT";
+
+
+
+    memcpy(&FT8dataBuf, buf->base,nread);
+
+
+  /////////////  If this is FT8 data, process it  /////////////////
+#define FT8FSIZE 240000
+    if(memcmp(FT8dataBuf.stream_ID,FT8sig,2) == 0)  
+     {
+  //   printf("FT8 buffer ");
+   // the 4th byte of stream ID is a binary 0, 1, 2, 3 etc
+     int streamID = FT8dataBuf.stream_ID[3];   // this is stream ID (may change)
+     int idialfreq = (int)(1000000.0 * dialfreq[streamID]);
+   //  printf("streamID = %i\n",streamID);
+     if(ft8active[streamID] == 0)  // this ft8 stream is not yet active
+       {
+       time_t rawtime;
+       struct tm * info ;
+       time(&rawtime);
+       info = gmtime(&rawtime);
+       int seconds = info->tm_sec;
+       printf("seconds = %i\r",seconds);
+
+       if(seconds != 0)  // check if exact top of minute
+         {
+		  free(buf->base);  // always release memory before exiting this callback
+		  free(buf_ptr);
+          return;    // we are not at exact top of minute; discard data and wait
+         }
+       ft8active[streamID] = 1;   // mark this ft8 stream as active
+       ft8counter[streamID] = 0;            // zero this counter
+       inputcount[streamID] = 0;
+       printf("\nSaving FT8 for decode\n");
+
+       t = time(NULL);
+       if((gmt = gmtime(&t)) == NULL)
+          { fprintf(stderr,"Could not convert time\n"); }
+        strftime(date, 12, "%y%m%d_%H%M", gmt);
+        sprintf(name[streamID], "%s/FT8/ft8_%d_%i_%d_%s.c2", pathToRAMdisk, 1, idialfreq,1,date); 
+
+       printf("create raw data FT8 file %s\n",name[streamID]);
+       if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
+         { fprintf(stderr,"Could not open file %s \n",name[streamID]);
+		  free(buf->base);  // always release memory before exiting this callback
+		  free(buf_ptr);
+          return;
+         }
+  //  TODO:  must know the dial freq. here
+       fwrite(&dialfreq, 1, sizeof(dialfreq), fp[streamID]);
+
+       }
+     // at this point, this ft8 stream is active
+       for(int i=0; i < 512 && ft8counter[streamID] <= FT8FSIZE; i++)   // go thru input buffer
+         {
+         inputcount[streamID]++;
+         if((inputcount[streamID] % 12) != 0)  // reduce sample rate
+          continue;   
+// data length should be sizeof(FT8dataBuf.theDataSample)
+         IQval = FT8dataBuf.theDataSample[i].I_val + (FT8dataBuf.theDataSample[i].Q_val * I);
+         IQval = IQval / 1000000.0;  // experimental
+         fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
+         ft8counter[streamID]++;
+         if(ft8counter[streamID] >= FT8FSIZE)   // have we filled output?
+           {
+           ft8active[streamID] = 0;  // mark it inactive
+           fclose(fp[streamID]);
+         // trigger processing of the ft8 data file
+
+           printf("FT8 decoding...\n");
+           char chstr[4];
+           sprintf(chstr,"%i",streamID);
+           char mycmd[100];
+           sprintf(mycmd,"rm %s/FT8/decoded%i.txt",pathToRAMdisk,streamID);  // clear out any previous decodes
+           int ret = system(mycmd);
+           strcpy(mycmd, "./ft8d "); 
+           strcat(mycmd,name[streamID]);
+
+           strcat(mycmd," > ");
+           strcat(mycmd,pathToRAMdisk);
+           strcat(mycmd, "/FT8/decoded");
+           strcat(mycmd, chstr);
+           strcat(mycmd, ".txt ");  // here add & to run asynch (but beware of file delete!)
+           printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+           puts("ft8 decode ran");
+       // clear out any previous raw data file
+          sprintf(mycmd,"rm %s/FT8/%s",pathToRAMdisk,name[streamID]); 
+          ret = system(mycmd); 
+        // end of file decoding
+
+           }
+         }
+     }
+
+    return;
+    }
+
+
+//////////   original code    //////////////
   if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
     {
        double dialfreq = buf_ptr->centerFreq;
@@ -548,7 +608,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
        {
         t = time(NULL);
-
         if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
         strftime(date, 12, "%y%m%d_%H%M", gmt);
@@ -644,7 +703,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // handle I/Q buffers coming in for storage to Digital RF
 
     {
-
     packetCount = (long) buf_ptr->dval.bufCount;
  //   printf("bufcount = %ld\n", packetCount);
     if(buf_ptr->channelCount != numchannels)
@@ -940,11 +998,11 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
     }
 
-  if(strncmp(mybuf, START_FT8_COLL , 2)==0)
+  if(strncmp(mybuf, START_FT8_COLL , 2)==0) // got command to start FT8 reception
     {
     uv_udp_send_t send_req;
 	char b[100];
-	for(int i=0; i< 100; i++) { b[i] = 0; }
+	for(int i=0; i< 100; i++) { b[i] = 0; }  // zero out buffer b
     recv_port_check();  // ensure receive port is open (LH_DATA_IN_port)
 	strncpy(b, mybuf, nread-1 );
 	const uv_buf_t a[] = {{.base = b, .len = nread-1}};
@@ -960,6 +1018,39 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   //  rt = system("rm /mnt/RAM_disk/FT8/*.*");
     printf("issue command: %s\n",mkcommand);
     rt = system(mkcommand);
+    printf("scan for FT8 antenna settings\n");
+    for(int i=0;i<8;i++)  // go thru config to see which FT8 channels wanted
+     {   
+     char ant[7];
+     sprintf(ant,"ftant%i",i);
+
+     num_items = rconfig(ant,configresult,0);
+     if(num_items == 0)
+      {
+       printf("ERROR - FT8 antenna setting %i not found in config.ini\n",i);
+      }
+     else
+      {
+       printf("FT8 antenna CONFIG RESULT = '%s', len: %li\n",configresult, strlen(configresult));
+       if(strlen(configresult) == 1) // means setting is not "Off"
+        {
+        char ft8f[6];
+        sprintf(ft8f,"ft8%if",i);  // get config name of ft8 frequency
+        num_items = rconfig(ft8f,configresult,0);
+        if(num_items > 0)   // this is dial freq fore this FT8 channel
+         {
+         dialfreq[i] = atof(configresult);
+         printf("dial freq %i %f \n",i,dialfreq[i]);
+         }
+        }
+       
+      }
+
+     }
+
+
+
+
     printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
@@ -1890,6 +1981,13 @@ int main(int argc, char *argv[]) {
 // Discover what devices are acessible and respond to discovery packet (preamble hex EF FE ) 
   puts("starting");
   int testresult;
+
+  for(int i=0;i<8;i++)  // initialize work variables for FT8 data collection
+   {
+   ft8active[i] = 0;
+   ft8counter[i] = 0;
+   }
+
   if(argc > 1)  // execute only this if user asked to run the unit tests
     {
     printf("argc = %d\n",argc);
@@ -1927,42 +2025,12 @@ int main(int argc, char *argv[]) {
 	  }
 	}
 
-/*
-// the configuration file
-  config_t cfg;
-  config_setting_t *setting;
-*/
 
   char DE_ip_str[20];
   packetCount = 0;
   int DE_port;
   int controller_port;
-
   int rc = openConfigFile();
-
-/*
-  config_init(&cfg);
-
-  /* Read the file. If there is an error, report it and exit. */
-
-// The only thing we use this config file for is to get the path to the
-// python config file. Seems like a kludge, but allows flexibility in
-// system directory structure.
-/*
-  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
-  {
-    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
-            config_error_line(&cfg), config_error_text(&cfg));
-    puts("ERROR - there is a problem with main.cfg configuration file");
-    config_destroy(&cfg);
-    return(EXIT_FAILURE);
-  }
-
-  if(config_lookup_string(&cfg, "config_path", &configPath))
-    printf("Setting config file path to: %s\n\n", configPath);
-  else
-    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
-*/
 
   puts("start");
  // printf("looking for '%s'\n",target);
@@ -2015,7 +2083,7 @@ int main(int argc, char *argv[]) {
     }
   else
     {
-    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf(" CONFIG RESULT for control port= '%s'\n",configresult);
     printf("len =%lu\n",strlen(configresult));
     controller_port = atoi(configresult);
     }
@@ -2028,7 +2096,7 @@ int main(int argc, char *argv[]) {
   else
     { strcpy(ringbuffer_path, configresult);
     }
-    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf(" CONFIG RESULT for ringbuffer path= '%s'\n",configresult);
     printf("len =%lu\n",strlen(configresult));
    
 
@@ -2185,10 +2253,6 @@ int main(int argc, char *argv[]) {
     printf("M: Start hearbeat thread\n");
     hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
 
-// Set up memory & plan for FFT
-  //  FFTin =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
-  //  FFTout =  (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * FFT_N);
-   // FFTp = fftwf_plan_dft_1d(FFT_N, FFTin, FFTout, FFTW_FORWARD, FFTW_ESTIMATE);
 
 
 
