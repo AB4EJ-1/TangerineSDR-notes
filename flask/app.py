@@ -280,6 +280,8 @@ def sdr():
 @app.route("/restart") # restarts mainctl program
 def restart():
    global theStatus, theDataStatus
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
    print("F: restart")
   # send_to_mainctl("XX",1)
    returned_value = os.system("killall -9 mainctl")
@@ -296,6 +298,13 @@ def restart():
    print("Request Data Rate List")
    send_to_mainctl(DATARATE_INQUIRY,0.1)
    send_channel_config()
+# ringbuffer setup
+   ringbufferPath =    parser['settings']['ringbuffer_path']
+   ringbufferMaxSize = parser['settings']['ringbuffer_max_size']
+   rcmd = 'drf ringbuffer -z ' + ringbufferMaxSize + ' -v ' + ringbufferPath + ' &'
+# spin off this process asynchornously (notice the & at the end)
+   returned_value = os.system(rcmd)
+   print("ringbuffer control activated")
    return redirect('/')
 
 @app.route("/datarates")

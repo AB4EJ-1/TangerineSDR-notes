@@ -1,4 +1,4 @@
-TARGET = ft8d
+TARGET = ft8d_del
 
 OBJECTS = \
   crc14.o crc.o ft8_downsample.o sync8d.o sync8.o grid2deg.o four2a.o \

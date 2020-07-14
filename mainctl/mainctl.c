@@ -573,22 +573,23 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            char chstr[4];
            sprintf(chstr,"%i",streamID);
            char mycmd[100];
-           sprintf(mycmd,"rm %s/FT8/decoded%i.txt",pathToRAMdisk,streamID);  // clear out any previous decodes
+           // clear out any previous decodes
+       //    sprintf(mycmd,"rm %s/FT8/decoded%i.txt",pathToRAMdisk,streamID);  
            int ret = system(mycmd);
-           strcpy(mycmd, "./ft8d "); 
+           strcpy(mycmd, "./ft8d_del "); 
            strcat(mycmd,name[streamID]);
 
            strcat(mycmd," > ");
            strcat(mycmd,pathToRAMdisk);
            strcat(mycmd, "/FT8/decoded");
            strcat(mycmd, chstr);
-           strcat(mycmd, ".txt ");  // here add & to run asynch (but beware of file delete!)
+           strcat(mycmd, ".txt &");  // here add & to run asynch (but beware of file delete!)
            printf("issue command: %s\n",mycmd);
            ret = system(mycmd);
            puts("ft8 decode ran");
        // clear out any previous raw data file
-          sprintf(mycmd,"rm %s/FT8/%s",pathToRAMdisk,name[streamID]); 
-          ret = system(mycmd); 
+       //   sprintf(mycmd,"rm %s/FT8/%s",pathToRAMdisk,name[streamID]); 
+       //   ret = system(mycmd); 
         // end of file decoding
 
            }
