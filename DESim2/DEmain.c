@@ -35,22 +35,53 @@
 #define PORT 1024
 
 #define UDPPORT 7100
+#define FLEXFT_IN 7790
+#define FLEXDATA_IN 7791
+
+struct flexDataSample
+  {
+  float I_val;
+  float Q_val;
+  };
+
+typedef struct flexDataBuf
+ {
+ char VITA_hdr1[2];  // rightmost 4 bits is a packet counter
+ int16_t  VITA_packetsize;
+ char stream_ID[4];
+ char class_ID[8];
+ uint32_t time_stamp;
+ uint64_t fractional_seconds;
+ struct flexDataSample flexDataSample[512];
+ } FLEXBUF;
+struct sockaddr_in flex_addr;
+static  int fd;
 
 static struct dataBuf iqbuffer;
+static struct flexDataBuf iqbuffer2;
+static struct VITAdataBuf iqbuffer2_in;
+static struct VITAdataBuf iqbuffer2_out;
 
 static int LH_port;
+static int LH_IP;
+//static char[15];
 struct sockaddr_in client_addr;
 struct sockaddr_in server_addr;
 struct sockaddr_in config_in_addr;
+struct sockaddr_in portF_addr;
 
 int sock;
 int sock1;
 int sock2;
 int sock3;
+int sock5;
+static int sock4;
 long cmdthreadID;
+int CCport;
 int cmdport;
 int stoplink;
 int stopData;
+int stopDataColl;
 int stopft8;
 int ft8active;
 int config_busy;
@@ -66,7 +97,7 @@ union {
   CONFIGBUF myConfigBuf;
        } d;
 
-  union {
+union {
     char configBuffer[1024];
     CHANNELBUF chBuf;
     } cb ;
@@ -84,6 +115,190 @@ static uint16_t DE_CONF_IN_port;  // port B ; DE listens for config request on t
 static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
 static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
 static uint16_t LH_DATA_OUT_port; // for sending (outbound) data (e.g., mic audio) to DE
+
+void *sendFT8flex(void * threadid){
+
+  fd_set readfd;
+  int count;
+  ft8active = 1;
+  printf("in Flex FT8 thread; init sock4\n");
+  sock4 = socket(AF_INET, SOCK_DGRAM, 0);
+  printf("after socket assign, sock4= %i\n",sock4);
+  if(sock4 < 0) {
+    printf("sock4 error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
+  printf("sock4 created\n");
+  int addr_len = sizeof(struct sockaddr_in);
+  memset((void*)&flex_addr, 0, addr_len);
+  flex_addr.sin_family = AF_INET;
+  flex_addr.sin_addr.s_addr = htons(INADDR_ANY);
+  flex_addr.sin_port = htons(FLEXFT_IN);
+  printf("bind sock4\n:");
+  int ret = bind(sock4, (struct sockaddr*)&flex_addr, addr_len);
+  if (ret < 0){
+    printf("bind error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+     }
+  FD_ZERO(&readfd);
+  FD_SET(sock4, &readfd);
+  printf("in flex FT8 thread read from port %i\n",FLEXFT_IN);
+  client_addr.sin_port = htons(LH_DATA_IN_port);
+ ret = 1;
+ while(1==1) {  // repeating loop
+
+   if(stopft8)
+	 {
+     puts("UDP thread end; close sock4");
+     ft8active = 0;
+     close(sock4);
+	 pthread_exit(NULL);
+	 }
+
+  if(ret > 0){
+   if (FD_ISSET(sock4, &readfd)){
+    printf("try read\n");
+    count = recvfrom(sock4, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
+    printf("bytes received = %i\n",count);
+    printf("VITA header= %x %x\n",iqbuffer2.VITA_hdr1[0],iqbuffer2.VITA_hdr1[1]);
+    printf("stream ID= %x%x%x%x\n", iqbuffer2.stream_ID[0],iqbuffer2.stream_ID[1], iqbuffer2.stream_ID[2],iqbuffer2.stream_ID[3]);
+    iqbuffer2.stream_ID[0] = 0x46;   // put "FT" into stream ID
+    iqbuffer2.stream_ID[1] = 0x54;
+    printf("timestamp = %i \n",iqbuffer2.time_stamp/16777216);
+    printf("FT8: try to send \n");
+    int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2, sizeof(iqbuffer2), 0, 
+	      (struct sockaddr*)&client_addr, sizeof(client_addr));
+
+
+ //   for(int i=0;i<512;i++) {
+  //   printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val,iqbuffer2.flexDatSample[i].Q_val);
+   //  }
+    printf("sent bytes %i\n",sentBytes);
+  //  FILE * fptr;
+  //  fptr = fopen("sampleIQ.dat","wb");
+  //  fwrite(&iqbuffer,sizeof(iqbuffer),1,fptr);
+    //close(fptr);
+    }
+  }  // end of repeating loop
+  }
+
+ }
+
+
+void *sendFlexData(void * threadid){
+// forward IQ data from flex to LH in VITA format, with minor mods
+
+// TODO: add 32-bit time stamp & buffer count in right place for use by LH (DRF ddata handler)
+  uint64_t theSampleCount = 0;
+  fd_set readfd;
+  int count;
+  ft8active = 1;
+  printf("in Flex DATA thread; start to send data; init sock4\n");
+  sock5 = socket(AF_INET, SOCK_DGRAM, 0);
+  printf("after socket assign, sock5= %i\n",sock4);
+  if(sock5 < 0) {
+    printf("sock5 error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
+  printf("sock5 created\n");
+  int addr_len = sizeof(struct sockaddr_in);
+  memset((void*)&flex_addr, 0, addr_len);
+  flex_addr.sin_family = AF_INET;
+  flex_addr.sin_addr.s_addr = htons(INADDR_ANY);
+  flex_addr.sin_port = htons(FLEXDATA_IN);
+  printf("bind sock\n:");
+  int ret = bind(sock5, (struct sockaddr*)&flex_addr, addr_len);
+  if (ret < 0){
+    printf("bind error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+     }
+  FD_ZERO(&readfd);
+  FD_SET(sock5, &readfd);
+  printf("in flex Data thread read from port %i\n",FLEXDATA_IN);
+  client_addr.sin_port = htons(LH_DATA_IN_port);
+ ret = 1;
+ while(1==1) {  // repeating loop
+
+   if(stopDataColl)
+	 {
+     puts("UDP thread end");
+     ft8active = 0;
+     close(sock5);
+	 pthread_exit(NULL);
+	 }
+
+  if(ret > 0){
+   if (FD_ISSET(sock5, &readfd)){
+  //  printf("try read\n");
+    count = recvfrom(sock5, &iqbuffer2_in, sizeof(iqbuffer2_in),0, (struct sockaddr*)&flex_addr, &addr_len);
+ //   printf("bytes received = %i\n",count);
+ //   printf("VITA header= %x %x\n",iqbuffer2_in.VITA_hdr1[0],iqbuffer2_in.VITA_hdr1[1]);
+ //   printf("stream ID= %x%x%x%x\n", iqbuffer2_in.stream_ID[0],iqbuffer2_in.stream_ID[1], iqbuffer2_in.stream_ID[2],iqbuffer2_in.stream_ID[3]);
+    memcpy(iqbuffer2_out.VITA_hdr1, iqbuffer2_in.VITA_hdr1, sizeof(iqbuffer2_out.VITA_hdr1));
+
+    iqbuffer2_out.VITA_packetsize = sizeof(iqbuffer2_out);
+    iqbuffer2_out.stream_ID[0] = 0x52;   // put "RG" into stream ID
+    iqbuffer2_out.stream_ID[1] = 0x47;
+    iqbuffer2_out.stream_ID[2] = 1;   // number of embedded subchannels in buffer
+    iqbuffer2_out.stream_ID[3] = iqbuffer2_in.stream_ID[3];
+    iqbuffer2_out.time_stamp = (uint32_t)time(NULL);
+    iqbuffer2_out.sample_count = theSampleCount;
+    theSampleCount++; // this is actually a packet count, at least for now
+  //  printf("timestamp = %i \n",iqbuffer2_out.time_stamp);
+    for(int i=0; i < 512; i++)
+     {
+      iqbuffer2_out.theDataSample[i] = iqbuffer2_in.theDataSample[i];
+     }
+
+    count = recvfrom(sock5, &iqbuffer2_in, sizeof(iqbuffer2_in),0, (struct sockaddr*)&flex_addr, &addr_len);
+ //   printf("bytes received = %i\n",count);
+
+    for(int i=0; i < 512; i++)
+     {
+      iqbuffer2_out.theDataSample[i + 512] = iqbuffer2_in.theDataSample[i];
+     }
+
+
+  //  printf("try to send \n");
+    int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2_out, sizeof(iqbuffer2_out), 0, 
+	      (struct sockaddr*)&client_addr, sizeof(client_addr));
+
+
+ //   for(int i=0;i<512;i++) {
+  //   printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val,iqbuffer2.flexDatSample[i].Q_val);
+   //  }
+  //  printf("sent bytes %i\n",sentBytes);
+  //  FILE * fptr;
+  //  fptr = fopen("sampleIQ.dat","wb");
+  //  fwrite(&iqbuffer,sizeof(iqbuffer),1,fptr);
+    //close(fptr);
+    }
+  }  // end of repeating loop
+  }
+
+ }
+
+
+
+
+
+
+
+
 
 
 void *sendFT8(void *threadid) {
@@ -153,8 +368,8 @@ void *sendFT8(void *threadid) {
          sentBytes = sendto(sock, (const struct dataBuf *)&ft8Buffer, sizeof(ft8Buffer), 0, 
 	      (struct sockaddr*)&client_addr, sizeof(client_addr));
 
-         fprintf(stderr,"UDP message sent from thread to port %u. bytes= %ld\n", 
-           htons(client_addr.sin_port), sentBytes); 
+         fprintf(stderr,"UDP message sent from thread to port %u %u. bytes= %ld\n", 
+           htons(client_addr.sin_port), client_addr.sin_port, sentBytes); 
     // sleep(1);
          usleep(250000);  // wait for this many microseconds
          printf("stopft8=%i \n",stopft8);
@@ -174,8 +389,8 @@ void *sendFT8(void *threadid) {
 }
 
 
-// This thread handles incoming CH  channel setup
 void *awaitConfig(void *threadid) {
+
   config_busy = 1;
   printf("Starting await-config thread listening on port %d (Port D)\n",DE_CH_IN_port);
 //  printf("... will send data to LH port %d\n",LH_DATA_IN_port);
@@ -225,7 +440,6 @@ void *awaitConfig(void *threadid) {
 // this thread gets UDP packets being sent by pihpsdr, forwards to mainctl on command
 void *sendData1(void *threadid) {
 
-
   int yes = 1;
  // struct sockaddr_in client_addr3;
   struct sockaddr_in server_addr3;
@@ -240,8 +454,10 @@ void *sendData1(void *threadid) {
   sock3 = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock3 < 0) {
     perror("sock1 error\n");
- 
-    return -1 ;
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
   }
 
   addr_len = sizeof(struct sockaddr_in);
@@ -254,8 +470,10 @@ void *sendData1(void *threadid) {
   ret = bind(sock3, (struct sockaddr*)&server_addr3, addr_len);
   if (ret < 0) {
     perror("UDP bind error\n");
-
-    return (int)-1 ;
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
   }
   while (1) {
     FD_ZERO(&readfd);
@@ -268,13 +486,115 @@ void *sendData1(void *threadid) {
       if (FD_ISSET(sock3, &readfd)) {
         printf("attempt read\n");
         count = recvfrom(sock3, &iqbuffer, sizeof(iqbuffer), 0, (struct sockaddr*)&server_addr3, &addr_len);
+   //     count = recvfrom(sock3, &iqbuffer2, sizeof(iqbuffer2), 0, (struct sockaddr*)&server_addr3, &addr_len);
         printf("bytes received:  %i\n",count);
+
+
+/*
+    for(int i=0;i<512;i++) {
+     printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val_int, iqbuffer2.flexDatSample[i].Q_val_int);
+     }
+*/
+
+
 	    time_t epoch = time(NULL);
 	//printf("unix time = %ld\n", epoch);
-        strncpy(iqbuffer.bufType,"RG",2);
+    //    strncpy(iqbuffer.bufType,"RG",2);
 	    iqbuffer.timeStamp = (double) epoch;
-        iqbuffer.channelCount = 2;  // probably duplicates functinoality in pihpsdr
-        iqbuffer.dval.bufCount = bufcount++;
+        iqbuffer.channelCount = 1;  // probably duplicates functinoality in pihpsdr
+   //     iqbuffer.dval.bufCount = bufcount++;
+        iqbuffer.channelNo = 0;
+        client_addr.sin_port = htons(LH_DATA_IN_port);
+
+
+
+        printf("forwarding bytes %i, count=%li\n",count,bufcount);
+        sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer, sizeof(iqbuffer), 0, (struct sockaddr*)&client_addr, sizeof(client_addr));
+        printf("port %i, bytes sent: %i \n",LH_DATA_IN_port, sentBytes); 
+
+        if(stopData)
+	    {
+         puts("UDP thread end; close socket");
+         close(sock3);
+	     pthread_exit(NULL);
+	    }
+
+      //      memcpy(buffer, IP_FOUND_ACK, strlen(IP_FOUND_ACK)+1);
+       //     count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr, addr_len);
+        
+      }
+    }
+
+  }
+
+}
+
+// thread to receive/forward packets from flexadapter
+void *sendData2(void *threadid) {
+ printf("Senddata2 thread start\n");
+  int yes = 1;
+ // struct sockaddr_in client_addr3;
+  struct sockaddr_in server_addr3;
+  int addr_len;
+  int count;
+  int ret;
+  long bufcount = 0;
+  int sentBytes = 0;
+  fd_set readfd;
+  //char buffer[9000];
+
+  sock3 = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock3 < 0) {
+    perror("sock1 error\n");
+     int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+  }
+
+  addr_len = sizeof(struct sockaddr_in);
+
+  memset((void*)&server_addr3, 0, addr_len);
+  server_addr3.sin_family = AF_INET;
+  server_addr3.sin_addr.s_addr = htons(INADDR_ANY);
+  server_addr3.sin_port = htons(UDPPORT);
+
+  ret = bind(sock3, (struct sockaddr*)&server_addr3, addr_len);
+  if (ret < 0) {
+    perror("UDP bind error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+  }
+  while (1) {
+    FD_ZERO(&readfd);
+    FD_SET(sock3, &readfd);
+    printf("read from port %i\n",UDPPORT);
+  //  ret = select(sock3, &readfd, NULL, NULL, 0);
+    ret = 1;
+  //  printf("ret = %i\n",ret);
+    if (ret > 0) {
+      if (FD_ISSET(sock3, &readfd)) {
+        printf("attempt read\n");
+        count = recvfrom(sock3, &iqbuffer2, sizeof(iqbuffer2), 0, (struct sockaddr*)&server_addr3, &addr_len);
+        printf("bytes received:  %i\n",count);
+
+/*
+    for(int i=0;i<512;i++) {
+     printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val_int, iqbuffer2.flexDatSample[i].Q_val_int);
+     }
+*/
+  
+
+
+
+	    time_t epoch = time(NULL);
+	//printf("unix time = %ld\n", epoch);
+        strncpy(iqbuffer.bufType,"FT",2);
+	    iqbuffer.timeStamp = (double) epoch;
+        iqbuffer.channelCount = 1;  // probably duplicates functinoality in pihpsdr
+      //  iqbuffer.dval.bufCount = bufcount++;
       //  iqbuffer.channelNo = 0;
         client_addr.sin_port = htons(LH_DATA_IN_port);
         printf("forwarding bytes %i, count=%li\n",count,bufcount);
@@ -288,6 +608,7 @@ void *sendData1(void *threadid) {
          close(sock3);
 	     pthread_exit(NULL);
 	    }
+
 
          //   memcpy(buffer, IP_FOUND_ACK, strlen(IP_FOUND_ACK)+1);
          //   count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr, addr_len);
@@ -408,8 +729,8 @@ void discoveryReply(char buffer[1024]) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
-int run_DE() {
-
+int *run_DE(void) 
+  {
   stoplink = 0;
   stopData = 0;
   stopft8 = 0;
@@ -420,65 +741,82 @@ int run_DE() {
   int ret;
   DE_CONF_IN_port = 50001;  //fixed port on which to receive config request (CC)
   DE_CH_IN_port = 50002;   // fixed port on which to receive channel setup req. (CH)
+
   fd_set readfd;
   char buffer[1024];
-  sock = socket(AF_INET, SOCK_DGRAM, 0);  // for initial discovery packet
-  if (sock < 0) {
-    perror("sock error\n");
-    return -1;
-    }
+
   sock1 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
   if (sock1 < 0) {
     perror("sock1 error\n");
-    return -1;
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
     }
   addr_len = sizeof(struct sockaddr_in);
   memset((void*)&server_addr, 0, addr_len);
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = htons(INADDR_ANY);
-  server_addr.sin_port = htons(PORT);
-  cmdport = PORT;  // this could be made to follow randomly chosen port
-  cmdport = DE_CONF_IN_port;
-  // bind to our port to listen on
-  ret = bind(sock, (struct sockaddr*)&server_addr, addr_len);
-  if (ret < 0) {
-    perror("bind error\n");
-    return -1;
-  }
+
 // set up for Port B reply
-  server_addr.sin_port = htons(DE_CONF_IN_port);
+  server_addr.sin_port = htons(CCport);
+ // server_addr.sin_port = CCport;
+  printf("DEmain, bind sock1 to %s port  %i (%i)\n",inet_ntoa(server_addr.sin_addr),ntohs(server_addr.sin_port),CCport);
   ret = bind(sock1, (struct sockaddr*)&server_addr, addr_len);
   if (ret < 0) {
     perror("bind error\n");
-    return -1;
-  }
-
-
-  while (1) {
-  
-  printf("Initialized; await discovery on port %d\n", PORT);
-
-    FD_ZERO(&readfd);
-    FD_SET(sock, &readfd);
-
-    ret = select(sock+1, &readfd, NULL, NULL, 0);
-    if (ret > 0) {
-      if (FD_ISSET(sock, &readfd)) {
-        count = recvfrom(sock, buffer, 1024, 0, (struct sockaddr*)&client_addr, &addr_len);
-        if((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
-	      fprintf(stderr,"discovery packet detected at startup point\n"); 
-      //    client_addr.sin_port = ntohs(DE_CONF_IN_port);  // temp test
-          LH_port = ntohs(client_addr.sin_port);
-
-          printf("\nClient connection information:\n\t IP: %s, Port: %d\n", 
-            inet_ntoa(client_addr.sin_addr), LH_port);
-	      buffer[10] = 0x07;
-// temp test of sending from Port B
-	      count = sendto(sock1, buffer, 60, 0, (struct sockaddr*)&client_addr,
-		            sizeof(client_addr));
-        }
-      }
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
     }
+
+
+    printf("awaiting CC to come in from port %u\n", CCport);
+    count = recvfrom(sock1, buffer, CCport , 0, (struct sockaddr*)&server_addr, &addr_len);
+   // LH_port = ntohs(client_addr.sin_port);
+    printf("command recd %c%c %x %x %x %x from port %d, bytes=%d\n",buffer[0],buffer[1],buffer[2],buffer[3],buffer[4],buffer[5], LH_port,count);
+
+    if(strncmp(buffer, CREATE_CHANNEL ,2) == 0)
+      {
+
+  //    CONFIGBUF myConfigBuf;
+
+      memcpy(d.mybuf1, buffer, 6);
+
+      printf("CREATE CHANNEL RECD, cmd = %s, port C = %hu, port F = %hu \n",
+          d.myConfigBuf.cmd, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+
+      LH_CONF_IN_port = d.myConfigBuf.configPort;
+    
+      LH_DATA_IN_port = d.myConfigBuf.dataPort;
+
+      sock = socket(AF_INET, SOCK_DGRAM, 0);  // set up for sending to port F
+      addr_len = sizeof(struct sockaddr_in);
+      memset((void*)&portF_addr, 0, addr_len);
+      portF_addr.sin_family = AF_INET;
+      portF_addr.sin_addr.s_addr = htons(LH_IP);
+      portF_addr.sin_port = htons(LH_DATA_IN_port);
+      ret = bind(sock, (struct sockaddr*)&portF_addr, addr_len);
+
+      client_addr.sin_port = htons(LH_port);  // this may wipe desired port
+
+      strncpy(d.myConfigBuf.cmd, "AK", 2);
+      d.myConfigBuf.configPort = DE_CONF_IN_port;
+      d.myConfigBuf.dataPort = DE_CH_IN_port;  // this is Port E (mic data) currently unsupported
+
+
+      count = sendto(sock1, d.mybuf1, sizeof(d.myConfigBuf), 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("response AK %i %i = %d  sent to ", d.myConfigBuf.configPort, d.myConfigBuf.dataPort ,count);
+      printf(" IP: %s, Port: %d\n", 
+      inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+     cmdport = DE_CONF_IN_port;  // all further commands come in here
+	//  continue;
+
+      }
+  
+
 
   puts("Now starting command processing loop");
 
@@ -505,11 +843,32 @@ int run_DE() {
       inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 	  continue;
 	  }
+
+
     if(strncmp(buffer, CONFIG_CHANNELS,2) == 0)
       {
-      puts("CONFIG_CHANNEL received at wrong port");
+      memcpy(cb.configBuffer,buffer,sizeof(buffer));
+      printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
+      noOfChannels = cb.chBuf.activeChannels;
+      dataRate = cb.chBuf.channelDatarate;
+      printf("active channels: %i, rate = %i\n", noOfChannels, dataRate);
+      for (int i=0; i < noOfChannels; i++) 
+        {
+        if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
+          continue;
+        else
+          printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
+          cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
+      }
+  
+    client_addr.sin_port = htons(LH_CONF_IN_port ); 
+
+    count = sendto(sock, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+    printf("response = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port) ;
       continue;
       }
+
+
 
     if(strncmp(buffer, "R?",2) == 0)   // Request for list of data rates
      {
@@ -557,7 +916,7 @@ int run_DE() {
    //     {
    //      puts("Command channel already set up; ignoring");
   //       continue;
-  //      }
+  //      }int argc, char** argv)
       LH_CONF_IN_port = d.myConfigBuf.configPort;
     
       LH_DATA_IN_port = d.myConfigBuf.dataPort;
@@ -566,7 +925,28 @@ int run_DE() {
       strncpy(d.myConfigBuf.cmd, "AK", 2);
       d.myConfigBuf.configPort = DE_CONF_IN_port;
       d.myConfigBuf.dataPort = DE_CH_IN_port;  // this is Port E (mic data) currently unsupported
+ ret = 1;
+ //while(1==1) {  // repeating loop
+  if(ret > 0){
+   if (FD_ISSET(sock, &readfd)){
+  //  printf("try read\n");
+    count = recvfrom(sock, &iqbuffer, sizeof(iqbuffer),0, (struct sockaddr*)&flex_addr, &addr_len);
+    printf("bytes received = %i\n",count);
+    printf("VITA header= %x %x\n",iqbuffer2.VITA_hdr1[0],iqbuffer2.VITA_hdr1[1]);
+    printf("stream ID= %x%x%x%x\n", iqbuffer2.stream_ID[0],iqbuffer2.stream_ID[1], iqbuffer2.stream_ID[2],iqbuffer2.stream_ID[3]);
 
+    printf("timestamp = %i \n",iqbuffer2.time_stamp/16777216);
+    for(int i=0;i<512;i++) {
+     printf("%f %f \n",iqbuffer2.flexDataSample[i].I_val,iqbuffer2.flexDataSample[i].Q_val);
+     }
+    printf("\n");
+  //  FILE * fptr;
+  //  fptr = fopen("sampleIQ.dat","wb");
+  //  fwrite(&iqbuffer,sizeof(iqbuffer),1,fptr);
+    //close(fptr);
+    }
+ // }  // end of repeating loop
+ }
       long c = 100;   // thread ID for config thread
       long ch = 200;  // thread ID for ch thread
  //     pthread_t configthread;
@@ -592,22 +972,42 @@ int run_DE() {
       rc = pthread_create(&chthread, NULL, awaitCH, (void *)ch);
 */
 
-
 	  continue;
 
       }
+
     if(strncmp(buffer, "UL",2) == 0)
 	  {  // future function for allowing LH to drop its link to this DE
 	  printf("stoplink\n");
 	  stoplink = 1;
 	  continue;
 	  }
+
     if(strncmp(buffer, "XC",2)==0)
 	  {
 	  printf("Main loop stopping data acquisition\n");
-	  stopData = 1;
+	  stopDataColl = 1;
 	  continue;
 	  }
+
+
+
+//       for getting flex FT 8 data
+    if(strncmp(buffer, "SF",2)==0)  // Flex data
+     {
+      printf("Start FlexRadio / FT8 command received; starting thread\n");
+      stopft8 = 0;
+      pthread_t thread1;
+      int rc = pthread_create(&thread1, NULL, sendFT8flex, NULL);
+
+
+      continue;
+     }
+
+
+
+ 
+
     if(strncmp(buffer, "SF",2)==0)
       {
       if (ft8active)
@@ -650,24 +1050,28 @@ int run_DE() {
    //   int rc = pthread_create(&ft8thread, NULL, sendFT8, (void*)j);
       continue;
       }
+
     if(strncmp(buffer, "XF",2)==0)
       {
       printf("Stop FT8 command received\n");
       stopft8 = 1;
       continue;
       }
+
     if(strncmp(buffer, "XX",2)==0)
 	  {
 	  printf("HALTING\n");
 	  return 0;
 	  }
+
     if(strncmp(buffer, "SC",2)==0)
 	  {
 	  puts("starting sendData");
-	  stopData = 0;
+	  stopDataColl = 0;
   	  long j = 1;
   	  pthread_t datathread;
-  	  int rc = pthread_create(&datathread, NULL, sendData1, (void *)j);
+ // 	  int rc = pthread_create(&datathread, NULL, sendData1, (void *)j);
+  	  int rc = pthread_create(&datathread, NULL, sendFlexData, (void *)j);
   	  printf("thread start rc = %d\n",rc);
 	  printf("SEND ACK to port %u\n",LH_CONF_IN_port);
       client_addr.sin_port = htons(LH_CONF_IN_port);  // this may wipe desired port
@@ -692,15 +1096,39 @@ int run_DE() {
 
     }  // end of control loop
 
-  } // end of discovery loop
+  //} // end of discovery loop
 }
 
-int main() {
- while(1)
+int main(int argc, char** argv) {
+ //while(1)
  {
- printf("Starting DE\n");
- int r = run_DE();
- printf("DE exited, rc = %i; closing sockets & threads\n", r);
+// arguments are:
+//  1 - port B
+//  2 - IP addr of LH
+//  3 - port A
+ printf("Starting DEmain; port B = %s\n",argv[1]);
+
+
+/*
+  	  pthread_t datathread;
+      int j = 321;
+  	  int rc = pthread_create(&datathread, NULL, sendData1, (void *)j);
+  	  printf("thread start rc = %d\n",rc);
+
+*/
+
+
+
+
+// port on which to await CC   (create channel request)
+ CCport = atoi(argv[1]);  // port B
+ LH_port = ntohs(atoi(argv[3]));
+ inet_pton(AF_INET, argv[2], &client_addr.sin_addr);  // LH IP addr
+ inet_pton(AF_INET, argv[2], &LH_IP);
+ client_addr.sin_port = LH_port;  // port A
+ 
+ int *r =  run_DE();
+ printf("DE exited, rc = %i; closing sockets & threads\n", *r);
  close(sock);
  close(sock1);
  close(sock2);

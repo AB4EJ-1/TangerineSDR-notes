@@ -827,25 +827,28 @@ static void process_ozy_input_buffer(unsigned char  *buffer) {
 
         left_sample_double=(double)left_sample/8388607.0; // 24 bit sample 2^23-1
         right_sample_double=(double)right_sample/8388607.0; // 24 bit sample 2^23-1
-
-        iqbuffer.theDataSample[sampleCounter].I_val = left_sample_double;
-        iqbuffer.theDataSample[sampleCounter].Q_val = right_sample_double;
-        sampleCounter++;
+        // if we only want samples from the first slice, put following if statement in
+        if (r==0)   // comment this out to collect both slices (NOTE! also CHANGE CHANNELCOUNT!! )
+         {
+          iqbuffer.theDataSample[sampleCounter].I_val = right_sample_double;  // was left_sample_double; 
+          iqbuffer.theDataSample[sampleCounter].Q_val = left_sample_double;
+          sampleCounter++;
       
-        if (sampleCounter > 1023)
-         {  // here write out buffer
+          if (sampleCounter > 1023)
+           {  // here write out buffer
 
         //  fprintf(stderr,"reached code\n");
-         // memcpy(iqbuffer.bufType, "RP");
+           memcpy(iqbuffer.bufType, "RG",2);
+           iqbuffer.channelCount = 1;  // set to 1 for single channel
           
        //   const char* message = "Here is UDP packet!";
          // int len = strlen(iqbuffer);
-          int bytes_sent = sendto(fd, &iqbuffer, sizeof(iqbuffer), 0, (struct sockaddr *) &addr, sizeof(addr));
+            int bytes_sent = sendto(fd, &iqbuffer, sizeof(iqbuffer), 0, (struct sockaddr *) &addr, sizeof(addr));
 
 
-          sampleCounter = 0; // reset to start of buffer
-         }
- 
+           sampleCounter = 0; // reset to start of buffer
+           }
+          }
 
 
 /*
