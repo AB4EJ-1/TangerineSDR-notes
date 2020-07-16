@@ -301,7 +301,7 @@ def restart():
 # ringbuffer setup
    ringbufferPath =    parser['settings']['ringbuffer_path']
    ringbufferMaxSize = parser['settings']['ringbuffer_max_size']
-   rcmd = 'drf ringbuffer -z ' + ringbufferMaxSize + ' -v ' + ringbufferPath + ' &'
+   rcmd = 'drf ringbuffer -z ' + ringbufferMaxSize + ' -p 120 -v ' + ringbufferPath + ' &'
 # spin off this process asynchornously (notice the & at the end)
    returned_value = os.system(rcmd)
    print("ringbuffer control activated")
@@ -920,7 +920,7 @@ def ft8list():
     ft8string = ft8string + '"end":" "}'
   #  print("ft8string= " , ft8string)
   except Exception as ex:
-    print(ex)
+#    print(ex)
 # no-op
     z=1
 
