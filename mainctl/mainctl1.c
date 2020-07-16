@@ -199,6 +199,7 @@ double dialfreq[8];  // array of dial frequencies for FT8
 int ft8active[8];    // flag to indicate if a given ft8 channel is collecting data
 int ft8counter[8];   // counter of how many ft8 samples saved in this collection period
 int inputcount[8];   // temporary, to reduce sample rate
+float chfrequency[8];
 
 
 // Set up memory to handle data traffic passing via libuv asynchronous calls
@@ -470,6 +471,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
   {
+  printf("Buffer received, size=%li\n",nread);
   int channelPtr;
   if(nread == 0 )
     { 
@@ -479,10 +481,17 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     }
 
 
+  VITABUF *buf_ptr1;  // TODO: fix FT8 code to use this memory & elim. FT8dataBuf & DATABUF
+  buf_ptr1 = (VITABUF *)malloc(sizeof(VITABUF));  // allocate memory for working buf
+  memcpy(buf_ptr1, buf->base, nread);
+  printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
+  
+/*
   DATABUF *buf_ptr;
   buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
   memcpy(buf_ptr, buf->base, nread);    // get data from UDP buffer
  // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
+*/
 
 
 
@@ -494,22 +503,22 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
 // code update for handing data in VITA format
 
-  if(buf_ptr->bufType[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
+  if(buf_ptr1->VITA_hdr1[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
     {
-    struct VITAdataBuf FT8dataBuf;
+  //  struct VITAdataBuf FT8dataBuf;
 
     char FT8sig[2] = "FT";
 
 // TODO: this copy can be eliminated
-    memcpy(&FT8dataBuf, buf->base, nread);
+ //   memcpy(&FT8dataBuf, buf->base, nread);
 
   /////////////  If this is FT8 data, process it  /////////////////
 #define FT8FSIZE 236000
-    if(memcmp(FT8dataBuf.stream_ID,FT8sig,2) == 0)  
+    if(memcmp(buf_ptr1->stream_ID,FT8sig,2) == 0)  
      {
   //   printf("FT8 buffer ");
    // the 4th byte of stream ID is a binary 0, 1, 2, 3 etc
-     int streamID = FT8dataBuf.stream_ID[3];   // this is stream ID (may change)
+     int streamID = buf_ptr1->stream_ID[3];   // this is stream ID (may change)
      int idialfreq = (int)(1000000.0 * dialfreq[streamID]);
    //  printf("streamID = %i\n",streamID);
      if(ft8active[streamID] == 0)  // this ft8 stream is not yet active
@@ -519,12 +528,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        time(&rawtime);
        info = gmtime(&rawtime);
        int seconds = info->tm_sec;
-       printf("FT8 will start in = %i seconds\r",60-seconds);
+       if(seconds > 0)
+         printf("FT8 will start in = %i seconds\r",60-seconds);
 
        if(seconds != 0)  // check if exact top of minute
          {
 		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
+		//  free(buf_ptr);
+          free(buf_ptr1);
           return;    // we are not at exact top of minute; discard data and wait
          }
        ft8active[streamID] = 1;   // mark this ft8 stream as active
@@ -542,7 +553,8 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
          { fprintf(stderr,"Could not open file %s \n",name[streamID]);
 		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
+		//  free(buf_ptr);
+          free(buf_ptr1);
           return;
          }
        double dialfreq1 = dialfreq[streamID];
@@ -559,7 +571,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
          if((inputcount[streamID] % 12) != 0)  // reduce sample rate
           continue;    // TODO: Tangerine DE will do correct decimation; remove this
 
-         IQval = FT8dataBuf.theDataSample[i].I_val + (FT8dataBuf.theDataSample[i].Q_val * I);
+         IQval = buf_ptr1->theDataSample[i].I_val + (buf_ptr1->theDataSample[i].Q_val * I);
          IQval = IQval / 1000000.0;  // experimental; TODO: remove this
          fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
          ft8counter[streamID]++;
@@ -570,7 +582,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
              {
              free(buf->base);
-             free(buf_ptr);
+           //  free(buf_ptr);
              return;
              }
            IQval = 0.0 + (0.0 * I);
@@ -604,16 +616,17 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            // Note: this assumes that decoder (ft8d_del) deletes work file when done.
            }
          }
-     }
+     
     free(buf->base);
-    free(buf_ptr);
+  //  free(buf_ptr);
+    free(buf_ptr1);
     return;
+     }
     }
 
 
-
-
-//////////   original code    //////////////
+/*
+//////////   original FT8 code, which uses simlated data    //////////////
   if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
     {
        double dialfreq = buf_ptr->centerFreq;
@@ -657,35 +670,42 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	return; 
     }  // end of code for handling incoming FT8 data
 
-
+*/
 
 /////////////////// Handling RG (ringbuffer - type data ///////////////
 
 // TODO: temporary until we find out what is zeroing out channelCount    * * * * * *
-  buf_ptr->channelCount = 1;
+//  buf_ptr->channelCount = 1;
 
+ // if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
 
-  if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
-  {
+// is this a VITA buffer, plus also streamID[0-1] = "RG" ?
+// TODO: bufType may be different for VITA-T Tangerine buffers
+  printf("Handle incoming buffer\n");
+  if(buf_ptr1->VITA_hdr1[0] == 0x1c && buf_ptr1->stream_ID[0] == 0x52 && buf_ptr1->stream_ID[1] == 0x47)
+   {
+   printf("buffer# %li\n",buffers_received);
    buffers_received++;
-
+   int bufferChannels = buf_ptr1->stream_ID[2];  // number of channels embedded in payload
+// Note above: could use either streamID byte [2] or byte [3] for this
    if (nread < 8000)  // discard this buffer for now 
 	{
 	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
 	 free(buf->base);  // always release memory before exiting this callback
-     free (buf_ptr);
+  //   free (buf_ptr);
+     free(buf_ptr1);
 	 return; 
 	}
 
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     { 
     int numSamples = 1024 / numchannels;  // how many IQ pairs in this buffer  
-    for(int j=0; j < numSamples; j=j+buf_ptr->channelCount)  // iteration based on # channels running  
+    for(int j=0; j < numSamples; j=j+numchannels)  // iteration based on # channels running  
       {
           for (int i = 0; i < numchannels; i++)  
            {
           //  printf("value %i %f ",j, buf_ptr->theDataSample[j+i].I_val);
-            spectrumPackage[i].FFT_data[snapcount] = buf_ptr->theDataSample[j+i].I_val + buf_ptr->theDataSample[j+i].Q_val * I; ;
+            spectrumPackage[i].FFT_data[snapcount] = buf_ptr1->theDataSample[j+i].I_val + buf_ptr1->theDataSample[j+i].Q_val * I; ;
            }
          snapcount++;
       }    
@@ -701,7 +721,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        {
        printf(" \n");
        printf("start thread %i\n",i);
-       spectrumPackage[i].centerFrequency = buf_ptr->centerFreq;
+       spectrumPackage[i].centerFrequency = chfrequency[i];
        uv_thread_create(&analyzethread[i], FFTanalyze, &spectrumPackage[i]);    
        printf("join thread %i\n",i);
        uv_thread_join(&analyzethread[i]);
@@ -715,7 +735,8 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     if(!ringbufferMode)
       {
 	   free(buf->base);  // always release memory before exiting this callback
-	   free(buf_ptr);
+	 //  free(buf_ptr);
+       free(buf_ptr1);
        return;
       } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
     }
@@ -725,12 +746,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // handle I/Q buffers coming in for storage to Digital RF
 
     {
-    packetCount = (long) buf_ptr->dval.bufCount;
- //   printf("bufcount = %ld\n", packetCount);
-    if(buf_ptr->channelCount != numchannels)
-      printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",buf_ptr->channelCount, numchannels);
-    int noOfChannels = numchannels;
-    int sampleCount = 1024 / noOfChannels;
+    packetCount = (long) buf_ptr1->sample_count;
+    printf("bufcount = %ld\n", buf_ptr1->sample_count);
+    if(bufferChannels != numchannels)
+      printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",bufferChannels, numchannels);
+//    int noOfChannels = numchannels;
+    int sampleCount = 1024 / numchannels;
  //   printf("Channel count = %i\n",buf_ptr->channelCount);
 
   /* local variables  for Digital RF */
@@ -741,10 +762,11 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // we also check buffers_received, so we can start recording even if we missed
 // one or more buffers at start-up.
 
-  global_start_sample = buf_ptr->timeStamp * (long double)sample_rate_numerator /  
+  global_start_sample = buf_ptr1->time_stamp * (long double)sample_rate_numerator /  
                  SAMPLE_RATE_DENOMINATOR;
 
-  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
+  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) 
+    {
     char cleanup[100]="";
     sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
     printf("deleting old propeties file: %s\n",cleanup);
@@ -762,7 +784,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
+     "TangerineSDR", 0, 0, 1, bufferChannels, 1, 1);
       }
 
 // here we write out DRF
@@ -773,16 +795,16 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
 
-      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,sampleCount) ;
-	//  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
+      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr1->theDataSample,sampleCount) ;
+	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
 
     hdf_i++;  // increment count of hdf buffers processed
 
-    free (buf_ptr);  // free the work buffer
+   // free (buf_ptr);  // free the work buffer
     }
   }
-
+  free(buf_ptr1);
   free(buf->base);  // free the callback buffer
   return;  // end of callback for handling incoming I/Q data
   }
@@ -1143,6 +1165,21 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
         spectrumPackage[i].channelNo = i;
         spectrumPackage[i].p = fftwf_plan_dft_1d(FFT_N, spectrumPackage[i].FFT_data, spectrumPackage[i].FFT_data, FFTW_FORWARD, FFTW_ESTIMATE);
         printf("plans created for fft %i\n",i);
+        // now get the frequency for each channel
+        char channelSelect[5];
+        sprintf(channelSelect,"f%i",i);
+
+        num_items = rconfig(channelSelect,configresult,0);
+        if(num_items == 0)
+          {
+          printf("ERROR - frequency config setting %s not found in config.ini\n", channelSelect);
+          }
+        else
+          {
+          printf("channel %i frequency CONFIG RESULT = '%s'\n",i,configresult);
+          chfrequency[i]= atof(configresult);
+          } 
+
         }
        FFTmemset = 1; // indicate that memory is allocated
       }

@@ -9,7 +9,7 @@ test_value = T123
 
 [settings]
 mode = ringbuffer
-ringbuffer_path = /media/usb0/hdf5
+ringbuffer_path = /mnt/RAM_disk/FT8
 ringbuffer_max_size = 1GB
 ramdisk_path = /mnt/RAM_disk
 fftoutput_path = /home/odroid/share1

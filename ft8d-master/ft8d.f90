@@ -14,8 +14,8 @@ program ft8d
   logical newdat,lft8apon,lsubtract,ldupe
   integer allsnrs(100)
   integer apsym(KK)
-  character(len=75) :: fname
-  character(len=20) :: command
+
+  character(len=100) :: command
 
   nargs=iargc()
   if(nargs.ne.1) then
@@ -35,9 +35,8 @@ program ft8d
   date=infile(j2-11:j2-6)
   time=infile(j2-4:j2-1)
 
-  call getarg(1,fname)
-  command = "rm " // fname
-  print *,command
+  command = "rm " // infile
+!  print*,command
   call system (command)
   do ipart=1,4
     nQSOProgress=0
