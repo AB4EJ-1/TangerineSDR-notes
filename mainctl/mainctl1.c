@@ -459,7 +459,6 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
   fclose(fftfp);
 
-
 }
 
 
@@ -471,7 +470,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
   {
-  printf("Buffer received, size=%li\n",nread);
+  //printf("Buffer received, size=%li\n",nread);
   int channelPtr;
   if(nread == 0 )
     { 
@@ -480,22 +479,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	  return;
     }
 
-
-  VITABUF *buf_ptr1;  // TODO: fix FT8 code to use this memory & elim. FT8dataBuf & DATABUF
+  VITABUF *buf_ptr1;  
   buf_ptr1 = (VITABUF *)malloc(sizeof(VITABUF));  // allocate memory for working buf
   memcpy(buf_ptr1, buf->base, nread);
-  printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
+  free(buf->base);  // now that we have a copy of this, free the orginial
+  //printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
   
-/*
-  DATABUF *buf_ptr;
-  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-  memcpy(buf_ptr, buf->base, nread);    // get data from UDP buffer
- // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
-*/
-
-
-
- // printf("UDP I/Q data recvd, bytes = %ld; type=%s; channelcount=%i\n", nread,buf_ptr->bufType, buf_ptr->channelCount);
 
 /////////////////////////////////////////////////////////
 ////  start of handling incoming I/Q data //////////////
@@ -508,9 +497,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   //  struct VITAdataBuf FT8dataBuf;
 
     char FT8sig[2] = "FT";
-
-// TODO: this copy can be eliminated
- //   memcpy(&FT8dataBuf, buf->base, nread);
 
   /////////////  If this is FT8 data, process it  /////////////////
 #define FT8FSIZE 236000
@@ -533,8 +519,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
        if(seconds != 0)  // check if exact top of minute
          {
-		  free(buf->base);  // always release memory before exiting this callback
-		//  free(buf_ptr);
           free(buf_ptr1);
           return;    // we are not at exact top of minute; discard data and wait
          }
@@ -552,8 +536,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        printf("create raw data FT8 file %s\n",name[streamID]);
        if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
          { fprintf(stderr,"Could not open file %s \n",name[streamID]);
-		  free(buf->base);  // always release memory before exiting this callback
-		//  free(buf_ptr);
           free(buf_ptr1);
           return;
          }
@@ -581,8 +563,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            {
            if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
              {
-             free(buf->base);
-           //  free(buf_ptr);
+             free(buf_ptr1);
              return;
              }
            IQval = 0.0 + (0.0 * I);
@@ -617,82 +598,25 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            }
          }
      
-    free(buf->base);
-  //  free(buf_ptr);
     free(buf_ptr1);
     return;
      }
     }
 
 
-/*
-//////////   original FT8 code, which uses simlated data    //////////////
-  if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
-    {
-       double dialfreq = buf_ptr->centerFreq;
-       channelPtr = buf_ptr-> channelNo;
-       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->dval.bufCount);
-       if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
-       {
-        t = time(NULL);
-        if((gmt = gmtime(&t)) == NULL)
-          { fprintf(stderr,"Could not convert time\n"); }
-        strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[channelPtr], "%s/FT8/ft8_%d_%f_%d_%s.c2", pathToRAMdisk, 1, buf_ptr->centerFreq,1,date);
-       if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
-        { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
-		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
-          return;
-        }
-       fwrite(&dialfreq, 1, 8, fp[channelPtr]);
-      }
-      fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
-      if (buf_ptr->dval.bufCount == 239 )   // was this the last buffer?
-        {
-        fclose(fp[channelPtr]);
-        char chstr[2];
-        sprintf(chstr,"%d",channelPtr);
-        char mycmd[100];
-        strcpy(mycmd, "./ft8d ");
-        strcat(mycmd,name[channelPtr]);
-        strcat(mycmd," > ");
-        strcat(mycmd,pathToRAMdisk);
-        strcat(mycmd, "/FT8/decoded");
-        strcat(mycmd, chstr);
-        strcat(mycmd, ".txt &");
-        printf("issue command: %s\n",mycmd);
-        int ret = system(mycmd);
-        puts("ft8 decode ran");
-        }
-	free(buf->base);  // always release memory before exiting this callback
-    free (buf_ptr);
-	return; 
-    }  // end of code for handling incoming FT8 data
-
-*/
-
 /////////////////// Handling RG (ringbuffer - type data ///////////////
 
-// TODO: temporary until we find out what is zeroing out channelCount    * * * * * *
-//  buf_ptr->channelCount = 1;
 
- // if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
-
-// is this a VITA buffer, plus also streamID[0-1] = "RG" ?
-// TODO: bufType may be different for VITA-T Tangerine buffers
-  printf("Handle incoming buffer\n");
+  //printf("Handle incoming buffer\n");
   if(buf_ptr1->VITA_hdr1[0] == 0x1c && buf_ptr1->stream_ID[0] == 0x52 && buf_ptr1->stream_ID[1] == 0x47)
    {
-   printf("buffer# %li\n",buffers_received);
+   //printf("buffer# %li\n",buffers_received);
    buffers_received++;
    int bufferChannels = buf_ptr1->stream_ID[2];  // number of channels embedded in payload
 // Note above: could use either streamID byte [2] or byte [3] for this
    if (nread < 8000)  // discard this buffer for now 
 	{
-	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
-	 free(buf->base);  // always release memory before exiting this callback
-  //   free (buf_ptr);
+	 fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
      free(buf_ptr1);
 	 return; 
 	}
@@ -734,8 +658,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // we are done with snapshotter handing of this buffer; if user doesn't want ringbuffer also, free memory & exit
     if(!ringbufferMode)
       {
-	   free(buf->base);  // always release memory before exiting this callback
-	 //  free(buf_ptr);
        free(buf_ptr1);
        return;
       } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
@@ -805,7 +727,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     }
   }
   free(buf_ptr1);
-  free(buf->base);  // free the callback buffer
   return;  // end of callback for handling incoming I/Q data
   }
 
