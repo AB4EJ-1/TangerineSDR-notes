@@ -90,6 +90,11 @@ def send_to_mainctl(cmdToSend,waitTime):
   try:
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#    Settings to keep TCP port from disconnecting when not used for a while
+     tcp_client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE,1)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 15)
     # Establish connection to TCP server and exchange data
      print("F: *** WC: *** connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
@@ -950,7 +955,7 @@ def ft8list():
     ib = "ftant" + str(i)
     if(parser['settings'][ib] != "Off"):
       band.append(parser['settings'][ia])
-      print("ft8 band list=" + band[i])
+ #     print("ft8 band list=" + band[i])
 
   try:
     plist = []

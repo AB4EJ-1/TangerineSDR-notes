@@ -171,8 +171,8 @@ uv_loop_t *loop;
 static uv_tcp_t* DEsocket; // socket to be used across multiple functions
 static uv_stream_t* DEsockethandle;
 
-// the following probably not necessary  (TODO)
-static uv_tcp_t* websocket; // socket to be used for comm to web server
+
+static uv_tcp_t* socket_central; // socket to be used for comm to Central Control
 //static uv_stream_t* websockethandle;
 static uv_udp_t send_socket;
 static uv_udp_t data_socket;
@@ -181,7 +181,7 @@ static uv_stream_t* webStream;
 
 struct sockaddr_in send_addr;         // used for sending commands to DE
 struct sockaddr_in recv_addr;         // for command replies from DE (ACK, NAK)
-struct sockaddr_in send_config_addr;  //used for sending config req (CH) to DE
+struct sockaddr_in send_config_addr;  // used for sending config req (CH) to DE
 struct sockaddr_in recv_config_addr;  // for config replies from DE
 struct sockaddr_in recv_data_addr;    // for data coming from DE
 
@@ -334,7 +334,7 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 /////////////////////////////////////////////////////////////////
 //////////  forward a status message from DE to webcontrol
 //////////////////////////////////////////////////////////////////
-  puts("process_command triggered; set up uv_write_t");
+  puts("DE status message triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
   uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
@@ -669,7 +669,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     {
     packetCount = (long) buf_ptr1->sample_count;
-    printf("bufcount = %ld\n", buf_ptr1->sample_count);
+  //  printf("bufcount = %ld\n", buf_ptr1->sample_count);
     if(bufferChannels != numchannels)
       printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",bufferChannels, numchannels);
 //    int noOfChannels = numchannels;
@@ -718,12 +718,11 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	  {
 
       result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr1->theDataSample,sampleCount) ;
-	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
+	//  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
 
     hdf_i++;  // increment count of hdf buffers processed
 
-   // free (buf_ptr);  // free the work buffer
     }
   }
   free(buf_ptr1);
@@ -832,8 +831,8 @@ void recv_port_check() {
 // callback for when a command is received from webcontroller
 /////////////////////////////////////////////////////////////////
 
-void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
-  puts("process_command routine triggered\n");
+void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
+  puts("process_local_command routine triggered\n");
   if(nread == -4095)  // TODO: this seems to be junk coming from flask app (?) - need to fix
 	{ puts("ignore 1 buffer"); return;
 	}
@@ -1249,6 +1248,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   }
 
 
+
 /////////////////////////////////////////////////////////////////
 // callback for when a connection from webcontroller is received
 ////////////////////////////////////////////////////////////////
@@ -1260,7 +1260,7 @@ void on_new_connection(uv_stream_t *server, int status) {
   uv_tcp_t *client = (uv_tcp_t*) malloc(sizeof(uv_tcp_t));
   uv_tcp_init(loop, client);
   if (uv_accept(server, (uv_stream_t*) client) == 0) {
-    uv_read_start((uv_stream_t*) client, alloc_buffer, process_command);
+    uv_read_start((uv_stream_t*) client, alloc_buffer, process_local_command);
     webStream = (uv_stream_t*) client;  // save stream object for replies to webserver
   }
   else {
@@ -1603,6 +1603,18 @@ void *dataUpload(void *threadid) {
 
 }
 
+////////////////////////////////////////////////////////////////////
+/////  callback for when command from central control received /////
+////////////////////////////////////////////////////////////////////
+void process_central_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
+  puts("process_central_command routine triggered\n");
+
+
+
+free(buf->base);
+}
+
+
 
 ////////////// Heartbeat to Central Host ////////////////////
 
@@ -1720,6 +1732,11 @@ while(1==1)  // heartbeat loop
   total = sizeof(response)-1;
   received = 0;
   do {
+
+// TODO: this code here is buggy - leads to overwriting heap
+// appears to contain illogical pointer arithmetic
+// IDEA: convert this to use libuv TCP
+
    bytes = read(sockfd,response+received,total-received);
    if (bytes < 0)
     printf("M: Heartbeat - ERROR reading response from socket\n");
@@ -1893,8 +1910,79 @@ void testUploadThread(){
   printf("M: join complete\n");
 }
 
+/////////////  callback for responses coming from Central Control /////////
+void proc_central_response(uv_stream_t *central, ssize_t nread, const uv_buf_t *buf) 
+  {
+  printf("RESPONSE from Central Control; nread=%li\n",nread);
+  if (nread > 0) {
+     
+     // uv_write_t *req = (uv_write_t*) malloc(sizeof(write_req_t));
+     // req->buf = uv_buf_init(buf->base, nread);
+   //   uv_write((uv_write_t*) req, central, &req->buf, 1, echo_write);
+   //   return;
+    }
+  if (nread < 0) {
+      if (nread != UV_EOF)
+          fprintf(stderr, "Read error %s\n", uv_err_name(nread));
+    // TODO: need graceful exit if error here
+    //  uv_close((uv_handle_t*) central, on_close);
+    }
 
-//////////////////////////////////////////////////////
+  free(buf->base);
+  }
+
+void central_write_cb(uv_write_t* req, int status)
+  {
+  printf("- - - - Central write cb status = %i\n",status);
+  free(req);
+  }
+
+
+//////////// callback for when we connect to Central Control System/////////
+
+void on_central_connect(uv_connect_t* connection, int status)
+  {
+  uv_stream_t* stream;
+  uv_write_t write_req;
+  printf("Connected to Central Control\n");
+  if (status < 0) {
+     fprintf(stderr, "Error in in connecting to Central Control %s\n", uv_strerror(status));
+        // error!
+      return;
+    }
+     printf(" - - - - ping central - - - ;\n");
+ //   socket_central = connection->handle;
+ //   uv_stream_t stream_handle = *connection->handle;
+    stream = connection->handle;
+    uv_buf_t buf =uv_buf_init("POST /apikey/12345-Z HTTP/1.0\r\n\r\n",33);
+    int r1 = uv_write(&write_req, stream, &buf, 1, central_write_cb);
+/*
+    uv_tcp_t *central = (uv_tcp_t*) malloc(sizeof(uv_tcp_t));
+    uv_tcp_init(loop, central);
+  //  if (uv_accept(server, (uv_stream_t*) client) == 0) 
+   //   {
+      uv_read_start((uv_stream_t*) central, alloc_buffer, proc_central_response);
+   //   }
+
+     uv_write_t *req = (uv_write_t*) malloc(sizeof(uv_write_t));
+   //  req->buf = uv_buf_init(buf->base, nread);
+     char b[60];
+  //   char c[10] = "apikey";
+     sprintf(b,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n","12345","Z");
+     const uv_buf_t a[] = {{.base = b, .len = strlen(b)}};
+   //  strcpy(b,c);
+  //   uv_write((uv_write_t*) req, central, a, 1, NULL);
+  //   uv_write(&req, (uv_stream_t*) central, a, 1, NULL);
+     printf(" - - - - ping central - - - ;\n");
+     uv_write((uv_write_t*) req, (uv_stream_t*) central, a, 1, central_write_cb);
+  //   uv_write((uv_write_t*) req, (uv_stream_t*) central, &req->bufs, 1, echo_write);
+*/
+  }
+
+
+//////////////////////////////////////////////////////////////////////////
+///////////  Built-in Unit Tests
+/////////////////////////////////////////////////
 int run_all_tests()
 {
   {
@@ -2155,7 +2243,7 @@ int main(int argc, char *argv[]) {
   uv_tcp_t server;
   uv_tcp_init(loop, &server);
   struct sockaddr_in bind_addr;
-  uv_ip4_addr("0.0.0.0", 6100, &bind_addr);
+  uv_ip4_addr("0.0.0.0", 6100, &bind_addr);  // TODO: make configurable
   puts("Bind to input (terminal) port for listening");
   uv_tcp_bind(&server, (struct sockaddr *)&bind_addr, 0);
   int r = uv_listen((uv_stream_t*) &server, 128, on_new_connection);
@@ -2163,7 +2251,21 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "TCP Listen error!\n");
   //  return 1;
     }
+
+// Set up to listen on TCP port for responses coming from Central Control
+// These may be simple response to heartbeat packets, or may also contain
+// a data request for uploa of Ringbuffer data
+
+  printf("CONNECT TO CENTRAL\n");
+  socket_central = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
+  uv_tcp_init(loop, socket_central);
+  uv_connect_t* connect = (uv_connect_t*)malloc(sizeof(uv_connect_t));
+  struct sockaddr_in central_dest;
+  uv_ip4_addr("192.168.1.67", 5000, &central_dest);
+  uv_tcp_connect(connect, socket_central, (const struct sockaddr*)&central_dest, on_central_connect);
   
+
+///////////////////
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
@@ -2229,9 +2331,9 @@ int main(int argc, char *argv[]) {
 
     int hbrc = 0;
     long h;
-    pthread_t hbthread;
-    printf("M: Start hearbeat thread\n");
-    hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
+  //  pthread_t hbthread;
+  //  printf("M: Start hearbeat thread\n");
+  //  hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
 
 
 
