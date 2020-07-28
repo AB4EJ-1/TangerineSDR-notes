@@ -61,16 +61,19 @@ static struct dataBuf iqbuffer;
 static struct flexDataBuf iqbuffer2;
 static struct VITAdataBuf iqbuffer2_in;
 static struct VITAdataBuf iqbuffer2_out;
+static struct VITAdataBuf ft8buffer_out[4];
 
 static int LH_port;
 static int LH_IP;
 //static char[15];
 struct sockaddr_in client_addr;
+struct sockaddr_in client_addr2;
 struct sockaddr_in server_addr;
 struct sockaddr_in config_in_addr;
 struct sockaddr_in portF_addr;
 
 int sock;
+int sockft8out;
 int sock1;
 int sock2;
 int sock3;
@@ -120,6 +123,7 @@ void *sendFT8flex(void * threadid){
 
   fd_set readfd;
   int count;
+  int streamNo = 0;
   ft8active = 1;
   printf("in Flex FT8 thread; init sock4\n");
   sock4 = socket(AF_INET, SOCK_DGRAM, 0);
@@ -131,6 +135,15 @@ void *sendFT8flex(void * threadid){
     ptoi = &r;
     return (ptoi);
     }
+
+  int yes = 1;  // make socket re-usable
+  if(setsockopt(sock4, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+   printf("sock4: Error setting sock option SO_REUSEADDR\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+   }
 
   printf("sock4 created\n");
   int addr_len = sizeof(struct sockaddr_in);
@@ -150,8 +163,26 @@ void *sendFT8flex(void * threadid){
   FD_ZERO(&readfd);
   FD_SET(sock4, &readfd);
   printf("in flex FT8 thread read from port %i\n",FLEXFT_IN);
-  client_addr.sin_port = htons(LH_DATA_IN_port);
+ // client_addr.sin_port = htons(LH_DATA_IN_port);
+// temporary hard code for ft8 port testing
+  client_addr2.sin_family = AF_INET;
+  client_addr2.sin_addr.s_addr = client_addr.sin_addr.s_addr;
+  client_addr2.sin_port = htons(40003);
  ret = 1;
+
+// note that this clears all copies of ft8buffer_out
+ memset(&ft8buffer_out,0,sizeof(ft8buffer_out));
+ uint64_t samplecount = 0;  // number of IQ samples processed from input
+ uint64_t totaloutputbuffercount[4];  // number of buffers sent
+ uint64_t totalinputsamplecount[4];
+ int outputbuffercount[4];
+ for (int i = 0; i < 4; i++)
+   {
+   outputbuffercount[i] = 0;
+   totaloutputbuffercount[i] = 0;
+   totalinputsamplecount[i] = -1;  // so that first increment goes to zero
+   }
+
  while(1==1) {  // repeating loop
 
    if(stopft8)
@@ -162,34 +193,59 @@ void *sendFT8flex(void * threadid){
 	 pthread_exit(NULL);
 	 }
 
-  if(ret > 0){
-   if (FD_ISSET(sock4, &readfd)){
-    printf("try read\n");
+ // if(ret > 0){
+  // if (FD_ISSET(sock4, &readfd)){
+  //  printf("try read\n");
     count = recvfrom(sock4, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
-    printf("bytes received = %i\n",count);
-    printf("VITA header= %x %x\n",iqbuffer2.VITA_hdr1[0],iqbuffer2.VITA_hdr1[1]);
-    printf("stream ID= %x%x%x%x\n", iqbuffer2.stream_ID[0],iqbuffer2.stream_ID[1], iqbuffer2.stream_ID[2],iqbuffer2.stream_ID[3]);
-    iqbuffer2.stream_ID[0] = 0x46;   // put "FT" into stream ID
-    iqbuffer2.stream_ID[1] = 0x54;
-    printf("timestamp = %i \n",iqbuffer2.time_stamp/16777216);
-    printf("FT8: try to send \n");
-    int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2, sizeof(iqbuffer2), 0, 
-	      (struct sockaddr*)&client_addr, sizeof(client_addr));
+  //  inputbuffercount = 0;
+  //  printf("bytes received = %i\n",count);
+  //  printf("VITA header= %x %x\n",iqbuffer2.VITA_hdr1[0],iqbuffer2.VITA_hdr1[1]);
+  //  printf("stream ID= %x%x%x%x\n", iqbuffer2.stream_ID[0],iqbuffer2.stream_ID[1], iqbuffer2.stream_ID[2],iqbuffer2.stream_ID[3]);
+    streamNo = (int16_t)iqbuffer2.stream_ID[3];
+ 
+// build ft8buffer header
+
+   memcpy(ft8buffer_out[streamNo].VITA_hdr1, iqbuffer2.VITA_hdr1,sizeof(iqbuffer2.VITA_hdr1));
+   ft8buffer_out[streamNo].stream_ID[0] = 0x46;    // F
+   ft8buffer_out[streamNo].stream_ID[1] = 0x54;    // T
+   ft8buffer_out[streamNo].stream_ID[2] = iqbuffer2.stream_ID[2]; // copy from input
+   ft8buffer_out[streamNo].stream_ID[3] = iqbuffer2.stream_ID[3]; // copy from input
+   ft8buffer_out[streamNo].VITA_packetsize = sizeof(ft8buffer_out[0]);
+   ft8buffer_out[streamNo].time_stamp = (uint32_t)time(NULL);
+   ft8buffer_out[streamNo].sample_count = totaloutputbuffercount[streamNo];
+
+  for(int inputbuffercount =0; inputbuffercount < 512; inputbuffercount++)
+   {
+   totalinputsamplecount[streamNo]++;  // goes to zero on first buffer
+   if((totalinputsamplecount[streamNo] % 12) != 0)  // crummy decimation; TODO: correct this
+     continue;
+   // inputbuffercount is multiple of 12 (or zero); save it
+   
+   ft8buffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].I_val = iqbuffer2.flexDataSample[inputbuffercount].I_val;
+   ft8buffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].Q_val = iqbuffer2.flexDataSample[inputbuffercount].Q_val;
+
+    outputbuffercount[streamNo]++;
+
+    if(outputbuffercount[streamNo] >= 1024)  // have we filled the output buffer?
+     {
+      printf("FT8: try to send, streamNo = %i \n",streamNo);
+
+      int sentBytes = sendto(sockft8out, (const struct dataBuf *)&ft8buffer_out[streamNo], sizeof(ft8buffer_out[0]), 0, 
+	      (struct sockaddr*)&client_addr2, sizeof(client_addr2));
+       outputbuffercount[streamNo] = 0;
+       totaloutputbuffercount[streamNo] ++;
+       printf("sent bytes %i\n",sentBytes);
+      }
+
+    }  // end of inputbuffercount loop (512 samples in the flex IQ packet)
 
 
- //   for(int i=0;i<512;i++) {
-  //   printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val,iqbuffer2.flexDatSample[i].Q_val);
-   //  }
-    printf("sent bytes %i\n",sentBytes);
-  //  FILE * fptr;
-  //  fptr = fopen("sampleIQ.dat","wb");
-  //  fwrite(&iqbuffer,sizeof(iqbuffer),1,fptr);
-    //close(fptr);
-    }
-  }  // end of repeating loop
-  }
+    
+ //   }  // after FD_ISSET
+ //  }  // end of if statement on return code from socket setup (if ret)
+  } // end of repeating loop
 
- }
+ }  // end of function
 
 
 void *sendFlexData(void * threadid){
@@ -199,10 +255,10 @@ void *sendFlexData(void * threadid){
   uint64_t theSampleCount = 0;
   fd_set readfd;
   int count;
-  ft8active = 1;
-  printf("in Flex DATA thread; start to send data; init sock4\n");
+ // ft8active = 1;
+  printf("in Flex DATA thread; start to send data; init sock5\n");
   sock5 = socket(AF_INET, SOCK_DGRAM, 0);
-  printf("after socket assign, sock5= %i\n",sock4);
+  printf("after socket assign, sock5= %i\n",sock5);
   if(sock5 < 0) {
     printf("sock5 error\n");
     int r=-1;
@@ -210,6 +266,14 @@ void *sendFlexData(void * threadid){
     ptoi = &r;
     return (ptoi);
     }
+  int yes = 1;  // make socket re-usable
+  if(setsockopt(sock5, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+   printf("sock5: Error setting sock option SO_REUSEADDR\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+   }
 
   printf("sock5 created\n");
   int addr_len = sizeof(struct sockaddr_in);
@@ -220,7 +284,7 @@ void *sendFlexData(void * threadid){
   printf("bind sock\n:");
   int ret = bind(sock5, (struct sockaddr*)&flex_addr, addr_len);
   if (ret < 0){
-    printf("bind error\n");
+    printf("sock5 (Flex) bind error\n");
     int r=-1;
     int *ptoi;
     ptoi = &r;
@@ -295,12 +359,7 @@ void *sendFlexData(void * threadid){
 
 
 
-
-
-
-
-
-
+/*
 void *sendFT8(void *threadid) {
    struct iqpair iqpairdat[240000];
    FILE *fp;
@@ -387,7 +446,7 @@ void *sendFT8(void *threadid) {
    }
    ft8active = 0;  // done here
 }
-
+*/
 
 void *awaitConfig(void *threadid) {
 
@@ -745,6 +804,15 @@ int *run_DE(void)
   fd_set readfd;
   char buffer[1024];
 
+  sock = socket(AF_INET, SOCK_DGRAM, 0);  // for sending flex spectrum data
+  if (sock < 0) {
+    perror("sock1error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
   sock1 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
   if (sock1 < 0) {
     perror("sock1 error\n");
@@ -753,6 +821,34 @@ int *run_DE(void)
     ptoi = &r;
     return (ptoi);
     }
+
+  sock4 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
+  if (sock4 < 0) {
+    perror("sock4 error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
+  sock5 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
+  if (sock5 < 0) {
+    perror("sock5 error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
+  sockft8out = socket(AF_INET, SOCK_DGRAM, 0);  // for sending ft8 data
+  if (sockft8out < 0) {
+    perror("sockft8out error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
   addr_len = sizeof(struct sockaddr_in);
   memset((void*)&server_addr, 0, addr_len);
   server_addr.sin_family = AF_INET;
@@ -828,11 +924,11 @@ int *run_DE(void)
    // LH_port = ntohs(client_addr.sin_port);
     printf("command recd %c%c %x %x %x %x from port %d, bytes=%d\n",buffer[0],buffer[1],buffer[2],buffer[3],buffer[4],buffer[5], LH_port,count);
     char bufstr[50];
-    strncpy(bufstr, buffer, count);
+    memcpy(bufstr, buffer, count);
     printf("Raw buf= %s\n",bufstr);
    // command processsing
-
-    if(strncmp(buffer, "S?",2) == 0 )
+printf("check for S? \n");
+    if(strncmp(bufstr, "S?",2) == 0 )
 	  { 
 	  printf("STATUS INQUIRY\n");
       client_addr.sin_port = htons(LH_port);  // this may wipe desired port
@@ -844,8 +940,8 @@ int *run_DE(void)
 	  continue;
 	  }
 
-
-    if(strncmp(buffer, CONFIG_CHANNELS,2) == 0)
+printf("check for CC \n");
+    if(memcmp(bufstr, CONFIG_CHANNELS,2) == 0)
       {
       memcpy(cb.configBuffer,buffer,sizeof(buffer));
       printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
@@ -869,8 +965,10 @@ int *run_DE(void)
       }
 
 
-
-    if(strncmp(buffer, "R?",2) == 0)   // Request for list of data rates
+printf("check for R? \n");
+printf("value = %c%c\n",bufstr[0],bufstr[1]);
+printf("memcmp = %i\n",memcmp(bufstr,"R?",2));
+    if(memcmp(bufstr, "R?",2) == 0)   // Request for list of data rates
      {
      printf("Request for Data Rates\n");
      DATARATEBUF myDataRateBuf = {0};
@@ -902,8 +1000,8 @@ int *run_DE(void)
 	  continue;
      }
 
-
-    if(strncmp(buffer, CREATE_CHANNEL ,2) == 0)
+printf("check for CH \n");
+    if(memcmp(bufstr, CREATE_CHANNEL ,2) == 0)
       {
 
   //    CONFIGBUF myConfigBuf;
@@ -975,15 +1073,16 @@ int *run_DE(void)
 	  continue;
 
       }
-
-    if(strncmp(buffer, "UL",2) == 0)
+printf("check for UL \n");
+    if(memcmp(bufstr, "UL",2) == 0)
 	  {  // future function for allowing LH to drop its link to this DE
 	  printf("stoplink\n");
 	  stoplink = 1;
 	  continue;
 	  }
 
-    if(strncmp(buffer, "XC",2)==0)
+printf("check for XC \n");
+    if(memcmp(bufstr, "XC",2)==0)
 	  {
 	  printf("Main loop stopping data acquisition\n");
 	  stopDataColl = 1;
@@ -991,23 +1090,22 @@ int *run_DE(void)
 	  }
 
 
-
+printf("check for SF \n");
+printf("I think it is: %c %c \n",bufstr[0],bufstr[1]);
 //       for getting flex FT 8 data
-    if(strncmp(buffer, "SF",2)==0)  // Flex data
+    if(memcmp(bufstr, "SF",2)==0)  // Flex data
      {
       printf("Start FlexRadio / FT8 command received; starting thread\n");
       stopft8 = 0;
       pthread_t thread1;
       int rc = pthread_create(&thread1, NULL, sendFT8flex, NULL);
-
-
       continue;
      }
 
 
 
- 
-
+ // below is old code, before Flex support (see above)
+/*
     if(strncmp(buffer, "SF",2)==0)
       {
       if (ft8active)
@@ -1050,21 +1148,22 @@ int *run_DE(void)
    //   int rc = pthread_create(&ft8thread, NULL, sendFT8, (void*)j);
       continue;
       }
-
-    if(strncmp(buffer, "XF",2)==0)
+*/
+printf("check for XF \n");
+    if(memcmp(bufstr, "XF",2)==0)
       {
       printf("Stop FT8 command received\n");
       stopft8 = 1;
       continue;
       }
-
-    if(strncmp(buffer, "XX",2)==0)
+printf("check for XX \n");
+    if(memcmp(bufstr, "XX",2)==0)
 	  {
 	  printf("HALTING\n");
 	  return 0;
 	  }
-
-    if(strncmp(buffer, "SC",2)==0)
+printf("check for SC \n");
+    if(memcmp(bufstr, "SC",2)==0)
 	  {
 	  puts("starting sendData");
 	  stopDataColl = 0;
@@ -1082,6 +1181,7 @@ int *run_DE(void)
   // in case we are running but get another discovery packet
   // This essentially switches DE simulator to talk to a different LH and/or port.
   // TODO: Need to keep track of multiple LH devices, allow link & unlink
+printf("check for discovery packet \n");
     if((buffer[0] & 0xFF) == 0xEF && (buffer[1] & 0xFF) == 0xFE) {
 	discoveryReply(buffer);
 	continue;

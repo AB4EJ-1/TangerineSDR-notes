@@ -63,8 +63,6 @@ typedef struct VITAdataBuf
  struct dataSample theDataSample[1024];
  } VITABUF;
 
-
-
 struct datarateEntry
     {
     int rateNumber;
