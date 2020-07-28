@@ -1,4 +1,23 @@
-// Server side implementation of UDP client-server model 
+/* Copyright (C) 2019 The University of Alabama
+* Author: William (Bill) Engelke, AB4EJ
+* With funding from the Center for Advanced Public Safety and 
+* The National Science Foundation.
+*
+* This program is free software; you can redistribute it and/or
+* modify it under the terms of the GNU General Public License
+* as published by the Free Software Foundation; either version 2
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*
+*/
+
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <unistd.h> 
@@ -89,7 +108,7 @@ int main() {
        info = gmtime(&rawtime);
        int seconds = info->tm_sec;
        if(seconds > 0)
-         printf("FT8 will start in = %i seconds\r",60-seconds);
+         printf("FT8 will start in = %i seconds \r",60-seconds);
 
        if(seconds != 0)  // check if exact top of minute
          {
