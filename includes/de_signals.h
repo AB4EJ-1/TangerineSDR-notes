@@ -63,18 +63,6 @@ typedef struct VITAdataBuf
  struct dataSample theDataSample[1024];
  } VITABUF;
 
-typedef struct FT8record
- {
-  char  receiverCall [12] ;     
-  char  receiverLocator[12] ;
-  char  senderCall[12] ;
-  char  senderLocator[12] ;
-  char  senderSNR[4] ;
-  uint32_t  flowStartSeconds;
-  char   frequency[12] ;
- } FT8REC;
-
-
 struct datarateEntry
     {
     int rateNumber;
