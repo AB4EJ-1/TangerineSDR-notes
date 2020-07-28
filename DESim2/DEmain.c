@@ -197,10 +197,7 @@ void *sendFT8flex(void * threadid){
   // if (FD_ISSET(sock4, &readfd)){
   //  printf("try read\n");
     count = recvfrom(sock4, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
-  //  inputbuffercount = 0;
-  //  printf("bytes received = %i\n",count);
-  //  printf("VITA header= %x %x\n",iqbuffer2.VITA_hdr1[0],iqbuffer2.VITA_hdr1[1]);
-  //  printf("stream ID= %x%x%x%x\n", iqbuffer2.stream_ID[0],iqbuffer2.stream_ID[1], iqbuffer2.stream_ID[2],iqbuffer2.stream_ID[3]);
+
     streamNo = (int16_t)iqbuffer2.stream_ID[3];
  
 // build ft8buffer header
@@ -342,14 +339,6 @@ void *sendFlexData(void * threadid){
 	      (struct sockaddr*)&client_addr, sizeof(client_addr));
 
 
- //   for(int i=0;i<512;i++) {
-  //   printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val,iqbuffer2.flexDatSample[i].Q_val);
-   //  }
-  //  printf("sent bytes %i\n",sentBytes);
-  //  FILE * fptr;
-  //  fptr = fopen("sampleIQ.dat","wb");
-  //  fwrite(&iqbuffer,sizeof(iqbuffer),1,fptr);
-    //close(fptr);
     }
   }  // end of repeating loop
   }
@@ -358,95 +347,6 @@ void *sendFlexData(void * threadid){
 
 
 
-
-/*
-void *sendFT8(void *threadid) {
-   struct iqpair iqpairdat[240000];
-   FILE *fp;
-   char name[64];
-   double dialfreq;
-   struct dataBuf ft8Buffer;
-   struct dataSample ft8Sample;
-   ft8active = 1;
-   long bufcount = 0;
-   ssize_t sentBytes;
-
-   printf("stating ft8 data transfer; thread id = %p \n",threadid);
-
-   printf("starting\n");
-   if(threadid == 0)
-      strcpy(name, "ft8_0_7075500_1_191106_2236.c2");
-   if((long)threadid == 1)
-      strcpy(name, "ft8_1_10137500_1_191106_2236.c2");
-   if((long)threadid == 2)
-      strcpy(name, "ft8_2_14075500_1_191106_2236.c2");
-   if((long)threadid == 3)
-      strcpy(name, "ft8_3_18101500_1_191106_2236.c2");
-   if((long)threadid == 4)
-      strcpy(name, "ft8_4_21075500_1_191106_2236.c2");
-   if((long)threadid == 5)
-     strcpy(name, "ft8_5_24916500_1_191106_2236.c2");
-   if((long)threadid == 6)
-     strcpy(name, "ft8_6_28075500_1_191106_2236.c2");
-   if((long)threadid == 7)
-     strcpy(name, "ft8_7_50314500_1_191106_2236.c2");
-   if((fp = fopen(name, "r")) == NULL)
-    {
-      fprintf(stderr, "Cannot open ft8 input file %s.\n", name);
-      return (void *) 1;
-    }
-   fread(&dialfreq, 1, 8, fp);
-   printf("%f\n",dialfreq);
-   size_t s = fread(iqpairdat,sizeof(iqpairdat),1,fp);
-   printf("read done, bytes = %ld\n", s);
-   time_t epoch = time(NULL);
-   printf("unix time = %ld\n", epoch);
-   strncpy(ft8Buffer.bufType,"FT",2);
-   ft8Buffer.timeStamp = (double) epoch;
- //  client_addr.sin_port = htons(LH_port); 
- //  client_addr.sin_port = htons(d.myConfigBuf.dataPort);
-   client_addr.sin_port = htons(LH_DATA_IN_port);
-   ft8Buffer.centerFreq = dialfreq;
-   ft8Buffer.channelNo = (long)threadid;
-//   while(1)
-   {
-     long inputCounter = 0;
-     for(int i=0; i< 60; i++)  // once per second
-     {
-       for(int j=0; j < 4; j++)  // send 4 buffers, each containing 1000 complex samples
-       {
-         for(int k=0; k < 1000; k++)
-         {
-         ft8Buffer.theDataSample[k].I_val = iqpairdat[inputCounter].ival;
-         ft8Buffer.theDataSample[k].Q_val = iqpairdat[inputCounter].qval;
-         inputCounter++;
-         }
-         printf("i = %d, j = %d, inputCounter = %ld\n", i, j,  inputCounter);
-         ft8Buffer.dval.bufCount = bufcount++;
-
-         sentBytes = sendto(sock, (const struct dataBuf *)&ft8Buffer, sizeof(ft8Buffer), 0, 
-	      (struct sockaddr*)&client_addr, sizeof(client_addr));
-
-         fprintf(stderr,"UDP message sent from thread to port %u %u. bytes= %ld\n", 
-           htons(client_addr.sin_port), client_addr.sin_port, sentBytes); 
-    // sleep(1);
-         usleep(250000);  // wait for this many microseconds
-         printf("stopft8=%i \n",stopft8);
-         if(stopft8)
-	       {
-           puts("UDP thread end");
-           ft8active = 0;
-
-	       pthread_exit(NULL);
-
-	       }
-       }
-     }
-
-   }
-   ft8active = 0;  // done here
-}
-*/
 
 void *awaitConfig(void *threadid) {
 
@@ -549,13 +449,6 @@ void *sendData1(void *threadid) {
         printf("bytes received:  %i\n",count);
 
 
-/*
-    for(int i=0;i<512;i++) {
-     printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val_int, iqbuffer2.flexDatSample[i].Q_val_int);
-     }
-*/
-
-
 	    time_t epoch = time(NULL);
 	//printf("unix time = %ld\n", epoch);
     //    strncpy(iqbuffer.bufType,"RG",2);
@@ -578,9 +471,6 @@ void *sendData1(void *threadid) {
 	     pthread_exit(NULL);
 	    }
 
-      //      memcpy(buffer, IP_FOUND_ACK, strlen(IP_FOUND_ACK)+1);
-       //     count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr, addr_len);
-        
       }
     }
 
@@ -588,6 +478,7 @@ void *sendData1(void *threadid) {
 
 }
 
+/*
 // thread to receive/forward packets from flexadapter
 void *sendData2(void *threadid) {
  printf("Senddata2 thread start\n");
@@ -639,14 +530,6 @@ void *sendData2(void *threadid) {
         count = recvfrom(sock3, &iqbuffer2, sizeof(iqbuffer2), 0, (struct sockaddr*)&server_addr3, &addr_len);
         printf("bytes received:  %i\n",count);
 
-/*
-    for(int i=0;i<512;i++) {
-     printf("%f %f \n",iqbuffer2.flexDatSample[i].I_val_int, iqbuffer2.flexDatSample[i].Q_val_int);
-     }
-*/
-  
-
-
 
 	    time_t epoch = time(NULL);
 	//printf("unix time = %ld\n", epoch);
@@ -678,6 +561,7 @@ void *sendData2(void *threadid) {
   }
 
 }
+*/
 
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
 void *sendData(void *threadid) {
