@@ -108,9 +108,9 @@ static	int num_subchannels = 1; /* subchannels */
 static	int marching_periods = 1; /*  marching periods when writing */
 static	char uuid[100] = "DE output";
 static  char hdf5File[50];  
-//static  char hdf5File1[50] = "/tmp/RAM_disk/ch4_7";
+
 static uint64_t theUnixTime = 0;
-//static  char hdf5File[50] = "/tmp/ramdisk";
+
 //char *filename = "/media/odroid/hamsci/raw_data/dat3.dat";  // for testing raw binary output
 static  char* sysCommand1;
 static  char* sysCommand2;
@@ -124,6 +124,7 @@ static char total_hdf5_path[100];
 static char hdf5subdirectory[16];
 static long packetCount;
 static int recv_port_status = 0;
+static int recv_port_status_ft8 = 0;
 
 ///////////////////////// FFT //////////////////////////////////////
 //#define FFT_N 1048576
@@ -171,8 +172,8 @@ uv_loop_t *loop;
 static uv_tcp_t* DEsocket; // socket to be used across multiple functions
 static uv_stream_t* DEsockethandle;
 
-// the following probably not necessary  (TODO)
-static uv_tcp_t* websocket; // socket to be used for comm to web server
+
+static uv_tcp_t* socket_central; // socket to be used for comm to Central Control
 //static uv_stream_t* websockethandle;
 static uv_udp_t send_socket;
 static uv_udp_t data_socket;
@@ -181,7 +182,7 @@ static uv_stream_t* webStream;
 
 struct sockaddr_in send_addr;         // used for sending commands to DE
 struct sockaddr_in recv_addr;         // for command replies from DE (ACK, NAK)
-struct sockaddr_in send_config_addr;  //used for sending config req (CH) to DE
+struct sockaddr_in send_config_addr;  // used for sending config req (CH) to DE
 struct sockaddr_in recv_config_addr;  // for config replies from DE
 struct sockaddr_in recv_data_addr;    // for data coming from DE
 
@@ -199,6 +200,7 @@ double dialfreq[8];  // array of dial frequencies for FT8
 int ft8active[8];    // flag to indicate if a given ft8 channel is collecting data
 int ft8counter[8];   // counter of how many ft8 samples saved in this collection period
 int inputcount[8];   // temporary, to reduce sample rate
+float chfrequency[8];
 
 
 // Set up memory to handle data traffic passing via libuv asynchronous calls
@@ -213,6 +215,11 @@ static void alloc_config_buffer(uv_handle_t* handle, size_t suggested_size, uv_b
 }
 
 static void alloc_data_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
+  buf->base = malloc(suggested_size);
+  buf->len = suggested_size;
+}
+
+static void alloc_http_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
 }
@@ -333,7 +340,7 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 /////////////////////////////////////////////////////////////////
 //////////  forward a status message from DE to webcontrol
 //////////////////////////////////////////////////////////////////
-  puts("process_command triggered; set up uv_write_t");
+  puts("DE status message triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
   uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
@@ -458,18 +465,15 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
   fclose(fftfp);
 
-
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//////////   callback rtn for ft8 only testing  //////////////////
 
-/////////////////////////////////////////////////////////////
-//  Callback for when UDP I/Q data packets received from DE 
-//  A separate callback handles incoming ACK data.
-//  These packets come into LH Port F.
-/////////////////////////////////////////////////////////////
-void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
+void on_UDP_data_read_ft8(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
   {
+  //printf("ft8 port, Buffer received, size=%li\n",nread);
   int channelPtr;
   if(nread == 0 )
     { 
@@ -478,15 +482,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	  return;
     }
 
-
-  DATABUF *buf_ptr;
-  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-  memcpy(buf_ptr, buf->base, nread);    // get data from UDP buffer
- // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
-
-
-
- // printf("UDP I/Q data recvd, bytes = %ld; type=%s; channelcount=%i\n", nread,buf_ptr->bufType, buf_ptr->channelCount);
+  VITABUF *buf_ptr1;  
+  buf_ptr1 = (VITABUF *)malloc(sizeof(VITABUF));  // allocate memory for working buf
+  memcpy(buf_ptr1, buf->base, nread);
+  free(buf->base);  // now that we have a copy of this, free the orginial
+  //printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
+  
 
 /////////////////////////////////////////////////////////
 ////  start of handling incoming I/Q data //////////////
@@ -494,22 +495,19 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
 // code update for handing data in VITA format
 
-  if(buf_ptr->bufType[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
+  if(buf_ptr1->VITA_hdr1[0] == 0x1c)  // this is a VITA buffer  (TODO: need to add stream ID check)
     {
-    struct VITAdataBuf FT8dataBuf;
+  //  struct VITAdataBuf FT8dataBuf;
 
     char FT8sig[2] = "FT";
 
-// TODO: this copy can be eliminated
-    memcpy(&FT8dataBuf, buf->base, nread);
-
   /////////////  If this is FT8 data, process it  /////////////////
 #define FT8FSIZE 236000
-    if(memcmp(FT8dataBuf.stream_ID,FT8sig,2) == 0)  
+    if(memcmp(buf_ptr1->stream_ID,FT8sig,2) == 0)  
      {
   //   printf("FT8 buffer ");
    // the 4th byte of stream ID is a binary 0, 1, 2, 3 etc
-     int streamID = FT8dataBuf.stream_ID[3];   // this is stream ID (may change)
+     int streamID = buf_ptr1->stream_ID[3];   // this is stream ID (may change)
      int idialfreq = (int)(1000000.0 * dialfreq[streamID]);
    //  printf("streamID = %i\n",streamID);
      if(ft8active[streamID] == 0)  // this ft8 stream is not yet active
@@ -519,12 +517,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        time(&rawtime);
        info = gmtime(&rawtime);
        int seconds = info->tm_sec;
-       printf("FT8 will start in = %i seconds\r",60-seconds);
+       if(seconds > 0)
+         printf("FT8 will start in = %i seconds\r",60-seconds);
 
        if(seconds != 0)  // check if exact top of minute
          {
-		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
+          free(buf_ptr1);
           return;    // we are not at exact top of minute; discard data and wait
          }
        ft8active[streamID] = 1;   // mark this ft8 stream as active
@@ -541,8 +539,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        printf("create raw data FT8 file %s\n",name[streamID]);
        if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
          { fprintf(stderr,"Could not open file %s \n",name[streamID]);
-		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
+          free(buf_ptr1);
           return;
          }
        double dialfreq1 = dialfreq[streamID];
@@ -559,7 +556,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
          if((inputcount[streamID] % 12) != 0)  // reduce sample rate
           continue;    // TODO: Tangerine DE will do correct decimation; remove this
 
-         IQval = FT8dataBuf.theDataSample[i].I_val + (FT8dataBuf.theDataSample[i].Q_val * I);
+         IQval = buf_ptr1->theDataSample[i].I_val + (buf_ptr1->theDataSample[i].Q_val * I);
          IQval = IQval / 1000000.0;  // experimental; TODO: remove this
          fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
          ft8counter[streamID]++;
@@ -569,8 +566,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            {
            if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
              {
-             free(buf->base);
-             free(buf_ptr);
+             free(buf_ptr1);
              return;
              }
            IQval = 0.0 + (0.0 * I);
@@ -604,88 +600,184 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            // Note: this assumes that decoder (ft8d_del) deletes work file when done.
            }
          }
-     }
-    free(buf->base);
-    free(buf_ptr);
+     
+    free(buf_ptr1);
     return;
+     }
     }
 
+ }
 
 
 
-//////////   original code    //////////////
-  if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
+/////////////////////////////////////////////////////////////
+//  Callback for when UDP I/Q data packets received from DE 
+//  A separate callback handles incoming ACK data.
+//  These packets come into LH Port F.
+/////////////////////////////////////////////////////////////
+void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
+		const struct sockaddr * addr, unsigned flags)
+  {
+  //printf("Buffer received, size=%li\n",nread);
+  int channelPtr;
+  if(nread == 0 )
+    { 
+    //  puts("received UDP zero");
+      free(buf->base);
+	  return;
+    }
+
+  VITABUF *buf_ptr1;  
+  buf_ptr1 = (VITABUF *)malloc(sizeof(VITABUF));  // allocate memory for working buf
+  memcpy(buf_ptr1, buf->base, nread);
+  free(buf->base);  // now that we have a copy of this, free the orginial
+  //printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
+  
+
+/////////////////////////////////////////////////////////
+////  start of handling incoming I/Q data //////////////
+
+
+// code update for handing data in VITA format
+
+  if(buf_ptr1->VITA_hdr1[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
     {
-       double dialfreq = buf_ptr->centerFreq;
-       channelPtr = buf_ptr-> channelNo;
-       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->dval.bufCount);
-       if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
+  //  struct VITAdataBuf FT8dataBuf;
+
+    char FT8sig[2] = "FT";
+
+  /////////////  If this is FT8 data, process it  /////////////////
+#define FT8FSIZE 236000
+    if(memcmp(buf_ptr1->stream_ID,FT8sig,2) == 0)  
+     {
+  //   printf("FT8 buffer ");
+   // the 4th byte of stream ID is a binary 0, 1, 2, 3 etc
+     int streamID = buf_ptr1->stream_ID[3];   // this is stream ID (may change)
+     int idialfreq = (int)(1000000.0 * dialfreq[streamID]);
+   //  printf("streamID = %i\n",streamID);
+     if(ft8active[streamID] == 0)  // this ft8 stream is not yet active
        {
-        t = time(NULL);
-        if((gmt = gmtime(&t)) == NULL)
+       time_t rawtime;
+       struct tm * info ;
+       time(&rawtime);
+       info = gmtime(&rawtime);
+       int seconds = info->tm_sec;
+       if(seconds > 0)
+         printf("FT8 will start in = %i seconds\r",60-seconds);
+
+       if(seconds != 0)  // check if exact top of minute
+         {
+          free(buf_ptr1);
+          return;    // we are not at exact top of minute; discard data and wait
+         }
+       ft8active[streamID] = 1;   // mark this ft8 stream as active
+       ft8counter[streamID] = 0;            // zero this counter
+       inputcount[streamID] = 0;
+       printf("\nSaving FT8 for decode\n");
+
+       t = time(NULL);
+       if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
         strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[channelPtr], "%s/FT8/ft8_%d_%f_%d_%s.c2", pathToRAMdisk, 1, buf_ptr->centerFreq,1,date);
-       if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
-        { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
-		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
-          return;
-        }
-       fwrite(&dialfreq, 1, 8, fp[channelPtr]);
-      }
-      fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
-      if (buf_ptr->dval.bufCount == 239 )   // was this the last buffer?
-        {
-        fclose(fp[channelPtr]);
-        char chstr[2];
-        sprintf(chstr,"%d",channelPtr);
-        char mycmd[100];
-        strcpy(mycmd, "./ft8d ");
-        strcat(mycmd,name[channelPtr]);
-        strcat(mycmd," > ");
-        strcat(mycmd,pathToRAMdisk);
-        strcat(mycmd, "/FT8/decoded");
-        strcat(mycmd, chstr);
-        strcat(mycmd, ".txt &");
-        printf("issue command: %s\n",mycmd);
-        int ret = system(mycmd);
-        puts("ft8 decode ran");
-        }
-	free(buf->base);  // always release memory before exiting this callback
-    free (buf_ptr);
-	return; 
-    }  // end of code for handling incoming FT8 data
+        sprintf(name[streamID], "%s/FT8/ft8_%i_%i_%d_%s.c2", pathToRAMdisk, streamID, idialfreq,1,date); 
 
+       printf("create raw data FT8 file %s\n",name[streamID]);
+       if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
+         { fprintf(stderr,"Could not open file %s \n",name[streamID]);
+          free(buf_ptr1);
+          return;
+         }
+       double dialfreq1 = dialfreq[streamID];
+       fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
+
+       }
+     // at this point, this ft8 stream is active
+     // Note: for FlexRadio, expect 512 IQ samples per buffer.
+     // TODO: for Tangerine, expect buffers of 1024 IQ samples; update this
+       for(int i=0; i < 512 && ft8counter[streamID] <= FT8FSIZE; i++)   // go thru input buffer
+         {
+         inputcount[streamID]++;
+
+         if((inputcount[streamID] % 12) != 0)  // reduce sample rate
+          continue;    // TODO: Tangerine DE will do correct decimation; remove this
+
+         IQval = buf_ptr1->theDataSample[i].I_val + (buf_ptr1->theDataSample[i].Q_val * I);
+         IQval = IQval / 1000000.0;  // experimental; TODO: remove this
+         fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
+         ft8counter[streamID]++;
+
+         // if we get another buffer or 2 beyond the last one, we ignore it
+         if(ft8counter[streamID] >= FT8FSIZE)   // have we filled output?
+           {
+           if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
+             {
+             free(buf_ptr1);
+             return;
+             }
+           IQval = 0.0 + (0.0 * I);
+           for(int k = 0; k < 4000; k++)  // pad end of file with zeros
+             {
+             fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
+             ft8counter[streamID]++;
+             }
+
+           ft8active[streamID] = 0;  // mark it inactive
+           fclose(fp[streamID]);
+         // trigger processing of the ft8 data file
+
+           printf("FT8 decoding...\n");
+           char chstr[4];
+           sprintf(chstr,"%i",streamID);
+           char mycmd[100];
+ 
+           int ret = system(mycmd);
+  // TODO: following can be simplified to a single sprintf
+           strcpy(mycmd, "./ft8d_del "); 
+           strcat(mycmd,name[streamID]);
+           strcat(mycmd," > ");
+           strcat(mycmd,pathToRAMdisk);
+           strcat(mycmd, "/FT8/decoded");
+           strcat(mycmd, chstr);
+           strcat(mycmd, ".txt &");  // here add & to run asynch (but beware of file delete!)
+           printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+           puts("ft8 decode ran");
+           // Note: this assumes that decoder (ft8d_del) deletes work file when done.
+           }
+         }
+     
+    free(buf_ptr1);
+    return;
+     }
+    }
 
 
 /////////////////// Handling RG (ringbuffer - type data ///////////////
 
-// TODO: temporary until we find out what is zeroing out channelCount    * * * * * *
-  buf_ptr->channelCount = 1;
 
-
-  if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
-  {
+  //printf("Handle incoming buffer\n");
+  if(buf_ptr1->VITA_hdr1[0] == 0x1c && buf_ptr1->stream_ID[0] == 0x52 && buf_ptr1->stream_ID[1] == 0x47)
+   {
+   //printf("buffer# %li\n",buffers_received);
    buffers_received++;
-
+   int bufferChannels = buf_ptr1->stream_ID[2];  // number of channels embedded in payload
+// Note above: could use either streamID byte [2] or byte [3] for this
    if (nread < 8000)  // discard this buffer for now 
 	{
-	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
-	 free(buf->base);  // always release memory before exiting this callback
-     free (buf_ptr);
+	 fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
+     free(buf_ptr1);
 	 return; 
 	}
 
    if(snapshotterMode && !fft_busy) // here we collect data until input matrix full, then start FFT thread
     { 
     int numSamples = 1024 / numchannels;  // how many IQ pairs in this buffer  
-    for(int j=0; j < numSamples; j=j+buf_ptr->channelCount)  // iteration based on # channels running  
+    for(int j=0; j < numSamples; j=j+numchannels)  // iteration based on # channels running  
       {
           for (int i = 0; i < numchannels; i++)  
            {
           //  printf("value %i %f ",j, buf_ptr->theDataSample[j+i].I_val);
-            spectrumPackage[i].FFT_data[snapcount] = buf_ptr->theDataSample[j+i].I_val + buf_ptr->theDataSample[j+i].Q_val * I; ;
+            spectrumPackage[i].FFT_data[snapcount] = buf_ptr1->theDataSample[j+i].I_val + buf_ptr1->theDataSample[j+i].Q_val * I; ;
            }
          snapcount++;
       }    
@@ -701,7 +793,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        {
        printf(" \n");
        printf("start thread %i\n",i);
-       spectrumPackage[i].centerFrequency = buf_ptr->centerFreq;
+       spectrumPackage[i].centerFrequency = chfrequency[i];
        uv_thread_create(&analyzethread[i], FFTanalyze, &spectrumPackage[i]);    
        printf("join thread %i\n",i);
        uv_thread_join(&analyzethread[i]);
@@ -714,8 +806,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // we are done with snapshotter handing of this buffer; if user doesn't want ringbuffer also, free memory & exit
     if(!ringbufferMode)
       {
-	   free(buf->base);  // always release memory before exiting this callback
-	   free(buf_ptr);
+       free(buf_ptr1);
        return;
       } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
     }
@@ -725,12 +816,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // handle I/Q buffers coming in for storage to Digital RF
 
     {
-    packetCount = (long) buf_ptr->dval.bufCount;
- //   printf("bufcount = %ld\n", packetCount);
-    if(buf_ptr->channelCount != numchannels)
-      printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",buf_ptr->channelCount, numchannels);
-    int noOfChannels = numchannels;
-    int sampleCount = 1024 / noOfChannels;
+    packetCount = (long) buf_ptr1->sample_count;
+  //  printf("bufcount = %ld\n", buf_ptr1->sample_count);
+    if(bufferChannels != numchannels)
+      printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",bufferChannels, numchannels);
+//    int noOfChannels = numchannels;
+    int sampleCount = 1024 / numchannels;
  //   printf("Channel count = %i\n",buf_ptr->channelCount);
 
   /* local variables  for Digital RF */
@@ -741,10 +832,11 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // we also check buffers_received, so we can start recording even if we missed
 // one or more buffers at start-up.
 
-  global_start_sample = buf_ptr->timeStamp * (long double)sample_rate_numerator /  
+  global_start_sample = buf_ptr1->time_stamp * (long double)sample_rate_numerator /  
                  SAMPLE_RATE_DENOMINATOR;
 
-  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) {
+  if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) 
+    {
     char cleanup[100]="";
     sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
     printf("deleting old propeties file: %s\n",cleanup);
@@ -762,7 +854,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", 0, 0, 1, noOfChannels, 1, 1);
+     "TangerineSDR", 0, 0, 1, bufferChannels, 1, 1);
       }
 
 // here we write out DRF
@@ -773,17 +865,15 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
 
-      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr->theDataSample,sampleCount) ;
+      result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr1->theDataSample,sampleCount) ;
 	//  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
 
     hdf_i++;  // increment count of hdf buffers processed
 
-    free (buf_ptr);  // free the work buffer
     }
   }
-
-  free(buf->base);  // free the callback buffer
+  free(buf_ptr1);
   return;  // end of callback for handling incoming I/Q data
   }
 
@@ -885,12 +975,29 @@ void recv_port_check() {
     puts("recv port already open");
 }
 
+void recv_port_check_ft8() {  // temporary for ft8 testing
+  if(recv_port_status_ft8 == 0)   // if port not already open, open it
+      {
+// start a listener on Port F (temporary hard code, Port G)
+      uv_udp_init(loop, &data_socket);
+      uv_ip4_addr("0.0.0.0", 40003 , &recv_data_addr);
+      printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
+      int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
+      printf("bind retcode = %d\n",retcode);
+      retcode = uv_udp_recv_start(&data_socket, alloc_data_buffer, on_UDP_data_read_ft8);
+      printf("recv retcode = %d\n",retcode);
+      if (retcode == 0) recv_port_status_ft8 = 1;
+      }
+  else
+    puts("recv port already open");
+}
+
 /////////////////////////////////////////////////////////////////////
 // callback for when a command is received from webcontroller
 /////////////////////////////////////////////////////////////////
 
-void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
-  puts("process_command routine triggered\n");
+void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
+  puts("process_local_command routine triggered\n");
   if(nread == -4095)  // TODO: this seems to be junk coming from flask app (?) - need to fix
 	{ puts("ignore 1 buffer"); return;
 	}
@@ -928,7 +1035,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 	char b[200];
 //	for(int i=0; i< 100; i++) { b[i] = 0; }
     CONFIGBUF *configBuf_ptr;
-    configBuf_ptr = (CONFIGBUF *)malloc(sizeof(CONFIGBUF));  // TODO: free this later
+    configBuf_ptr = (CONFIGBUF *)malloc(sizeof(CONFIGBUF));  
     memcpy(configBuf_ptr->cmd, mybuf,2);
 
     const char comma[2] = ",";
@@ -1022,10 +1129,23 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
   if(strncmp(mybuf, START_FT8_COLL , 2)==0) // got command to start FT8 reception
     {
+// update this in case user has changed it
+    num_items = rconfig("ramdisk_path",configresult,0);
+    if(num_items == 0)
+      {
+      printf("ERROR - RAMdisk path setting not found in config.ini\n");
+      }
+    else
+      {
+      printf("RAMdisk path for SF, CONFIG RESULT = '%s'\n",configresult);
+      strcpy(pathToRAMdisk,configresult);
+      } 
+
     uv_udp_send_t send_req;
 	char b[100];
 	for(int i=0; i< 100; i++) { b[i] = 0; }  // zero out buffer b
-    recv_port_check();  // ensure receive port is open (LH_DATA_IN_port)
+ //   recv_port_check();  // ensure receive port is open (LH_DATA_IN_port)
+ //   recv_port_check_ft8(); // temprary for ft8 testing
 	strncpy(b, mybuf, nread-1 );
 	const uv_buf_t a[] = {{.base = b, .len = nread-1}};
     char mkcommand[20] = "mkdir ";
@@ -1040,6 +1160,13 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   //  rt = system("rm /mnt/RAM_disk/FT8/*.*");
     printf("issue command: %s\n",mkcommand);
     rt = system(mkcommand);
+    strcpy(mkcommand,"killall -9 ft8rcvr");
+    printf("issue command: %s\n",mkcommand);
+    rt = system(mkcommand);
+    strcpy(mkcommand,"./ft8rcvr &");
+    printf("issue command: %s\n",mkcommand);
+    rt = system(mkcommand);
+
     printf("scan for FT8 antenna settings\n");
     for(int i=0;i<8;i++)  // go thru config to see which FT8 channels wanted
      {   
@@ -1070,9 +1197,6 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
 
      }
 
-
-
-
     printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
@@ -1083,12 +1207,17 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
     {
     uv_udp_send_t send_req;
 	char b[60];
+    char mkcommand[20] = "";
 	for(int i=0; i< 60; i++) { b[i] = 0; }
 	strcpy(b, STOP_FT8_COLL );
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
     printf("Sending STOP FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+    strcpy(mkcommand,"killall -9 ft8rcvr");
+    printf("issue command: %s\n",mkcommand);
+    int rt = system(mkcommand);
+
     return;
 	}
 
@@ -1143,6 +1272,21 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
         spectrumPackage[i].channelNo = i;
         spectrumPackage[i].p = fftwf_plan_dft_1d(FFT_N, spectrumPackage[i].FFT_data, spectrumPackage[i].FFT_data, FFTW_FORWARD, FFTW_ESTIMATE);
         printf("plans created for fft %i\n",i);
+        // now get the frequency for each channel
+        char channelSelect[5];
+        sprintf(channelSelect,"f%i",i);
+
+        num_items = rconfig(channelSelect,configresult,0);
+        if(num_items == 0)
+          {
+          printf("ERROR - frequency config setting %s not found in config.ini\n", channelSelect);
+          }
+        else
+          {
+          printf("channel %i frequency CONFIG RESULT = '%s'\n",i,configresult);
+          chfrequency[i]= atof(configresult);
+          } 
+
         }
        FFTmemset = 1; // indicate that memory is allocated
       }
@@ -1302,7 +1446,7 @@ void on_new_connection(uv_stream_t *server, int status) {
   uv_tcp_t *client = (uv_tcp_t*) malloc(sizeof(uv_tcp_t));
   uv_tcp_init(loop, client);
   if (uv_accept(server, (uv_stream_t*) client) == 0) {
-    uv_read_start((uv_stream_t*) client, alloc_buffer, process_command);
+    uv_read_start((uv_stream_t*) client, alloc_buffer, process_local_command);
     webStream = (uv_stream_t*) client;  // save stream object for replies to webserver
   }
   else {
@@ -1482,45 +1626,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     return;
     }
 
-////  start of handling incoming I/Q data //////////////
 
-    if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
-    {
-       double dialfreq = buf_ptr->centerFreq;
-       channelPtr = buf_ptr-> channelNo;
-       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->dval.bufCount);
-       if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
-       {
-        t = time(NULL);
-
-        if((gmt = gmtime(&t)) == NULL)
-          { fprintf(stderr,"Could not convert time\n"); }
-        strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[channelPtr], "/mnt/RAM_disk/FT8/ft8_%d_%f_%d_%s.c2", 1, buf_ptr->centerFreq,1,date);
-       if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
-        { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
-          return;
-        }
-       fwrite(&dialfreq, 1, 8, fp[channelPtr]);
-      }
-      fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
-      if (buf_ptr->dval.bufCount == 239 )   // was this the last buffer?
-        {
-        fclose(fp[channelPtr]);
-        char chstr[2];
-        sprintf(chstr,"%d",channelPtr);
-        char mycmd[100];
-        strcpy(mycmd, "./ft8d ");
-        strcat(mycmd,name[channelPtr]);
-        strcat(mycmd, "  > /mnt/RAM_disk/FT8/decoded");
-        strcat(mycmd, chstr);
-        strcat(mycmd, ".txt &");
-        printf("the command: %s\n",mycmd);
-        int ret = system(mycmd);
-        puts("ft8 decode ran");
-        }
-      return;
-    }
 
   buffers_received++;
   //fprintf(stderr,"received UDP packet# %zd\n",packetCount);
@@ -1646,38 +1752,114 @@ void *dataUpload(void *threadid) {
 }
 
 
-////////////// Heartbeat to Central Host ////////////////////
 
-void *heartbeat(void *threadid) {
+////////////////////////////////////////////////////////////////
+//////////   heartbeat simple //////////////////////////////////
+void heartbeat2(void *threadid) {
 
-int portno = 5000;  // TODO: use config value here
+    /* first what are we going to send and where are we going to send it? */
+    int portno =        5000;
+    char *host =        "192.168.1.67";
+    char *message_fmt = "POST /apikey/%s&command=%s HTTP/1.0\r\n\r\n";
 
-char *host = "192.168.1.67";  // TODO: use config value here
+    struct hostent *server;
+    struct sockaddr_in serv_addr;
+    int sockfd, bytes, sent, received, total;
+    char message[1024],response[4096];
 
-char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
+  //  if (argc < 3) { puts("Parameters: <apikey> <command>"); exit(0); }
+
+    /* fill in the parameters */
+    sprintf(message,message_fmt,"apikey","54321");
+    printf("HEARTBEATRequest:\n%s\n",message);
+while(1==1){
+    /* create the socket */
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) printf("ERROR opening socket");
+
+    /* lookup the ip address */
+    server = gethostbyname(host);
+    if (server == NULL) printf("ERROR, no such host");
+
+    /* fill in the structure */
+    memset(&serv_addr,0,sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(portno);
+    memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
+
+    /* connect the socket */
+    if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
+        printf("ERROR connecting");
+
+    /* send the request */
+    total = strlen(message);
+    sent = 0;
+    do {
+        bytes = write(sockfd,message+sent,total-sent);
+        if (bytes < 0)
+            printf("ERROR writing message to socket");
+        if (bytes == 0)
+            break;
+        sent+=bytes;
+    } while (sent < total);
+
+    /* receive the response */
+    memset(response,0,sizeof(response));
+    total = sizeof(response)-1;
+    received = 0;
+    do {
+        bytes = read(sockfd,response+received,total-received);
+        if (bytes < 0)
+            printf("ERROR reading response from socket");
+        if (bytes == 0)
+            break;
+        received+=bytes;
+    } while (received < total);
+
+    if (received == total)
+        printf("ERROR storing complete response from socket");
+
+ 
+    /* close the socket */
+    close(sockfd);
+
+    /* process response */
+    printf("Response:\n%s\n",response);
+    sleep(60);   // heartbeat interval
+ }
+    return ;
+
+}
+
+//////////////////////////////////////////////////////////////////
+//////////////   heartbeat using standard tcp & threading ////////
+//void *heartbeat1(void *threadid) {
+void heartbeat1(void *arg) {
+//void heartbeat(uv_timer_t * timer_handle) {
+
+int portno = 5000;  // default, to be replaced by configured value.
+
+char *host = "192.168.1.67"; // default, to be replaced by configurea value.
+char centralHost[20] = "192.168.1.67";
+
+//char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
 
 struct hostent *server;
 struct sockaddr_in serv_addr;
 struct timeval timeout;
 int sockfd, bytes, sent, received, total;
-char message[1024],response[4096];
+char message[1024],response[65536];
 
 timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
 timeout.tv_usec = 0;  //  and will try again after the pause time
-
-//if (argc < 3) { puts("Parameters: <apikey> <command>"); exit(0); }
-
-/* fill in the parameters */
-//sprintf(message,message_fmt,argv[1],argv[2]);
-//sprintf(message,message_fmt);
 
 char tbuf[30];
 struct timeval tv;
 time_t curtime;
 int heartbeat_interval = 60;  // seconds
 
-while(1==1)  // heartbeat loop
-{
+ //while(1==1)  // heartbeat loop
+ //{
   char mytoken[75];
 
   num_items = rconfig("token_value",configresult,0);
@@ -1704,6 +1886,28 @@ while(1==1)  // heartbeat loop
     heartbeat_interval = atoi(configresult);
     }
 
+  num_items = rconfig("central_host",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - central host setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    strcpy(centralHost, configresult);
+   // strcpy(*host, configresult);
+    }
+
+  num_items = rconfig("central_port",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - Central Port setting not found in config.ini");
+    }
+  else
+    {
+    portno = atoi(configresult);
+    }
+
   gettimeofday(&tv, NULL);
   curtime = tv.tv_sec;
   strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
@@ -1723,8 +1927,9 @@ while(1==1)  // heartbeat loop
        printf("M: Set socket option send timeout failed\n");
 
 /* lookup the ip address */
-  server = gethostbyname(host);
-  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host\n");
+ //server = gethostbyname(host);
+  server = gethostbyname(centralHost);
+  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host: %s\n",centralHost);
 
 /* fill in the structure */
   memset(&serv_addr,0,sizeof(serv_addr));
@@ -1735,52 +1940,90 @@ while(1==1)  // heartbeat loop
 /* connect the socket */
   if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
     {
-    printf("M: Heartbeat - Could not reach Central Controln");
-    sleep(heartbeat_interval);
-    continue;
+    printf("M: Heartbeat - Could not reach Central Control\n");
+    close(sockfd);
+   // sleep(heartbeat_interval);
+   // continue;
+   // free(timer_handle);
+    return;
     }
   else
     printf("Heartbeat socket connected\n");
 
 /* send the request */
+ while(1==1)
+  {
   printf("M: send heartbeat... \n");
   total = strlen(message);
   sent = 0;
   do {
    bytes = write(sockfd,message+sent,total-sent);
    if (bytes < 0)
+     {
      printf("M: Heartbeat - ERROR writing message to socket\n");
+     close(sockfd);
+    // free(timer_handle);
+     return;
+    // sleep(heartbeat_interval);
+   //  continue;
+     }
    else
       printf("M: Heartbeat sent, # bytes = %i\n", bytes);
    if (bytes == 0)
-      break;
+     // free(timer_handle);
+      return;
+     // break;
    sent+=bytes;
   } while (sent < total);
 
 /* receive the response */
   memset(response,0,sizeof(response));
   total = sizeof(response)-1;
+  //printf("TOTAL RESPONSE SIZE=%i\n",total);
   received = 0;
+
   do {
+
+
    bytes = read(sockfd,response+received,total-received);
    if (bytes < 0)
+    {
     printf("M: Heartbeat - ERROR reading response from socket\n");
+    close(sockfd);
+   // free(timer_handle);
+    //return;
+   // sleep(heartbeat_interval);
+   // continue;
+    return;
+    }
    else
     printf("M: Heartbeat Response received from Central Control - %i bytes\n",bytes);
    if (bytes == 0)
+   // free(timer_handle);
+   // return;
      break;
   received+=bytes;
   } while (received < total);
 
   if (received == total)
+    {
     printf("M: Heartbeat - ERROR storing complete response from socket");
+    close(sockfd);
+    sleep(heartbeat_interval);
+    continue;
+  //  free(timer_handle);
+   // return;
+    }
 
 /* process response */
- // printf("M: Heartbeat Response:\n%s\n",response);
+ // 
   printf("M: Heartbeat Response received from Central Control\n");
-
+  printf("----------------------------------------------------\n");
+  printf("%s\n",response);
+  printf("----------------------------------------------------\n");
   char theStart[30];
   char theEnd[30];
+/*
   if(getDataDates(response, &theStart[0], &theEnd[0]))
    {
    printf("M: Received a DR data request from Central\n");
@@ -1795,17 +2038,18 @@ while(1==1)  // heartbeat loop
     uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
     }
    }
+*/
+ // close(sockfd);
+  //sleep(heartbeat_interval);
 
-  sleep(heartbeat_interval);
+  //  free(timer_handle);
+    
 
-/* close the socket */
-  close(sockfd);
-}
+  }  // end of heatbeat loop
 
-return 0;
+return ;
 
 }  // end of heartbeat thread
-
 
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
@@ -1936,7 +2180,24 @@ void testUploadThread(){
 }
 
 
-//////////////////////////////////////////////////////
+
+// write callback - to be used only when buffer has been created with malloc
+void central_write_cb(uv_write_t *req, int status)
+  {
+  printf("- - - - Central write cb status = %i\n",status);
+  uv_write_t *wr = (uv_write_t *)req;
+  free(wr->bufs->base);
+
+  free(wr);  // BUG - this needs fixed
+  }
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////
+///////////  Built-in Unit Tests
+/////////////////////////////////////////////////
 int run_all_tests()
 {
   {
@@ -2197,7 +2458,7 @@ int main(int argc, char *argv[]) {
   uv_tcp_t server;
   uv_tcp_init(loop, &server);
   struct sockaddr_in bind_addr;
-  uv_ip4_addr("0.0.0.0", 6100, &bind_addr);
+  uv_ip4_addr("0.0.0.0", 6100, &bind_addr);  // TODO: make configurable
   puts("Bind to input (terminal) port for listening");
   uv_tcp_bind(&server, (struct sockaddr *)&bind_addr, 0);
   int r = uv_listen((uv_stream_t*) &server, 128, on_new_connection);
@@ -2205,7 +2466,25 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "TCP Listen error!\n");
   //  return 1;
     }
+
+
+/*
+// Set up to listen on TCP port for responses coming from Central Control
+// These may be simple response to heartbeat packets, or may also contain
+// a data request for uploa of Ringbuffer data
+
+  printf("CONNECT TO CENTRAL\n");
+
+  socket_central = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
+  uv_tcp_init(loop, socket_central);
+  uv_connect_t* connect = (uv_connect_t*)malloc(sizeof(uv_connect_t));
+  struct sockaddr_in central_dest;
+  uv_ip4_addr("192.168.1.67", 5000, &central_dest);
+  uv_tcp_connect(connect, socket_central, (const struct sockaddr*)&central_dest, on_central_connect);
+*/
   
+
+///////////////////
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
@@ -2271,15 +2550,13 @@ int main(int argc, char *argv[]) {
 
     int hbrc = 0;
     long h;
-    pthread_t hbthread;
-    printf("M: Start hearbeat thread\n");
-    hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
 
-
-
+  printf("M: Start hearbeat timer\n");
+  uv_thread_t hb_id;
+  uv_thread_create(&hb_id, heartbeat2, NULL);
 
 ////////////////////////////////////////////////////////////////
-
+	
 
   return uv_run(loop, UV_RUN_DEFAULT);
 }

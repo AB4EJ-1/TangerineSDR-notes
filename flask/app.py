@@ -292,6 +292,9 @@ def restart():
    returned_value = os.system("killall -9 mainctl")
    print("F: after killing mainctl, retcode=",returned_value)
    print("F: Trying to restart mainctl")
+# start mainctl as independent process
+#   returned_value = os.system("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
+ # start mainctl as a subprocess
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
    time.sleep(3)
    print("F: after restarting mainctl, retcode=",returned_value)
@@ -947,7 +950,7 @@ def propagation():
 def ft8list():
   ft8string = ""
   band = []
-  
+  print("Entering _/ft8list")
   parser = configparser.ConfigParser(allow_no_value=True)
   parser.read('config.ini')
   for i in range(7):
@@ -955,18 +958,18 @@ def ft8list():
     ib = "ftant" + str(i)
     if(parser['settings'][ib] != "Off"):
       band.append(parser['settings'][ia])
- #     print("ft8 band list=" + band[i])
+      print("ft8 band list=" + band[i])
 
   try:
     plist = []
     for fno in range(len(band)):
 # TODO: following needs to come from configuration
      fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
-#     print("checking file",fname)
+     print("checking file",fname)
      f = open(fname,"r")
-     #print(len(f.readlines()))
+    # print("ft8list" + len(f.readlines()))
      plist.append(len(f.readlines()))
- #    print(plist)
+     print(plist)
      f.close()
       
 # here we build a JSON string to populate the FT8 panel
@@ -980,7 +983,7 @@ def ft8list():
     ft8string = ft8string + '"end":" "}'
   #  print("ft8string= " , ft8string)
   except Exception as ex:
-#    print(ex)
+    print(ex)
 # no-op
     z=1
 
