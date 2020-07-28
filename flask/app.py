@@ -90,6 +90,11 @@ def send_to_mainctl(cmdToSend,waitTime):
   try:
      print("F: define socket")
      tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#    Settings to keep TCP port from disconnecting when not used for a while
+     tcp_client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE,1)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 15)
     # Establish connection to TCP server and exchange data
      print("F: *** WC: *** connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
@@ -301,6 +306,9 @@ def restart():
 # ringbuffer setup
    ringbufferPath =    parser['settings']['ringbuffer_path']
    ringbufferMaxSize = parser['settings']['ringbuffer_max_size']
+# halt any previously started ringbuffer task(s)
+   rcmd = 'killall -9 drf'
+   returned_value = os.system(rcmd)
    rcmd = 'drf ringbuffer -z ' + ringbufferMaxSize + ' -p 120 -v ' + ringbufferPath + ' &'
 # spin off this process asynchornously (notice the & at the end)
    returned_value = os.system(rcmd)
@@ -418,7 +426,7 @@ def desetup():
    parser.read('config.ini')
    ringbufferPath = parser['settings']['ringbuffer_path']
  #  form = ChannelControlForm()
-   if request.method == 'GET':
+   if request.method == 'GET' :
     channellistform = ChannelListForm()
 # populate channel settings from config file
     channelcount = parser['channels']['numChannels']
@@ -453,6 +461,38 @@ def desetup():
    result = request.form
 
    print("F: result=", result.get('csubmit'))
+
+# does user want to start over?
+   if result.get('csubmit') == "Discard Changes" :
+    channellistform = ChannelListForm()
+# populate channel settings from config file
+    channelcount = parser['channels']['numChannels']
+    form = ChannelControlForm()
+    form.channelcount.data = channelcount
+    rate_list = []
+# populate rate capabilities from config file.
+# The config file should have been updated from DE sample rate list buffer.
+    numRates = parser['datarates']['numRates']
+    for r in range(int(numRates)):
+      theRate = parser['datarates']['r'+str(r)]
+      theTuple = [ str(theRate), int(theRate) ]
+      rate_list.append(theTuple)
+
+    form.channelrate.choices = rate_list
+    rate1 = int(parser['channels']['datarate'])
+ #   print("rate1 type = ",type(rate1))
+    form.channelrate.data = rate1
+
+    for ch in range(int(channelcount)):
+      channelform = ChannelForm()
+      channelform.channel_ant  = parser['channels']['p' + str(ch)] 
+      channelform.channel_freq = parser['channels']['f' + str(ch)]
+      channellistform.channels.append_entry(channelform)
+    return render_template('desetup.html',
+	  ringbufferPath = ringbufferPath, channelcount = channelcount,
+      channellistform = channellistform,
+      form = form, status = theStatus)
+
 
 # did user hit the Set channel count button?
 
@@ -489,11 +529,13 @@ def desetup():
 # WTForms range validator inside a FieldList
 
    if result.get('csubmit') == "Save Changes":
+     statusCheck = True
+     theStatus = "ERROR-"
      channelcount = result.get('channelcount')
      channelrate = result.get('channelrate')
      print("set data rate to ", channelrate)
      parser.set('channels','datarate',channelrate)
-     theStatus = ""
+   #  theStatus = ""
      print("set #channels to ",channelcount)
      parser.set('channels','numChannels',channelcount)
      print("RESULT: ", result) 
@@ -502,11 +544,12 @@ def desetup():
      print("path / directory existence check: ", rgPathExists)
    
      if rgPathExists == False:
-      theStatus = "Ringbuffer path invalid or not a directory"
+      theStatus = "Ringbuffer path invalid or not a directory. "
+      statusCheck = False
      elif dataCollStatus == 1:
-      theStatus = "ERROR: you must stop data collection before saving changes here"
-     else:
-      parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
+      theStatus = theStatus + "ERROR: you must stop data collection before saving changes here. "
+      statusCheck = False
+
 # save channel config to config file
      for ch in range(int(channelcount)):
        p = 'channels-' + str(ch) + '-channel_ant'
@@ -519,15 +562,23 @@ def desetup():
          fval = float(fstr)
          if(fval < 0.1 or fval > 54.0):
            theStatus = theStatus +  "Freq for channel "+ str(ch) + " out of range;"
+           statusCheck = False
          else:
           parser.set('channels','f' + str(ch), result.get(f))
        else:
          theStatus = theStatus + "Freq for channel " + str(ch) + " must be numeric;"
+         statusCheck = False
 
-     parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
-     fp = open('config.ini','w')
-     parser.write(fp)
-     fp.close()
+    
+     if(statusCheck == True):
+       print("Save config; ringbuffer_path=" + result.get('ringbufferPath'))
+       parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
+       fp = open('config.ini','w')
+       parser.write(fp)
+       fp.close()
+   
+
+
 
      channellistform = ChannelListForm()
      channelcount = parser['channels']['numChannels']
@@ -562,7 +613,11 @@ def desetup():
   #    configCmd = configCmd + parser['channels']['f' + str(ch)] + ","
       channellistform.channels.append_entry(channelform)
  #    send_to_mainctl(configCmd,1);
-     send_channel_config()
+     if(statusCheck == True):
+        send_channel_config()
+        theStatus = "OK"
+     else:
+        theStatus = theStatus + " NOT SAVED"
 
    print("return to desetup")
    return render_template('desetup.html',
@@ -841,8 +896,6 @@ def propagation():
        print("F: CANCEL")
      else:
        print("F: POST ringbufferPath =", result.get('ringbufferPath'))
-       ringbufferPath = ""
-       parser.set('settings', 'ringbuffer_path', result.get('ringbufferPath'))
        parser.set('settings', 'ftant0',            form.antennaport0.data)
        parser.set('settings', 'ft80f',            str(result.get('ft80f')))
        parser.set('settings', 'ftant1',            form.antennaport1.data)
@@ -893,11 +946,18 @@ def propagation():
 @app.route('/_ft8list')
 def ft8list():
   ft8string = ""
-# TODO: this needs to come from configuration
-  band = [ 14, 18]
-#  band = [ 14, 18, 14, 18, 21, 24, 28]
-  try:
+  band = []
+  
+  parser = configparser.ConfigParser(allow_no_value=True)
+  parser.read('config.ini')
+  for i in range(7):
+    ia = "ft8" + str(i) + "f"
+    ib = "ftant" + str(i)
+    if(parser['settings'][ib] != "Off"):
+      band.append(parser['settings'][ia])
+ #     print("ft8 band list=" + band[i])
 
+  try:
     plist = []
     for fno in range(len(band)):
 # TODO: following needs to come from configuration

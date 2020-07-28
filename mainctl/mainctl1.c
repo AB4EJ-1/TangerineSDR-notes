@@ -171,8 +171,8 @@ uv_loop_t *loop;
 static uv_tcp_t* DEsocket; // socket to be used across multiple functions
 static uv_stream_t* DEsockethandle;
 
-// the following probably not necessary  (TODO)
-static uv_tcp_t* websocket; // socket to be used for comm to web server
+
+static uv_tcp_t* socket_central; // socket to be used for comm to Central Control
 //static uv_stream_t* websockethandle;
 static uv_udp_t send_socket;
 static uv_udp_t data_socket;
@@ -181,7 +181,7 @@ static uv_stream_t* webStream;
 
 struct sockaddr_in send_addr;         // used for sending commands to DE
 struct sockaddr_in recv_addr;         // for command replies from DE (ACK, NAK)
-struct sockaddr_in send_config_addr;  //used for sending config req (CH) to DE
+struct sockaddr_in send_config_addr;  // used for sending config req (CH) to DE
 struct sockaddr_in recv_config_addr;  // for config replies from DE
 struct sockaddr_in recv_data_addr;    // for data coming from DE
 
@@ -214,6 +214,11 @@ static void alloc_config_buffer(uv_handle_t* handle, size_t suggested_size, uv_b
 }
 
 static void alloc_data_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
+  buf->base = malloc(suggested_size);
+  buf->len = suggested_size;
+}
+
+static void alloc_http_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
 }
@@ -334,7 +339,7 @@ void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
 /////////////////////////////////////////////////////////////////
 //////////  forward a status message from DE to webcontrol
 //////////////////////////////////////////////////////////////////
-  puts("process_command triggered; set up uv_write_t");
+  puts("DE status message triggered; set up uv_write_t");
   uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
   puts("set up write_req");
   uv_buf_t a[]={{.base="OK", .len=2},{.base="\n",.len=1}};
@@ -459,7 +464,6 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
   fclose(fftfp);
 
-
 }
 
 
@@ -471,7 +475,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 		const struct sockaddr * addr, unsigned flags)
   {
-  printf("Buffer received, size=%li\n",nread);
+  //printf("Buffer received, size=%li\n",nread);
   int channelPtr;
   if(nread == 0 )
     { 
@@ -480,22 +484,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	  return;
     }
 
-
-  VITABUF *buf_ptr1;  // TODO: fix FT8 code to use this memory & elim. FT8dataBuf & DATABUF
+  VITABUF *buf_ptr1;  
   buf_ptr1 = (VITABUF *)malloc(sizeof(VITABUF));  // allocate memory for working buf
   memcpy(buf_ptr1, buf->base, nread);
-  printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
+  free(buf->base);  // now that we have a copy of this, free the orginial
+  //printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
   
-/*
-  DATABUF *buf_ptr;
-  buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
-  memcpy(buf_ptr, buf->base, nread);    // get data from UDP buffer
- // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
-*/
-
-
-
- // printf("UDP I/Q data recvd, bytes = %ld; type=%s; channelcount=%i\n", nread,buf_ptr->bufType, buf_ptr->channelCount);
 
 /////////////////////////////////////////////////////////
 ////  start of handling incoming I/Q data //////////////
@@ -508,9 +502,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   //  struct VITAdataBuf FT8dataBuf;
 
     char FT8sig[2] = "FT";
-
-// TODO: this copy can be eliminated
- //   memcpy(&FT8dataBuf, buf->base, nread);
 
   /////////////  If this is FT8 data, process it  /////////////////
 #define FT8FSIZE 236000
@@ -533,8 +524,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
        if(seconds != 0)  // check if exact top of minute
          {
-		  free(buf->base);  // always release memory before exiting this callback
-		//  free(buf_ptr);
           free(buf_ptr1);
           return;    // we are not at exact top of minute; discard data and wait
          }
@@ -552,8 +541,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        printf("create raw data FT8 file %s\n",name[streamID]);
        if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
          { fprintf(stderr,"Could not open file %s \n",name[streamID]);
-		  free(buf->base);  // always release memory before exiting this callback
-		//  free(buf_ptr);
           free(buf_ptr1);
           return;
          }
@@ -581,8 +568,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            {
            if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
              {
-             free(buf->base);
-           //  free(buf_ptr);
+             free(buf_ptr1);
              return;
              }
            IQval = 0.0 + (0.0 * I);
@@ -617,82 +603,25 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
            }
          }
      
-    free(buf->base);
-  //  free(buf_ptr);
     free(buf_ptr1);
     return;
      }
     }
 
 
-/*
-//////////   original FT8 code, which uses simlated data    //////////////
-  if(strncmp(buf_ptr->bufType, "FT" ,2) ==0)  // this is a buffer of FT8
-    {
-       double dialfreq = buf_ptr->centerFreq;
-       channelPtr = buf_ptr-> channelNo;
-       printf("FT8 data, f = %f, buf# = %ld \n",buf_ptr->centerFreq, buf_ptr->dval.bufCount);
-       if(buf_ptr->dval.bufCount == 0 )   // this is the first buffer of the minute
-       {
-        t = time(NULL);
-        if((gmt = gmtime(&t)) == NULL)
-          { fprintf(stderr,"Could not convert time\n"); }
-        strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[channelPtr], "%s/FT8/ft8_%d_%f_%d_%s.c2", pathToRAMdisk, 1, buf_ptr->centerFreq,1,date);
-       if((fp[channelPtr] = fopen(name[channelPtr], "wb")) == NULL)
-        { fprintf(stderr,"Could not open file %s \n",name[channelPtr]);
-		  free(buf->base);  // always release memory before exiting this callback
-		  free(buf_ptr);
-          return;
-        }
-       fwrite(&dialfreq, 1, 8, fp[channelPtr]);
-      }
-      fwrite(buf_ptr->theDataSample, 1, 8000, fp[channelPtr]);
-      if (buf_ptr->dval.bufCount == 239 )   // was this the last buffer?
-        {
-        fclose(fp[channelPtr]);
-        char chstr[2];
-        sprintf(chstr,"%d",channelPtr);
-        char mycmd[100];
-        strcpy(mycmd, "./ft8d ");
-        strcat(mycmd,name[channelPtr]);
-        strcat(mycmd," > ");
-        strcat(mycmd,pathToRAMdisk);
-        strcat(mycmd, "/FT8/decoded");
-        strcat(mycmd, chstr);
-        strcat(mycmd, ".txt &");
-        printf("issue command: %s\n",mycmd);
-        int ret = system(mycmd);
-        puts("ft8 decode ran");
-        }
-	free(buf->base);  // always release memory before exiting this callback
-    free (buf_ptr);
-	return; 
-    }  // end of code for handling incoming FT8 data
-
-*/
-
 /////////////////// Handling RG (ringbuffer - type data ///////////////
 
-// TODO: temporary until we find out what is zeroing out channelCount    * * * * * *
-//  buf_ptr->channelCount = 1;
 
- // if(strncmp(buf_ptr->bufType, "RG" ,2) ==0)  // this is a buffer of ringbuffer I/Q data
-
-// is this a VITA buffer, plus also streamID[0-1] = "RG" ?
-// TODO: bufType may be different for VITA-T Tangerine buffers
-  printf("Handle incoming buffer\n");
+  //printf("Handle incoming buffer\n");
   if(buf_ptr1->VITA_hdr1[0] == 0x1c && buf_ptr1->stream_ID[0] == 0x52 && buf_ptr1->stream_ID[1] == 0x47)
    {
-   printf("buffer# %li\n",buffers_received);
+   //printf("buffer# %li\n",buffers_received);
    buffers_received++;
    int bufferChannels = buf_ptr1->stream_ID[2];  // number of channels embedded in payload
 // Note above: could use either streamID byte [2] or byte [3] for this
    if (nread < 8000)  // discard this buffer for now 
 	{
-	fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
-	 free(buf->base);  // always release memory before exiting this callback
-  //   free (buf_ptr);
+	 fprintf(stderr, "Buffer is < 8000 bytes;  * * * IGNORE * * *\n");
      free(buf_ptr1);
 	 return; 
 	}
@@ -734,8 +663,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // we are done with snapshotter handing of this buffer; if user doesn't want ringbuffer also, free memory & exit
     if(!ringbufferMode)
       {
-	   free(buf->base);  // always release memory before exiting this callback
-	 //  free(buf_ptr);
        free(buf_ptr1);
        return;
       } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
@@ -747,7 +674,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     {
     packetCount = (long) buf_ptr1->sample_count;
-    printf("bufcount = %ld\n", buf_ptr1->sample_count);
+  //  printf("bufcount = %ld\n", buf_ptr1->sample_count);
     if(bufferChannels != numchannels)
       printf("**** WARNING - channel count in data buffer (%i) differs from number of channels in config setting (%i) ***\n",bufferChannels, numchannels);
 //    int noOfChannels = numchannels;
@@ -796,16 +723,14 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 	  {
 
       result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr1->theDataSample,sampleCount) ;
-	  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
+	//  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
 
     hdf_i++;  // increment count of hdf buffers processed
 
-   // free (buf_ptr);  // free the work buffer
     }
   }
   free(buf_ptr1);
-  free(buf->base);  // free the callback buffer
   return;  // end of callback for handling incoming I/Q data
   }
 
@@ -911,8 +836,8 @@ void recv_port_check() {
 // callback for when a command is received from webcontroller
 /////////////////////////////////////////////////////////////////
 
-void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
-  puts("process_command routine triggered\n");
+void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
+  puts("process_local_command routine triggered\n");
   if(nread == -4095)  // TODO: this seems to be junk coming from flask app (?) - need to fix
 	{ puts("ignore 1 buffer"); return;
 	}
@@ -1328,6 +1253,7 @@ void process_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   }
 
 
+
 /////////////////////////////////////////////////////////////////
 // callback for when a connection from webcontroller is received
 ////////////////////////////////////////////////////////////////
@@ -1339,7 +1265,7 @@ void on_new_connection(uv_stream_t *server, int status) {
   uv_tcp_t *client = (uv_tcp_t*) malloc(sizeof(uv_tcp_t));
   uv_tcp_init(loop, client);
   if (uv_accept(server, (uv_stream_t*) client) == 0) {
-    uv_read_start((uv_stream_t*) client, alloc_buffer, process_command);
+    uv_read_start((uv_stream_t*) client, alloc_buffer, process_local_command);
     webStream = (uv_stream_t*) client;  // save stream object for replies to webserver
   }
   else {
@@ -1683,30 +1609,133 @@ void *dataUpload(void *threadid) {
 }
 
 
-////////////// Heartbeat to Central Host ////////////////////
+/*
+////////////////////////////////////////////////////////////////////
+/////  callback for when command from central control received /////
+////////////////////////////////////////////////////////////////////
+void process_central_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
+  puts("process_central_command routine triggered\n");
 
-void *heartbeat(void *threadid) {
+ free(buf->base);
+}
 
-int portno = 5000;  // TODO: use config value here
+/////   Callback for after TCP stream is closed  //////////////////
+void on_close(uv_handle_t * handle)
+  {
+  printf("uv close triggered\n");
+  }
 
-char *host = "192.168.1.67";  // TODO: use config value here
+///////////////////////////////////////////////////////////////////////////
+/////////////  Callback for responses coming from Central Control /////////
+// If Central Control as a data request for us, we will get it here. //////
+void proc_central_response(uv_stream_t *central, ssize_t nread, const uv_buf_t *buf) 
+  {
+  printf("RESPONSE from Central Control; nread=%li\n",nread);
+  if (nread > 0) {
+    printf("---------------------------------------------------------\n");
+    printf("buf='%s'\n",buf->base); 
+    printf("---------------------------------------------------------\n");
+    }
+  if (nread < 0) {
+    if (nread != UV_EOF)
+          fprintf(stderr, "Read error %s\n", uv_err_name(nread));
+    free(buf->base);
+    uv_close((uv_handle_t*) central, on_close);
+    return;
+    }
 
-char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
+  free(buf->base);
+  uv_close((uv_handle_t*) central, on_close);
+  return;
+  }
+
+///////////////////////////////////////////////////////////////////////////
+//////////// Callback for when we connect to Central Control System/////////
+void on_central_connect(uv_connect_t* connection, int status)
+  {
+  uv_stream_t* stream;
+  uv_write_t write_req;
+  printf("Connected to Central Control\n");
+  if (status < 0) {
+     fprintf(stderr, "Error in in connecting to Central Control %s\n", uv_strerror(status));
+        // error!
+      return;
+    }
+  printf(" - - - - Connect to Central Control - - - ;\n");
+    // get the handle to the stream passed in connection
+  stream = connection->handle;
+
+    // make ready to receive response from Central
+  uv_read_start((uv_stream_t*) stream, alloc_http_buffer, proc_central_response);
+
+  // Now, prepare a heartbeat message to send to Central Control
+
+  struct timeval timeout;
+
+  char message[1024];
+
+  timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
+  timeout.tv_usec = 0;  //  and will try again after the pause time
+
+  char tbuf[30];
+  struct timeval tv;
+  time_t curtime;
+
+  char mytoken[75];
+
+  num_items = rconfig("token_value",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - token_value setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    strcpy(mytoken, configresult);
+    }
+
+  gettimeofday(&tv, NULL);
+  curtime = tv.tv_sec;
+  strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
+  printf("Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
+  sprintf(message,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n",mytoken,tbuf);
+
+  uv_buf_t buf = uv_buf_init(message,strlen(message));
+
+    // Notice here we don't use callback routine, as we do not want to free
+    // 'buf' memory area; it is a local variable
+  while(1==1)
+   {
+    printf("send heartbeat\n");
+    int r1 = uv_write(&write_req, stream, &buf, 1, NULL);
+    sleep(10);
+   }
+  
+  
+  }
+*/
+
+
+//////////////////////////////////////////////////////////////////
+//////////////   heartbeat using standard tcp & threading ////////
+void *heartbeat1(void *threadid) {
+
+int portno = 5000;  // default, to be replaced by configurea value.
+
+char *host = "192.168.1.67"; // default, to be replaced by configurea value.
+char centralHost[20] = "192.168.1.67";
+
+//char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
 
 struct hostent *server;
 struct sockaddr_in serv_addr;
 struct timeval timeout;
 int sockfd, bytes, sent, received, total;
-char message[1024],response[4096];
+char message[1024],response[65536];
 
 timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
 timeout.tv_usec = 0;  //  and will try again after the pause time
-
-//if (argc < 3) { puts("Parameters: <apikey> <command>"); exit(0); }
-
-/* fill in the parameters */
-//sprintf(message,message_fmt,argv[1],argv[2]);
-//sprintf(message,message_fmt);
 
 char tbuf[30];
 struct timeval tv;
@@ -1741,6 +1770,28 @@ while(1==1)  // heartbeat loop
     heartbeat_interval = atoi(configresult);
     }
 
+  num_items = rconfig("central_host",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - central host setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    strcpy(centralHost, configresult);
+   // strcpy(*host, configresult);
+    }
+
+  num_items = rconfig("central_port",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - Central Port setting not found in config.ini");
+    }
+  else
+    {
+    portno = atoi(configresult);
+    }
+
   gettimeofday(&tv, NULL);
   curtime = tv.tv_sec;
   strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
@@ -1760,8 +1811,9 @@ while(1==1)  // heartbeat loop
        printf("M: Set socket option send timeout failed\n");
 
 /* lookup the ip address */
-  server = gethostbyname(host);
-  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host\n");
+ //server = gethostbyname(host);
+  server = gethostbyname(centralHost);
+  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host: %s\n",centralHost);
 
 /* fill in the structure */
   memset(&serv_addr,0,sizeof(serv_addr));
@@ -1797,8 +1849,15 @@ while(1==1)  // heartbeat loop
 /* receive the response */
   memset(response,0,sizeof(response));
   total = sizeof(response)-1;
+  //printf("TOTAL RESPONSE SIZE=%i\n",total);
   received = 0;
+
   do {
+
+// TODO: this code here is buggy - leads to overwriting heap
+// appears to contain illogical pointer arithmetic
+// IDEA: convert this to use libuv TCP
+
    bytes = read(sockfd,response+received,total-received);
    if (bytes < 0)
     printf("M: Heartbeat - ERROR reading response from socket\n");
@@ -1813,6 +1872,197 @@ while(1==1)  // heartbeat loop
     printf("M: Heartbeat - ERROR storing complete response from socket");
 
 /* process response */
+ // 
+  printf("M: Heartbeat Response received from Central Control\n");
+  printf("----------------------------------------------------\n");
+  printf("%s\n",response);
+  printf("----------------------------------------------------\n");
+  char theStart[30];
+  char theEnd[30];
+/*
+  if(getDataDates(response, &theStart[0], &theEnd[0]))
+   {
+   printf("M: Received a DR data request from Central\n");
+
+   if(!uploadInProgress)
+    {
+    int rp = prep_data_files(theStart, theEnd, ringbuffer_path);
+    int uplrc = 0;
+    long h;
+    pthread_t uplthread;
+    printf("M: Start upload thread\n");
+    uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
+    }
+   }
+*/
+
+  sleep(heartbeat_interval);
+
+/* close the socket */
+  close(sockfd);
+}
+
+return 0;
+
+}  // end of heartbeat thread
+
+
+
+
+
+
+/*
+/////////////////////////////////////////////////////////////
+////////////// Heartbeat to Central Host ////////////////////
+// This is a libuv thread.  ////////////////////////////////'
+void heartbeat(void *arg) {
+  printf("HEARTBEAT THREAD START\n");
+  int portno = 5000;  
+  char centralHost[20];
+  struct timeval timeout;
+
+  char message[1024];
+  timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
+  timeout.tv_usec = 0;  //  and will try again after the pause time
+
+  char tbuf[30];
+  struct timeval tv;
+  time_t curtime;
+  int heartbeat_interval = 60;  // seconds  (default)
+
+// while(1==1)  // heartbeat loop
+//{
+
+  char mytoken[75];
+
+  num_items = rconfig("token_value",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - token_value setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    strcpy(mytoken, configresult);
+    }
+
+  num_items = rconfig("heartbeat_interval",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - heartbeat_interval setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    heartbeat_interval = atoi(configresult);
+    }
+
+  num_items = rconfig("central_host",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - central host setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    strcpy(centralHost, configresult);
+    }
+
+  num_items = rconfig("central_port",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - Central Port setting not found in config.ini");
+    }
+  else
+    {
+    portno = atoi(configresult);
+    }
+
+// Connect to Central Control system. When successful, the callback routine
+// will send the heartbeat itself, and set up to receive response.
+
+ // uv_tcp_t* socket_central; // socket to be used for comm to Central Control
+  socket_central = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
+  uv_tcp_init(loop, socket_central);
+  uv_connect_t* connect = (uv_connect_t*)malloc(sizeof(uv_connect_t));
+  struct sockaddr_in central_dest;
+  uv_ip4_addr(centralHost, portno, &central_dest);
+  printf("CONNECT TO CENTRAL\n");
+  uv_tcp_connect(connect, socket_central, (const struct sockaddr*)&central_dest, on_central_connect);
+  printf("CONNECTION REQUEST DONE\n");
+
+
+
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) printf("M: Heartbeat thread- ERROR opening socket\n");
+
+
+  if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+        sizeof(timeout)) < 0)
+       printf("M: Set socket option rcv timeout failed\n");
+  if (setsockopt (sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+        sizeof(timeout)) < 0)
+       printf("M: Set socket option send timeout failed\n");
+
+  server = gethostbyname(host);
+  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host\n");
+
+  memset(&serv_addr,0,sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(portno);
+  memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
+
+
+  if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
+    {
+    printf("M: Heartbeat - Could not reach Central Controln");
+    sleep(heartbeat_interval);
+    continue;
+    }
+  else
+    printf("Heartbeat socket connected\n");
+
+
+  printf("M: send heartbeat... \n");
+  total = strlen(message);
+  sent = 0;
+  do {
+   bytes = write(sockfd,message+sent,total-sent);
+   if (bytes < 0)
+     printf("M: Heartbeat - ERROR writing message to socket\n");
+   else
+      printf("M: Heartbeat sent, # bytes = %i\n", bytes);
+   if (bytes == 0)
+      break;
+   sent+=bytes;
+  } while (sent < total);
+
+
+  memset(response,0,sizeof(response));
+  total = sizeof(response)-1;
+  received = 0;
+  do {
+
+// TODO: this code here is buggy - leads to overwriting heap
+// appears to contain illogical pointer arithmetic
+// IDEA: convert this to use libuv TCP
+
+   bytes = read(sockfd,response+received,total-received);
+   if (bytes < 0)
+    printf("M: Heartbeat - ERROR reading response from socket\n");
+   else
+    printf("M: Heartbeat Response received from Central Control - %i bytes\n",bytes);
+   if (bytes == 0)
+     break;
+  received+=bytes;
+  } while (received < total);
+
+  if (received == total)
+    printf("M: Heartbeat - ERROR storing complete response from socket");
+
+
  // printf("M: Heartbeat Response:\n%s\n",response);
   printf("M: Heartbeat Response received from Central Control\n");
 
@@ -1833,16 +2083,17 @@ while(1==1)  // heartbeat loop
     }
    }
 
+
+  printf("SLEEP FOR %i\n",heartbeat_interval);
   sleep(heartbeat_interval);
+  printf("Heartbeat sleep complete\n");
 
-/* close the socket */
-  close(sockfd);
-}
+ //}  // end of while 1==2 loop
 
-return 0;
+ return;
 
 }  // end of heartbeat thread
-
+*/
 
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
@@ -1973,7 +2224,24 @@ void testUploadThread(){
 }
 
 
-//////////////////////////////////////////////////////
+
+// write callback - to be used only when buffer has been created with malloc
+void central_write_cb(uv_write_t *req, int status)
+  {
+  printf("- - - - Central write cb status = %i\n",status);
+  uv_write_t *wr = (uv_write_t *)req;
+  free(wr->bufs->base);
+
+  free(wr);  // BUG - this needs fixed
+  }
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////
+///////////  Built-in Unit Tests
+/////////////////////////////////////////////////
 int run_all_tests()
 {
   {
@@ -2234,7 +2502,7 @@ int main(int argc, char *argv[]) {
   uv_tcp_t server;
   uv_tcp_init(loop, &server);
   struct sockaddr_in bind_addr;
-  uv_ip4_addr("0.0.0.0", 6100, &bind_addr);
+  uv_ip4_addr("0.0.0.0", 6100, &bind_addr);  // TODO: make configurable
   puts("Bind to input (terminal) port for listening");
   uv_tcp_bind(&server, (struct sockaddr *)&bind_addr, 0);
   int r = uv_listen((uv_stream_t*) &server, 128, on_new_connection);
@@ -2242,7 +2510,25 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "TCP Listen error!\n");
   //  return 1;
     }
+
+
+/*
+// Set up to listen on TCP port for responses coming from Central Control
+// These may be simple response to heartbeat packets, or may also contain
+// a data request for uploa of Ringbuffer data
+
+  printf("CONNECT TO CENTRAL\n");
+
+  socket_central = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
+  uv_tcp_init(loop, socket_central);
+  uv_connect_t* connect = (uv_connect_t*)malloc(sizeof(uv_connect_t));
+  struct sockaddr_in central_dest;
+  uv_ip4_addr("192.168.1.67", 5000, &central_dest);
+  uv_tcp_connect(connect, socket_central, (const struct sockaddr*)&central_dest, on_central_connect);
+*/
   
+
+///////////////////
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
@@ -2308,9 +2594,14 @@ int main(int argc, char *argv[]) {
 
     int hbrc = 0;
     long h;
+
+  //uv_thread_t hb_id;
+  //uv_thread_create(&hb_id, heartbeat, NULL);
+
+// TODO: this needs to call a HB thread that is libuv-based
     pthread_t hbthread;
     printf("M: Start hearbeat thread\n");
-    hbrc = pthread_create(&hbthread, NULL, heartbeat, (void*)h);
+    hbrc = pthread_create(&hbthread, NULL, heartbeat1, (void*)h);
 
 
 
