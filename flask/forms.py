@@ -8,7 +8,8 @@ class MainControlForm(FlaskForm):
     csrf = True
     csrf_time_limit = None
   mode = SelectField('Mode', choices = [('snapshotter','Snapshotter'),
-     ('ringbuffer','Ringbuffer'), ('snapring','SnapRing'), ('firehose','Firehose')])
+     ('ringbuffer','Ringbuffer'), ('snapring','SnapRing'), ('firehoseR','FirehoseRemote'),
+     ('firehoseL','FirehoseLocal')])
   startDC = SubmitField("Start Data Collection")
   stopDC = SubmitField("Stop Data Collection")
   prop = SelectField('Type', choices = [('FT8','FT8'),('WSPR','WSPR')])

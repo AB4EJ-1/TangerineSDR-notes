@@ -119,9 +119,8 @@ static  uint64_t vector_sum = 0;
 
 static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
 
-static char ringbuffer_path[100];
+static char ringbuffer_path[80];
 static char total_hdf5_path[100];
-static char firehoseR_path[100];
 static char hdf5subdirectory[16];
 static long packetCount;
 static int recv_port_status = 0;
@@ -201,6 +200,8 @@ int ft8counter[8];   // counter of how many ft8 samples saved in this collection
 int inputcount[8];   // temporary, to reduce sample rate
 float chfrequency[8];
 
+int firehoseRactive = 0;  // indicates that firehose to remote (WAN) server active
+int firehoseLactive = 0;  // indicates that firehose to local (LAN) server active
 
 // Memory allocators to handle data traffic passing via libuv asynchronous calls
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
@@ -230,8 +231,8 @@ static char target[30];
 static int num_items = 0;
 static int snapshotterMode = 0;
 static int ringbufferMode = 0;
-static int firehoseLMode = 0;
 static int firehoseRMode = 0;
+static int firehoseLMode = 0;
 static char pathToRAMdisk[100];
 static int uploadInProgress = 0;
 // for communications to Central Host
@@ -432,6 +433,8 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
      fprintf(fftfp,"%15.10f,",M);
    }
 
+// TODO: this needs to push the FFT (freq. domain) result to Central Control table
+
 // this section is for outputting +/- 5 hz around center freq with FFT_N=1,048,576
 /*
   for(int i=maxbinT-100;i < maxbinT+100;i++)  
@@ -458,148 +461,6 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 
 }
 
-/*               Commented out, as all this has been moved to separate program & process
-////////////////////////////////////////////////////////////////////
-//////////   callback rtn for ft8 only testing  //////////////////
-
-void on_UDP_data_read_ft8(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
-		const struct sockaddr * addr, unsigned flags)
-  {
-  //printf("ft8 port, Buffer received, size=%li\n",nread);
-  int channelPtr;
-  if(nread == 0 )
-    { 
-    //  puts("received UDP zero");
-      free(buf->base);
-	  return;
-    }
-
-  VITABUF *buf_ptr1;  
-  buf_ptr1 = (VITABUF *)malloc(sizeof(VITABUF));  // allocate memory for working buf
-  memcpy(buf_ptr1, buf->base, nread);
-  free(buf->base);  // now that we have a copy of this, free the orginial
-  //printf("buftype %c %c\n",buf_ptr1->stream_ID[0],buf_ptr1->stream_ID[1]);
-  
-
-/////////////////////////////////////////////////////////
-////  start of handling incoming I/Q data //////////////
-
-
-// code update for handing data in VITA format
-
-  if(buf_ptr1->VITA_hdr1[0] == 0x1c)  // this is a VITA buffer  (TODO: need to add stream ID check)
-    {
-  //  struct VITAdataBuf FT8dataBuf;
-
-    char FT8sig[2] = "FT";
-
-  /////////////  If this is FT8 data, process it  /////////////////
-#define FT8FSIZE 236000
-    if(memcmp(buf_ptr1->stream_ID,FT8sig,2) == 0)  
-     {
-  //   printf("FT8 buffer ");
-   // the 4th byte of stream ID is a binary 0, 1, 2, 3 etc
-     int streamID = buf_ptr1->stream_ID[3];   // this is stream ID (may change)
-     int idialfreq = (int)(1000000.0 * dialfreq[streamID]);
-   //  printf("streamID = %i\n",streamID);
-     if(ft8active[streamID] == 0)  // this ft8 stream is not yet active
-       {
-       time_t rawtime;
-       struct tm * info ;
-       time(&rawtime);
-       info = gmtime(&rawtime);
-       int seconds = info->tm_sec;
-       if(seconds > 0)
-         printf("FT8 will start in = %i seconds\r",60-seconds);
-
-       if(seconds != 0)  // check if exact top of minute
-         {
-          free(buf_ptr1);
-          return;    // we are not at exact top of minute; discard data and wait
-         }
-       ft8active[streamID] = 1;   // mark this ft8 stream as active
-       ft8counter[streamID] = 0;            // zero this counter
-       inputcount[streamID] = 0;
-       printf("\nSaving FT8 for decode\n");
-
-       t = time(NULL);
-       if((gmt = gmtime(&t)) == NULL)
-          { fprintf(stderr,"Could not convert time\n"); }
-        strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[streamID], "%s/FT8/ft8_%i_%i_%d_%s.c2", pathToRAMdisk, streamID, idialfreq,1,date); 
-
-       printf("create raw data FT8 file %s\n",name[streamID]);
-       if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
-         { fprintf(stderr,"Could not open file %s \n",name[streamID]);
-          free(buf_ptr1);
-          return;
-         }
-       double dialfreq1 = dialfreq[streamID];
-       fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
-
-       }
-     // at this point, this ft8 stream is active
-     // Note: for FlexRadio, expect 512 IQ samples per buffer.
-     // TODO: for Tangerine, expect buffers of 1024 IQ samples; update this
-       for(int i=0; i < 512 && ft8counter[streamID] <= FT8FSIZE; i++)   // go thru input buffer
-         {
-         inputcount[streamID]++;
-
-         if((inputcount[streamID] % 12) != 0)  // reduce sample rate
-          continue;    // TODO: Tangerine DE will do correct decimation; remove this
-
-         IQval = buf_ptr1->theDataSample[i].I_val + (buf_ptr1->theDataSample[i].Q_val * I);
-         IQval = IQval / 1000000.0;  // experimental; TODO: remove this
-         fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
-         ft8counter[streamID]++;
-
-         // if we get another buffer or 2 beyond the last one, we ignore it
-         if(ft8counter[streamID] >= FT8FSIZE)   // have we filled output?
-           {
-           if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
-             {
-             free(buf_ptr1);
-             return;
-             }
-           IQval = 0.0 + (0.0 * I);
-           for(int k = 0; k < 4000; k++)  // pad end of file with zeros
-             {
-             fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
-             ft8counter[streamID]++;
-             }
-
-           ft8active[streamID] = 0;  // mark it inactive
-           fclose(fp[streamID]);
-         // trigger processing of the ft8 data file
-
-           printf("FT8 decoding...\n");
-           char chstr[4];
-           sprintf(chstr,"%i",streamID);
-           char mycmd[100];
- 
-           int ret = system(mycmd);
-  // TODO: following can be simplified to a single sprintf
-           strcpy(mycmd, "./ft8d_del "); 
-           strcat(mycmd,name[streamID]);
-           strcat(mycmd," > ");
-           strcat(mycmd,pathToRAMdisk);
-           strcat(mycmd, "/FT8/decoded");
-           strcat(mycmd, chstr);
-           strcat(mycmd, ".txt &");  // here add & to run asynch (but beware of file delete!)
-           printf("issue command: %s\n",mycmd);
-           ret = system(mycmd);
-           puts("ft8 decode ran");
-           // Note: this assumes that decoder (ft8d_del) deletes work file when done.
-           }
-         }
-     
-    free(buf_ptr1);
-    return;
-     }
-    }
-
- }
-*/
 
 
 /////////////////////////////////////////////////////////////
@@ -631,124 +492,13 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
 // code update for handing data in VITA format
 
-/*  commented out; ft8 processing moved to separate program & process
-  if(buf_ptr1->VITA_hdr1[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
-    {
-  //  struct VITAdataBuf FT8dataBuf;
-
-    char FT8sig[2] = "FT";
-
-  /////////////  If this is FT8 data, process it  /////////////////
-#define FT8FSIZE 236000
-    if(memcmp(buf_ptr1->stream_ID,FT8sig,2) == 0)  
-     {
-  //   printf("FT8 buffer ");
-   // the 4th byte of stream ID is a binary 0, 1, 2, 3 etc
-     int streamID = buf_ptr1->stream_ID[3];   // this is stream ID (may change)
-     int idialfreq = (int)(1000000.0 * dialfreq[streamID]);
-   //  printf("streamID = %i\n",streamID);
-     if(ft8active[streamID] == 0)  // this ft8 stream is not yet active
-       {
-       time_t rawtime;
-       struct tm * info ;
-       time(&rawtime);
-       info = gmtime(&rawtime);
-       int seconds = info->tm_sec;
-       if(seconds > 0)
-         printf("FT8 will start in = %i seconds\r",60-seconds);
-
-       if(seconds != 0)  // check if exact top of minute
-         {
-          free(buf_ptr1);
-          return;    // we are not at exact top of minute; discard data and wait
-         }
-       ft8active[streamID] = 1;   // mark this ft8 stream as active
-       ft8counter[streamID] = 0;            // zero this counter
-       inputcount[streamID] = 0;
-       printf("\nSaving FT8 for decode\n");
-
-       t = time(NULL);
-       if((gmt = gmtime(&t)) == NULL)
-          { fprintf(stderr,"Could not convert time\n"); }
-        strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[streamID], "%s/FT8/ft8_%i_%i_%d_%s.c2", pathToRAMdisk, streamID, idialfreq,1,date); 
-
-       printf("create raw data FT8 file %s\n",name[streamID]);
-       if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
-         { fprintf(stderr,"Could not open file %s \n",name[streamID]);
-          free(buf_ptr1);
-          return;
-         }
-       double dialfreq1 = dialfreq[streamID];
-       fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
-
-       }
-     // at this point, this ft8 stream is active
-     // Note: for FlexRadio, expect 512 IQ samples per buffer.
-     // TODO: for Tangerine, expect buffers of 1024 IQ samples; update this
-       for(int i=0; i < 512 && ft8counter[streamID] <= FT8FSIZE; i++)   // go thru input buffer
-         {
-         inputcount[streamID]++;
-
-         if((inputcount[streamID] % 12) != 0)  // reduce sample rate
-          continue;    // TODO: Tangerine DE will do correct decimation; remove this
-
-         IQval = buf_ptr1->theDataSample[i].I_val + (buf_ptr1->theDataSample[i].Q_val * I);
-         IQval = IQval / 1000000.0;  // experimental; TODO: remove this
-         fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
-         ft8counter[streamID]++;
-
-         // if we get another buffer or 2 beyond the last one, we ignore it
-         if(ft8counter[streamID] >= FT8FSIZE)   // have we filled output?
-           {
-           if(ft8counter[streamID] >= (FT8FSIZE+4000))  // have we already done this?
-             {
-             free(buf_ptr1);
-             return;
-             }
-           IQval = 0.0 + (0.0 * I);
-           for(int k = 0; k < 4000; k++)  // pad end of file with zeros
-             {
-             fwrite(&IQval , 1, sizeof(IQval), fp[streamID]);
-             ft8counter[streamID]++;
-             }
-
-           ft8active[streamID] = 0;  // mark it inactive
-           fclose(fp[streamID]);
-         // trigger processing of the ft8 data file
-
-           printf("FT8 decoding...\n");
-           char chstr[4];
-           sprintf(chstr,"%i",streamID);
-           char mycmd[100];
- 
-           int ret = system(mycmd);
-  // TODO: following can be simplified to a single sprintf
-           strcpy(mycmd, "./ft8d_del "); 
-           strcat(mycmd,name[streamID]);
-           strcat(mycmd," > ");
-           strcat(mycmd,pathToRAMdisk);
-           strcat(mycmd, "/FT8/decoded");
-           strcat(mycmd, chstr);
-           strcat(mycmd, ".txt &");  // here add & to run asynch (but beware of file delete!)
-           printf("issue command: %s\n",mycmd);
-           ret = system(mycmd);
-           puts("ft8 decode ran");
-           // Note: this assumes that decoder (ft8d_del) deletes work file when done.
-           }
-         }
-     
-    free(buf_ptr1);
-    return;
-     }
-    }
-*/
 
 
 /////////////////// Handling RG (ringbuffer - type data ///////////////
 
   //printf("Handle incoming buffer\n");
  // TODO: this needs to detect the slightly different header bytes in "VITA-T"
+ // TODO: when this change made, must also be made in simulator (DEmain)
   if(buf_ptr1->VITA_hdr1[0] == 0x1c && buf_ptr1->stream_ID[0] == 0x52 && buf_ptr1->stream_ID[1] == 0x47)
    {
    //printf("buffer# %li\n",buffers_received);
@@ -802,10 +552,16 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
        free(buf_ptr1);
        return;
       } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
-    }
+    }  // end of snapshotter mode
 
 
-////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+////////////////////// Here we handle RG mode ////////////////////////////////////
+//////////////// Storage to Ringbuffer in Digital RF format /////////////////////
+
 // handle I/Q buffers coming in for storage to Digital RF
 
     {
@@ -840,12 +596,18 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     vector_sum = 0;
     hdf_i= 0;
 
-    if(firehoseRMode)  // decide where we will store the DRF (hdf5) files
-      strcpy(total_hdf5_path,firehoseR_path);
-    else
-      strcpy(total_hdf5_path,ringbuffer_path);
+   if(firehoseRMode)
+     {
+    strcpy(total_hdf5_path,pathToRAMdisk);
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
+     }
+   else
+     {
+    strcpy(total_hdf5_path,ringbuffer_path);
+    strcat(total_hdf5_path,"/");
+    strcat(total_hdf5_path, hdf5subdirectory);
+      }
     printf("M: Storing to: %s\n",total_hdf5_path);
 
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
@@ -968,6 +730,36 @@ void recv_port_check() {
       }
   else
     puts("recv port already open");
+}
+
+
+/*   Commented out, as FT8 processing moved to separate program & process
+void recv_port_check_ft8() {  // temporary for ft8 testing
+  if(recv_port_status_ft8 == 0)   // if port not already open, open it
+      {
+// start a listener on Port F (temporary hard code, Port G)
+      uv_udp_init(loop, &data_socket);
+      uv_ip4_addr("0.0.0.0", 40003 , &recv_data_addr);
+      printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
+      int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
+      printf("bind retcode = %d\n",retcode);
+      retcode = uv_udp_recv_start(&data_socket, alloc_data_buffer, on_UDP_data_read_ft8);
+      printf("recv retcode = %d\n",retcode);
+      if (retcode == 0) recv_port_status_ft8 = 1;
+      }
+  else
+    puts("recv port already open");
+}
+*/
+
+
+/////////////////////////////////////////////////////////////////////
+//////   Thread for synchronizing local and Central Control directories
+//////   of spectrum data   
+void firehose_sync(void *threadid) {
+  printf("Firehose sync to Central Control activated \n");
+  sleep(20);  
+  
 }
 
 
@@ -1120,7 +912,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
       printf("RAMdisk path for SF, CONFIG RESULT = '%s'\n",configresult);
       strcpy(pathToRAMdisk,configresult);
       } 
-
   // FT8 works in 2 steps. First, the ft8receiver gets the IQ samples in 1 to 8 separate
   // streams, saving one minute's worth of data into a separate file per stream (band).
   // Then ft8receiver triggers ft8d to run, which decodes the data files, creating a 
@@ -1200,25 +991,26 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     strcpy(mkcommand,"killall -9 ft8rcvr");
     printf("issue command: %s\n",mkcommand);
     int rt = system(mkcommand);
-
     return;
 	}
 
   if(memcmp(mybuf, START_DATA_COLL , 2)==0)
 	{
     printf("M: START DATA COLL COMMAND RECEIVED\n");
-// determine what mode to run
+    // determine what mode to run
    num_items = rconfig("mode",configresult,0);
-   if(strncmp(configresult,"snapshotter",11)==0)
+
+   if(memcmp(configresult,"snapshotter",11)==0)
     {
     printf("STARTING SNAPHOTTER mode\n");
     snapshotterMode = 1;
     ringbufferMode = 0;
-    firehoseRMode = 0;
     firehoseLMode = 0;
+    firehoseRMode = 0;
     snapcount = 0;
     }
-   if(strncmp(configresult, "ringbuffer",10) == 0)
+
+   if(memcmp(configresult, "ringbuffer",10) == 0)
     {
     printf("STARTING RINGBUFFER mode\n");
     ringbufferMode = 1;
@@ -1227,7 +1019,8 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     firehoseLMode = 0;
     snapcount = 0;
     }
-   if(strncmp(configresult,"snapring",8)==0)
+
+   if(memcmp(configresult,"snapring",8)==0)
     {
     printf("STARTING SNAPSHOTTER AND RINGBUFFER modes\n");
     ringbufferMode = 1;
@@ -1236,36 +1029,20 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     firehoseLMode = 0;
     snapcount = 0;
     }
-   if(strncmp(configresult,"firehoseR",9)==0)
+
+   if(memcmp(configresult,"firehoseR",8)==0)
     {
-    printf("STARTING FIREHOSE REMOTE MODE\n");
+    printf("STARTING FIREHOSE-R mode\n");
     ringbufferMode = 0;
     snapshotterMode = 0;
     firehoseRMode = 1;
     firehoseLMode = 0;
     snapcount = 0;
-    num_items = rconfig("firehoser_path",configresult,0);
-    if(num_items == 0)
-      {
-      printf("ERROR - FirehoseR path setting not found in config.ini\n");
-      }
-    else
-      {
-      printf("FirehoseR path CONFIG RESULT = '%s'\n",configresult);
-      strcpy(firehoseR_path,configresult);
-      } 
-
+    firehoseRactive = 1;
+    printf("M: Start firehose-R thread\n");
+    uv_thread_t fh_id;
+    uv_thread_create(&fh_id, firehose_sync, NULL);
     }
-   if(strncmp(configresult,"firehoseL",9)==0)
-    {
-    printf("STARTING FIREHOSE LOCAL MODE\n");
-    ringbufferMode = 0;
-    snapshotterMode = 0;
-    firehoseRMode = 0;
-    firehoseLMode = 1;
-    snapcount = 0;
-    }
-
 
    if(snapshotterMode)
     {
@@ -1311,9 +1088,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
       }
     }
 
-
     uv_udp_send_t send_req;
- //   printf("M: try to print subdir, 1\n");
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
  //   printf("M: ry to print subdir 2\n");
@@ -1355,6 +1130,8 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     sleep(0.25);  // wait for command to be processed
     // now close the DRF file
     int result = digital_rf_close_write_hdf5(DRFdata_object);  
+    firehoseRactive = 0;
+    firehoseLactive = 0;
     DRFdata_object = NULL;
     fprintf(stderr,"DRF close, result = %d \n",result);
     return;
@@ -1418,24 +1195,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     puts("halting");
     uv_stop(loop);
     }
-
-/*
-// TODO: following code probably never reached
-  if(strncmp(buf->base, START_DATA_COLL,2)==0)  // is this a command to start collecting data?
-    {
-      buffers_received = 0;  // this lets us count buffers independently of counter in the buffer itself
-    }
-
-
-// try to close DRF file, but only if one is open
-  puts("check if DRF file open; if so, close it");
-  if(strncmp(buf->base, STOP_DATA_COLL,2)==0 && DRFdata_object != NULL)
-	{
-      puts("Closing DRF file");
-	  result = digital_rf_close_write_hdf5(DRFdata_object);
-      DRFdata_object = NULL;
-	}
-*/
 
   }
 
@@ -1681,6 +1440,7 @@ int openConfigFile()
 } 
 
 ////////////// Data Uploader thread /////////////////////////////////////
+///// For uploading in response to a Central Control Data Request
 void *dataUpload(void *threadid) {
   uploadInProgress = 1;
   char uploadCommand[300]="";
@@ -2443,17 +2203,6 @@ int main(int argc, char *argv[]) {
     {
     printf("RAMdisk path CONFIG RESULT = '%s'\n",configresult);
     strcpy(pathToRAMdisk,configresult);
-    } 
-
-  num_items = rconfig("firehoser_path",configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - FirehoseR path setting not found in config.ini\n");
-    }
-  else
-    {
-    printf("FirehoseR path CONFIG RESULT = '%s'\n",configresult);
-    strcpy(firehoseR_path,configresult);
     } 
 
   num_items = rconfig("fftoutput_path",configresult,0);

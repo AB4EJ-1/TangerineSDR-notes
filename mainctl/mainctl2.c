@@ -119,9 +119,8 @@ static  uint64_t vector_sum = 0;
 
 static long buffers_received = 0;  // for counting UDP buffers rec'd in case any dropped in transport
 
-static char ringbuffer_path[100];
+static char ringbuffer_path[80];
 static char total_hdf5_path[100];
-static char firehoseR_path[100];
 static char hdf5subdirectory[16];
 static long packetCount;
 static int recv_port_status = 0;
@@ -140,9 +139,10 @@ static int numchannels = 1;  // how many channels currently running
 static int FFTmemset = 0; // indicates whether FFT plans have been created (TODO: may not be needed)
 
 
-// The following allocates space for up to 8 FFTs. This could theoretically be done using dynamic
-// memory allocation, but that add complexity with no significant benefit.
-// Note that we use the same memory for both input to and output from fftw. 
+
+// The following purportedly can be done using dynamic mamory allocation utiltes
+// provided with FFTW package; however, this is very tricky to get to work without
+// creating memory leaks. So, we take brute force approach here instead.
 struct specPackage
   {
   int channelNo;
@@ -151,13 +151,14 @@ struct specPackage
   fftwf_plan p;
   } ;
 
+
 // set up array for up to 8 FFTs
 struct specPackage spectrumPackage[8];
 
 
 ////////////////////////////////////////////////
 
-// Digital RF - uncomment to enable specific tests
+// uncomment to enable specific tests
 #define TEST_FWRITE
 #define TEST_HDF5
 #define TEST_HDF5_CHECKSUM
@@ -202,7 +203,7 @@ int inputcount[8];   // temporary, to reduce sample rate
 float chfrequency[8];
 
 
-// Memory allocators to handle data traffic passing via libuv asynchronous calls
+// Set up memory to handle data traffic passing via libuv asynchronous calls
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
@@ -230,8 +231,7 @@ static char target[30];
 static int num_items = 0;
 static int snapshotterMode = 0;
 static int ringbufferMode = 0;
-static int firehoseLMode = 0;
-static int firehoseRMode = 0;
+static int firehoseMode = 0;
 static char pathToRAMdisk[100];
 static int uploadInProgress = 0;
 // for communications to Central Host
@@ -379,11 +379,12 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 
   float M = 0;
 
-// The following assumes the signal we are tracking falls within these FFT output bins.
-// This works if you use FFT size of 1,048,576 and have slice frequency set to ~ 1 kHz
-// below the WWV carrier.
+//  TODO: code below based on empirical approach (Red Pitaya). Must be fixed for Tangerine
+// assumes 1,048,572 bins per FFT
   int lowerbin = 20000 ;
   int upperbin = 22000 ;
+// new concept:  find max bin, and output 100 bins on either side of it
+
 
 //  int lowerbin = 0;
 //  int upperbin = 8191 ;
@@ -392,6 +393,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
   long maxbin = 0;
   float maxvalT = 0.0;
   long maxbinT = 0;
+
 
 // find max signal bin
   for(int i=0; i < FFT_N; i++)  // find maximum bin in entire histogram
@@ -406,6 +408,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 
   if(maxbinT < 100)
     maxbinT = 100;   // if maxbin < 100, then avoid having pointer go outside array
+   
 
   printf("output FFT results\n");
 
@@ -418,7 +421,9 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
       maxbin = i;
       maxval = M;
      }
+
      fprintf(fftfp,"%15.10f,",M);
+
    }
 
   for(int i=FFT_N;i >=FFT_N/2;i--)  // frequencies above center freq. ignoring DC
@@ -429,8 +434,12 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
       maxbin = i;
       maxval = M;
      }
+
      fprintf(fftfp,"%15.10f,",M);
+
    }
+
+
 
 // this section is for outputting +/- 5 hz around center freq with FFT_N=1,048,576
 /*
@@ -458,8 +467,7 @@ void FFTanalyze(void *args){  // argument is a struct with all fftwf data
 
 }
 
-/*               Commented out, as all this has been moved to separate program & process
-////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 //////////   callback rtn for ft8 only testing  //////////////////
 
 void on_UDP_data_read_ft8(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
@@ -599,7 +607,7 @@ void on_UDP_data_read_ft8(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t 
     }
 
  }
-*/
+
 
 
 /////////////////////////////////////////////////////////////
@@ -629,9 +637,9 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 /////////////////////////////////////////////////////////
 ////  start of handling incoming I/Q data //////////////
 
+
 // code update for handing data in VITA format
 
-/*  commented out; ft8 processing moved to separate program & process
   if(buf_ptr1->VITA_hdr1[0] == 0x1c)  // this is a VITA buffer  (need to add stream ID check)
     {
   //  struct VITAdataBuf FT8dataBuf;
@@ -742,13 +750,12 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     return;
      }
     }
-*/
 
 
 /////////////////// Handling RG (ringbuffer - type data ///////////////
 
+
   //printf("Handle incoming buffer\n");
- // TODO: this needs to detect the slightly different header bytes in "VITA-T"
   if(buf_ptr1->VITA_hdr1[0] == 0x1c && buf_ptr1->stream_ID[0] == 0x52 && buf_ptr1->stream_ID[1] == 0x47)
    {
    //printf("buffer# %li\n",buffers_received);
@@ -840,10 +847,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     vector_sum = 0;
     hdf_i= 0;
 
-    if(firehoseRMode)  // decide where we will store the DRF (hdf5) files
-      strcpy(total_hdf5_path,firehoseR_path);
-    else
-      strcpy(total_hdf5_path,ringbuffer_path);
+    strcpy(total_hdf5_path,ringbuffer_path);
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
     printf("M: Storing to: %s\n",total_hdf5_path);
@@ -860,10 +864,13 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 // push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
+
       result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr1->theDataSample,sampleCount) ;
 	//  fprintf(stderr,"DRF write result = %d, vector_sum = %ld \n",result, vector_sum);
 	  }
+
     hdf_i++;  // increment count of hdf buffers processed
+
     }
   }
   free(buf_ptr1);
@@ -891,8 +898,7 @@ const char * buildFileName(char * node, char * grid){
 
 }
 
-////// Function to prepare data in ring buffer for upload  /////
-///// Triggered as part of responding to "DR" data request coming from Central Control
+// the following function prepares data in ring buffer for upload 
 int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
  {
 // first: build list of data files for uplad using DRF "ls" utility
@@ -949,10 +955,9 @@ int getDataDates(char *input, char* startpoint, char* endpoint)
    } 
   startpoint[j] = 0;
   return(1);
+  
  }
 
-
-//////  Function to check LH_DATA_IN_port, and open it if not already open
 void recv_port_check() {
   if(recv_port_status == 0)   // if port not already open, open it
       {
@@ -970,7 +975,22 @@ void recv_port_check() {
     puts("recv port already open");
 }
 
-
+void recv_port_check_ft8() {  // temporary for ft8 testing
+  if(recv_port_status_ft8 == 0)   // if port not already open, open it
+      {
+// start a listener on Port F (temporary hard code, Port G)
+      uv_udp_init(loop, &data_socket);
+      uv_ip4_addr("0.0.0.0", 40003 , &recv_data_addr);
+      printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
+      int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
+      printf("bind retcode = %d\n",retcode);
+      retcode = uv_udp_recv_start(&data_socket, alloc_data_buffer, on_UDP_data_read_ft8);
+      printf("recv retcode = %d\n",retcode);
+      if (retcode == 0) recv_port_status_ft8 = 1;
+      }
+  else
+    puts("recv port already open");
+}
 
 /////////////////////////////////////////////////////////////////////
 // callback for when a command is received from webcontroller
@@ -1008,7 +1028,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 // NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
   
 
-  if(memcmp(mybuf, CREATE_CHANNEL, 2)==0)  // Request to create a configureation/data channel pair
+  if(strncmp(mybuf, CREATE_CHANNEL, 2)==0)  // Request to create a configureation/data channel pair
 	{
  //   printf("Create Channel received at maintcl; port1=%s \n",d.c.port1);
     uv_udp_send_t send_req;
@@ -1057,7 +1077,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
 //////////////////////////////////////////////////////////////////////
 ////////////////// Process CH arriving from app /////////////////////
-  if(memcmp(mybuf, CONFIG_CHANNELS, 2)==0) 
+  if(strncmp(mybuf, CONFIG_CHANNELS, 2)==0) 
     {
     uv_udp_send_t send_req;
     char b[400];
@@ -1107,7 +1127,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
     }
 
-  if(memcmp(mybuf, START_FT8_COLL , 2)==0) // got command to start FT8 reception
+  if(strncmp(mybuf, START_FT8_COLL , 2)==0) // got command to start FT8 reception
     {
 // update this in case user has changed it
     num_items = rconfig("ramdisk_path",configresult,0);
@@ -1120,12 +1140,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
       printf("RAMdisk path for SF, CONFIG RESULT = '%s'\n",configresult);
       strcpy(pathToRAMdisk,configresult);
       } 
-
-  // FT8 works in 2 steps. First, the ft8receiver gets the IQ samples in 1 to 8 separate
-  // streams, saving one minute's worth of data into a separate file per stream (band).
-  // Then ft8receiver triggers ft8d to run, which decodes the data files, creating a 
-  // text file for each stream(band), which system can inquire to see results.
-  // All this is done in separate processes to avoid contention inside mainctl.
 
     uv_udp_send_t send_req;
 	char b[100];
@@ -1146,10 +1160,10 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
   //  rt = system("rm /mnt/RAM_disk/FT8/*.*");
     printf("issue command: %s\n",mkcommand);
     rt = system(mkcommand);
-    strcpy(mkcommand,"killall -9 ft8rcvr");  // halt any existing instance(s)
+    strcpy(mkcommand,"killall -9 ft8rcvr");
     printf("issue command: %s\n",mkcommand);
     rt = system(mkcommand);
-    strcpy(mkcommand,"./ft8rcvr &");  // start instance of receiver
+    strcpy(mkcommand,"./ft8rcvr &");
     printf("issue command: %s\n",mkcommand);
     rt = system(mkcommand);
 
@@ -1158,6 +1172,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
      {   
      char ant[7];
      sprintf(ant,"ftant%i",i);
+
      num_items = rconfig(ant,configresult,0);
      if(num_items == 0)
       {
@@ -1176,9 +1191,11 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
          dialfreq[i] = atof(configresult);
          printf("dial freq %i %f \n",i,dialfreq[i]);
          }
-        }       
+        }
+       
       }
-     }  // end of antenna settings loop
+
+     }
 
     printf("Sending START FT8  to %s  port %u\n", DE_IP, DE_port);
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
@@ -1186,7 +1203,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
-  if(memcmp(mybuf, STOP_FT8_COLL , 2)==0)
+  if(strncmp(mybuf, STOP_FT8_COLL , 2)==0)
     {
     uv_udp_send_t send_req;
 	char b[60];
@@ -1204,7 +1221,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
-  if(memcmp(mybuf, START_DATA_COLL , 2)==0)
+  if(strncmp(mybuf, START_DATA_COLL , 2)==0)
 	{
     printf("M: START DATA COLL COMMAND RECEIVED\n");
 // determine what mode to run
@@ -1214,8 +1231,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     printf("STARTING SNAPHOTTER mode\n");
     snapshotterMode = 1;
     ringbufferMode = 0;
-    firehoseRMode = 0;
-    firehoseLMode = 0;
     snapcount = 0;
     }
    if(strncmp(configresult, "ringbuffer",10) == 0)
@@ -1223,8 +1238,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     printf("STARTING RINGBUFFER mode\n");
     ringbufferMode = 1;
     snapshotterMode = 0;
-    firehoseRMode = 0;
-    firehoseLMode = 0;
     snapcount = 0;
     }
    if(strncmp(configresult,"snapring",8)==0)
@@ -1232,40 +1245,8 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     printf("STARTING SNAPSHOTTER AND RINGBUFFER modes\n");
     ringbufferMode = 1;
     snapshotterMode = 1;
-    firehoseRMode = 0;
-    firehoseLMode = 0;
     snapcount = 0;
     }
-   if(strncmp(configresult,"firehoseR",9)==0)
-    {
-    printf("STARTING FIREHOSE REMOTE MODE\n");
-    ringbufferMode = 0;
-    snapshotterMode = 0;
-    firehoseRMode = 1;
-    firehoseLMode = 0;
-    snapcount = 0;
-    num_items = rconfig("firehoser_path",configresult,0);
-    if(num_items == 0)
-      {
-      printf("ERROR - FirehoseR path setting not found in config.ini\n");
-      }
-    else
-      {
-      printf("FirehoseR path CONFIG RESULT = '%s'\n",configresult);
-      strcpy(firehoseR_path,configresult);
-      } 
-
-    }
-   if(strncmp(configresult,"firehoseL",9)==0)
-    {
-    printf("STARTING FIREHOSE LOCAL MODE\n");
-    ringbufferMode = 0;
-    snapshotterMode = 0;
-    firehoseRMode = 0;
-    firehoseLMode = 1;
-    snapcount = 0;
-    }
-
 
    if(snapshotterMode)
     {
@@ -1340,8 +1321,8 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
-/////////  Handle command to stop RG data collection ////////////////
-  if(memcmp(mybuf, STOP_DATA_COLL , 2)==0)
+/////////  Handle command to stop data collection ////////////////
+  if(strncmp(mybuf, STOP_DATA_COLL , 2)==0)
 	{
     uv_udp_send_t send_req;
 	char b[60];
@@ -1357,11 +1338,26 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     int result = digital_rf_close_write_hdf5(DRFdata_object);  
     DRFdata_object = NULL;
     fprintf(stderr,"DRF close, result = %d \n",result);
+
+/*
+     for (int i = 0; i < numchannels; i++)  // allocate memory for FFT(s)
+      {
+      printf("FFTW deallocate memory %i\n",i);
+      fftwf_destroy_plan(spectrumPackage[i].p);
+      fftwf_free(spectrumPackage[i].spectrum_in);
+      fftwf_free(spectrumPackage[i].FFTout);
+
+      printf("deallocated mem for fft %i\n",i);
+      }
+  //   fftwf_cleanup();
+*/
+
+
     return;
 	}
 
 
-  if(memcmp(mybuf, STATUS_INQUIRY, 2)==0)
+  if(strncmp(mybuf, STATUS_INQUIRY, 2)==0)
 	{
 	puts("Forward status inquiry to DE");
     uv_udp_send_t send_req;
@@ -1378,7 +1374,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
-  if(memcmp(mybuf, HALT_DE, 2)==0)  // acts to restart the DE
+  if(strncmp(mybuf, HALT_DE, 2)==0)  // acts to restart the DE
 	{
 	puts("Forward status inquiry to DE");
     uv_udp_send_t send_req;
@@ -1395,7 +1391,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
-  if(memcmp(mybuf, DATARATE_INQUIRY, 2)==0)
+  if(strncmp(mybuf, DATARATE_INQUIRY, 2)==0)
 	{
 	puts("Forward datarate inquiry to DE");
     uv_udp_send_t send_req;
@@ -1413,13 +1409,13 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 	}
 
 
-  if(memcmp(buf->base,"BYE",3)==0)
+  if(strncmp(buf->base,"BYE",3)==0)
     {
     puts("halting");
     uv_stop(loop);
     }
 
-/*
+
 // TODO: following code probably never reached
   if(strncmp(buf->base, START_DATA_COLL,2)==0)  // is this a command to start collecting data?
     {
@@ -1435,7 +1431,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 	  result = digital_rf_close_write_hdf5(DRFdata_object);
       DRFdata_object = NULL;
 	}
-*/
 
   }
 
@@ -2443,17 +2438,6 @@ int main(int argc, char *argv[]) {
     {
     printf("RAMdisk path CONFIG RESULT = '%s'\n",configresult);
     strcpy(pathToRAMdisk,configresult);
-    } 
-
-  num_items = rconfig("firehoser_path",configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - FirehoseR path setting not found in config.ini\n");
-    }
-  else
-    {
-    printf("FirehoseR path CONFIG RESULT = '%s'\n",configresult);
-    strcpy(firehoseR_path,configresult);
     } 
 
   num_items = rconfig("fftoutput_path",configresult,0);

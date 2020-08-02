@@ -1,0 +1,3 @@
+rsync -a -v -n --delete bengelke@192.168.1.67:/home/bengelke/files/ /home/odroid/Documents/files/
+
+/mnt/RAM_disk/TangerineData
