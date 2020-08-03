@@ -611,9 +611,12 @@ void firehose_uploader(void *threadid) {
   while(1)
    {
    if (firehoseUploadActive == 0)  // firehoseR upload halted
+     {
+     printf("------ FIREHOSE UPLOAD SHUTTING DOWN -------\n");
      return;
-   printf("------FIREHOSE UPLOAD-----------");
-   sleep(20);
+     }
+   printf("------FIREHOSE UPLOAD-----------\n");
+   sleep(10);
 
    }
 

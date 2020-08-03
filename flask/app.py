@@ -226,26 +226,30 @@ def sdr():
 #        return  render_template('tangerine.html', form = form)
 
          if(form.startDC.data ):
-            if ( len(parser['settings']['ringbuffer_path']) < 1 
+            if   ( len(parser['settings']['firehoser_path']) < 1 
+                   and form.mode.data == 'firehoseR') :
+              print("F: configured temp firehose path='", parser['settings']['firehoser_path'],"'", len(parser['settings']['firehoser_path']))
+              form.errline = 'ERROR: Path to temporary firehoseR storage not configured'
+            elif ( len(parser['settings']['ringbuffer_path']) < 1 
                    and form.mode.data == 'ringbuffer') :
               print("F: configured ringbuffer path='", parser['settings']['ringbuffer_path'],"'", len(parser['settings']['ringbuffer_path']))
               form.errline = 'ERROR: Path to digital data storage not configured'
             else:
+
           # User wants to start data collection. Is there an existing drf_properties file?
-    #          if (os.path.isfile(parser['settings']['ringbuffer_path'] + "/experiment/drf_properties.h5")):
-     #           propertiesCrdat = os.path.getmtime((parser['settings']['ringbuffer_path'] + "/drf_properties.h5"))
-      #          print("F: Existing properties file crdat=" + propertiesCrdat)
-       #         os.rename(parser['settings']['ringbuffer_path'] + "/" + propertiesCrdat + "_" + "drf_properties.h5")
-       #         print("F: renamed.")
-          # command mainctl to trigger DE to start sending ringbuffer data
+
               now = datetime.now()
          #     subdir = "D" + now.strftime('%Y%m%d%H%M%S')
               subdir = "TangerineData"
               print("SEND START DATA COLLECTION COMMAND, subdirectory=" + subdir)
-              metadataPath = parser['settings']['ringbuffer_path'] + "/" + subdir
+              if(form.mode.data == 'firehoseR'):
+                metadataPath = parser['settings']['firehoser_path'] + "/" + subdir
+              else:
+                metadataPath = parser['settings']['ringbuffer_path'] + "/" + subdir
            #   print("metadata path="+metadataPath)
               returned_value = os.system("mkdir "+ metadataPath)
               print("F: after metadata creation, retcode=",returned_value)
+          # command mainctl to trigger DE to start sending ringbuffer data
               send_to_mainctl(START_DATA_COLL + "," + subdir,1)
               dataCollStatus = 1
 # write metadata describing channels into the drf_properties file
