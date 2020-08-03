@@ -232,6 +232,7 @@ static int snapshotterMode = 0;
 static int ringbufferMode = 0;
 static int firehoseLMode = 0;
 static int firehoseRMode = 0;
+static int firehoseUploadActive = 0;
 static char pathToRAMdisk[100];
 static int uploadInProgress = 0;
 // for communications to Central Host
@@ -601,6 +602,26 @@ void on_UDP_data_read_ft8(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t 
  }
 */
 
+///////////////////////////////////////////////////////////////////////////
+///////// Thread for uploading firehoseR data to Central Control //////////
+void firehose_uploader(void *threadid) {
+
+  printf("firehoseR uploader thread starting\n");
+  sleep(20);
+  while(1)
+   {
+   if (firehoseUploadActive == 0)  // firehoseR upload halted
+     return;
+   printf("------FIREHOSE UPLOAD-----------");
+   sleep(20);
+
+   }
+
+  return;
+
+}
+
+
 
 /////////////////////////////////////////////////////////////
 //  Callback for when UDP I/Q data packets received from DE 
@@ -828,10 +849,23 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
   global_start_sample = buf_ptr1->time_stamp * (long double)sample_rate_numerator /  
                  SAMPLE_RATE_DENOMINATOR;
 
+  // We do all this upon receiving the first packet of a new data collection session
+  // If we missed buffer zero (it is UDP, after all), we consider it "first" if buffers_received=1
   if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) 
     {
     char cleanup[100]="";
-    sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
+
+    if(firehoseRMode)  // decide where we will store the DRF (hdf5) files
+      {
+      strcpy(total_hdf5_path,firehoseR_path);
+      sprintf(cleanup,"rm %s/firehose/drf_properties.h5",firehoseR_path);
+      }
+    else
+      {
+      strcpy(total_hdf5_path,ringbuffer_path);
+      sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
+      }
+    
     printf("deleting old propeties file: %s\n",cleanup);
     int retcode = system(cleanup);
     fprintf(stderr,"Create HDF5 file group, start time: %ld \n",global_start_sample);
@@ -840,10 +874,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     vector_sum = 0;
     hdf_i= 0;
 
-    if(firehoseRMode)  // decide where we will store the DRF (hdf5) files
-      strcpy(total_hdf5_path,firehoseR_path);
-    else
-      strcpy(total_hdf5_path,ringbuffer_path);
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
     printf("M: Storing to: %s\n",total_hdf5_path);
@@ -857,7 +887,6 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     vector_sum = vector_leading_edge_index + hdf_i*sampleCount; 
 
-// push buffer directly to DRF just like it is
     if(DRFdata_object != NULL)  // make sure there is an open DRF file
 	  {
       result = digital_rf_write_hdf5(DRFdata_object, vector_sum, buf_ptr1->theDataSample,sampleCount) ;
@@ -1253,6 +1282,10 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
       {
       printf("FirehoseR path CONFIG RESULT = '%s'\n",configresult);
       strcpy(firehoseR_path,configresult);
+      firehoseUploadActive = 1;
+      printf("M: Start upload thread\n");
+      uv_thread_t firehose_id;
+      uv_thread_create(&firehose_id, firehose_uploader, NULL);
       } 
 
     }
@@ -1350,6 +1383,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 	const uv_buf_t a[] = {{.base = b, .len = 2}};
     struct sockaddr_in send_addr;
     printf("Sending STOP DATA COLLECTION  to %s  port %u\n", DE_IP, DE_port);
+    firehoseUploadActive  = 0;  // stop upload on next check if active
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     sleep(0.25);  // wait for command to be processed
@@ -1755,7 +1789,6 @@ void *dataUpload(void *threadid) {
   rc = system(uploadCommand);  // just do it
 
 }
-
 
 
 ////////////////////////////////////////////////////////////////
