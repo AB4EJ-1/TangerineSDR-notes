@@ -242,6 +242,10 @@ static uint16_t central_port;
 static config_t cfg;
 static config_setting_t *setting;
 
+static char data_path[100];
+static char temp_path[100];
+static char the_node[20];
+
 
 //// *********************** Start of Code  *******************************//////
 
@@ -297,6 +301,7 @@ void on_UDP_send(uv_udp_send_t* req, int status)
   printf("UDP send complete, status: %d\n", status);
  // free(req);   // not sure if this is right; may crash
   //puts("free memory completed");
+  // TODO: see libuv stream write documentation: a much more elaborate memory free-up probably needed
   return;
 }
 
@@ -304,13 +309,14 @@ void on_UDP_send(uv_udp_send_t* req, int status)
 // callback routine for after write to webcontrol is complete
 ////////////////////////////////////////////////////////
 void web_write_complete(uv_write_t *req, int status) {
-  printf("webctl write status = %d\n", (int)status);
+  printf("M: webctl write status = %d\n", (int)status);
   if (status == -1) {
     fprintf(stderr, "Write error!\n");
   }
   char *base = (char*) req->data;
-  puts("free req");
+  puts("M: free req");
   free(req);
+
 }
 
 /////////////////////////////////////////////////////////////
@@ -321,7 +327,7 @@ void DE_write_cb(uv_write_t *req, int status) {
     fprintf(stderr, "Write error!\n");
   }
   char *base = (char*) req->data;
-  puts("free req");
+  puts("M: free req");
   free(req);
 }
 
@@ -331,11 +337,11 @@ void DE_write_cb(uv_write_t *req, int status) {
 void handleDEdata(uv_stream_t* client, ssize_t nread, const uv_buf_t* DEbuf) {
   if(nread <=0)
 	return;
-  puts("got data from DE");
+  puts("M: got data from DE");
   char reply[80];
   memset(&reply, 0, sizeof(reply));
   strncpy(reply,DEbuf->base, nread);
-  fprintf(stderr,"DE sent %zd: bytes:\n", nread);
+  fprintf(stderr,"M: DE sent %zd: bytes:\n", nread);
   puts(reply); 
 
 /////////////////////////////////////////////////////////////////
@@ -606,6 +612,7 @@ void on_UDP_data_read_ft8(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t 
 ///////// Thread for uploading firehoseR data to Central Control //////////
 void firehose_uploader(void *threadid) {
 
+  char sys_command[200];
   printf("firehoseR uploader thread starting\n");
   sleep(20);
   while(1)
@@ -616,6 +623,12 @@ void firehose_uploader(void *threadid) {
      return;
      }
    printf("------FIREHOSE UPLOAD-----------\n");
+
+  sprintf(sys_command,"./firehose_xfer_auto.sh %s %s %s", data_path,temp_path,the_node);
+  printf("M: Uploader - executing command: %s \n",sys_command); 
+  int r = system(sys_command); 
+  printf("M: System command retcode=%i\n",r);
+
    sleep(10);
 
    }
@@ -1011,7 +1024,9 @@ void recv_port_check() {
 void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf) {
   puts("process_local_command routine triggered\n");
   if(nread == -4095)  // TODO: this seems to be junk coming from flask app (?) - need to fix
-	{ puts("ignore 1 buffer"); return;
+	{ puts("ignore 1 buffer"); 
+    free(buf->base);  // release memory allocated to read buffer
+    return;
 	}
   if (nread < 0) {
     fprintf(stderr, "Webcontroller Read error, nread = %ld\n",nread);  // DE disconnected/crashed
@@ -1036,10 +1051,10 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
   memset(&mybuf, 0, sizeof(mybuf));
   strncpy(mybuf, buf->base, nread-1);   // subtract 1 to strip CR
-//  strncpy(d.mybuf1,buf->base, nread-1);  // get a copy se we can dissect it
+  free(buf->base);  // release memory allocated to read buffer; we no longer need it
+
 // NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
   
-
   if(memcmp(mybuf, CREATE_CHANNEL, 2)==0)  // Request to create a configureation/data channel pair
 	{
  //   printf("Create Channel received at maintcl; port1=%s \n",d.c.port1);
@@ -1116,9 +1131,9 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
       int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].channelNo );
       printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
       token = strtok(NULL, comma);
-      printf("port = %s\n", token);
+      printf("antenna port = %s\n", token);
       ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
-      printf("port converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
+      printf("antenna port converted to %i \n",h.channelBuffer.channelDef[i].antennaPort);
       token = strtok(NULL, comma);
       printf("next token = %s\n", token);
       ret = sscanf(token,"%lf",&h.channelBuffer.channelDef[i].channelFreq);
@@ -1136,7 +1151,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
-
+    return;
     }
 
   if(memcmp(mybuf, START_FT8_COLL , 2)==0) // got command to start FT8 reception
@@ -1232,7 +1247,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     strcpy(mkcommand,"killall -9 ft8rcvr");
     printf("issue command: %s\n",mkcommand);
     int rt = system(mkcommand);
-
     return;
 	}
 
@@ -1276,6 +1290,41 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     firehoseRMode = 1;
     firehoseLMode = 0;
     snapcount = 0;
+
+    num_items = rconfig("data_path",configresult,0);
+    if(num_items == 0)
+      {
+      printf("ERROR - firehose data_path setting not found in config.ini\n");
+      }
+    else
+      {
+      printf("data_path CONFIG RESULT = '%s'\n",configresult);
+      strcpy(data_path,configresult);
+      } 
+
+    num_items = rconfig("temp_path",configresult,0);
+    if(num_items == 0)
+      {
+      printf("ERROR - firehose temp_path setting not found in config.ini\n");
+      }
+    else
+      {
+      printf("temp_path CONFIG RESULT = '%s'\n",configresult);
+      strcpy(temp_path,configresult);
+      }
+
+    num_items = rconfig("node",configresult,0);
+    if(num_items == 0)
+      {
+      printf("ERROR - node setting not found in config.ini\n");
+      }
+    else
+      {
+      printf("node CONFIG RESULT = '%s'\n",configresult);
+      strcpy(the_node,configresult);
+      }
+
+
     num_items = rconfig("firehoser_path",configresult,0);
     if(num_items == 0)
       {
@@ -1449,12 +1498,13 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
-
+/*
   if(memcmp(buf->base,"BYE",3)==0)
     {
     puts("halting");
     uv_stop(loop);
     }
+*/
 
 /*
 // TODO: following code probably never reached
@@ -1484,7 +1534,7 @@ void on_new_connection(uv_stream_t *server, int status) {
   if (status == -1) {
     return;
   }
-  puts("new incoming connection.");
+  puts("M: new incoming connection.");
   uv_tcp_t *client = (uv_tcp_t*) malloc(sizeof(uv_tcp_t));
   uv_tcp_init(loop, client);
   if (uv_accept(server, (uv_stream_t*) client) == 0) {
@@ -1568,12 +1618,12 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
       free(buf->base);
 	  return;
     }
-  printf("UDP data recvd, bytes = %ld\n", nread);
+  printf("M: UDP data recvd, bytes = %ld\n", nread);
 
   DATABUF *buf_ptr;
   buf_ptr = (DATABUF *)malloc(sizeof(DATABUF));  // allocate memory for working buf
 // TODO: ensure there is a free for this memory before every return
-  memcpy(buf_ptr, buf->base,nread);    // get data from UDP buffer
+  memcpy(buf_ptr, buf->base,sizeof(DATABUF));    // get data from UDP buffer
 
  // printf("DE BUFTYPE = %s \n",buf_ptr->bufType);
 
@@ -1588,34 +1638,37 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     puts("Send OK status to webcontrol");
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
     free(buf_ptr);
+    free(buf->base);
     return;
 	}
 
   if(strncmp(buf_ptr->bufType, DATARATE_RESPONSE, 2)==0)
 	{
+  //  printf("M: !!! DATARATE_RESPONSE HANDLER REMOVED FOR DEBUGGING\n");
+
      DATARATEBUF *rbuf_ptr;
      rbuf_ptr = (DATARATEBUF *)malloc(sizeof(DATARATEBUF));  // allocate memory for working buf
 
     COMBOBUF cbuf;
     memcpy(&cbuf.dbuf, buf->base,nread);    // get data from UDP buffer
 //  strncpy(cbuf.dbufc, buf->base,nread,sizeof(DATARATEBUF));
-  printf("buffer = %s \n",cbuf.dbufc);
+    printf("buffer = %s \n",cbuf.dbufc);
 
-  char b[200] = "DR:";
-  char c[20];
-  for(int i = 0; i < 16; i++)
-   {
-    if(cbuf.dbuf.dataRate[i].rateNumber == 0 ) break;
-    sprintf(c,"%i,%i;",cbuf.dbuf.dataRate[i].rateNumber,cbuf.dbuf.dataRate[i].rateValue);
-    strcat(b,c);
-   };
+    char b[200] = "DR:";
+    char c[20];
+    for(int i = 0; i < 16; i++)
+     {
+       if(cbuf.dbuf.dataRate[i].rateNumber == 0 ) break;
+      sprintf(c,"%i,%i;",cbuf.dbuf.dataRate[i].rateNumber,cbuf.dbuf.dataRate[i].rateValue);
+      strcat(b,c);
+     };
 
-  printf("DR string= %s\n",b);
+    printf("DR string= %s\n",b);
 
  // printf("DR buf type found %s \n",rbuf_ptr->buftype);
-  printf("intial entry %i %i \n",cbuf.dbuf.dataRate[0].rateNumber,                  cbuf.dbuf.dataRate[0].rateValue); 
+    printf("intial entry %i %i \n",cbuf.dbuf.dataRate[0].rateNumber,                  cbuf.dbuf.dataRate[0].rateValue); 
 
-	puts("Forward datarate response to webcontrol");
+	puts("M: Forward datarate response to webcontrol");
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
     puts("set up write_req");
     uv_buf_t a[]={{.base=b, .len=sizeof(COMBOBUF)},{.base="\n",.len=1}};
@@ -1629,14 +1682,18 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
  //   puts("Send DR list to webcontrol");
   //  uv_write(write_req, (uv_stream_t*) webStream, buf, sizeof(DATARATEBUF), web_write_complete);
     free(rbuf_ptr);
+    free(buf_ptr);
+    free(buf->base);
     return;
 	}
 
   if(strncmp(buf_ptr->bufType, "AK" ,2) ==0)
     {
-    printf("AK buffer contains %x %x %x %x %x %x \n",
-           buf->base[0], buf->base[1], buf->base[2],
-			buf->base[3], buf->base[4], buf->base[4]);
+ //   printf("AK buffer contains %x %x %x %x %x %x \n",
+  //         buf->base[0], buf->base[1], buf->base[2],
+//			buf->base[3], buf->base[4], buf->base[4]);
+    printf("AK buffer contains %x %x  \n",
+           buf->base[0], buf->base[1]);
 
     if(nread == 6)    // this should be a CC ACK containing DE listening ports
       {
@@ -1648,16 +1705,20 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
       uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
 
       uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
-      puts("Forward the ACK");
+      puts("M: nread=0; Forward the ACK");
 //    Forward ACK to web controller 
       uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+      free(buf_ptr);
+      free(buf->base);  
       return;
       }
 
     uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
     uv_buf_t a[]={{.base="ACK", .len=3},{.base="\n",.len=1}};
-    puts("Forward the ACK");
+    puts("M: Forward the ACK");
     uv_write(write_req, (uv_stream_t*) webStream, a, 2, web_write_complete);
+    free(buf_ptr);
+    free(buf->base);
     return;
     }
 
@@ -1665,9 +1726,10 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
     if(strncmp(buf_ptr->bufType, "NAK" ,3) ==0)
     {
     puts("NAK received from last command");
+    free(buf_ptr);
+    free(buf->base);
     return;
     }
-
 
 
   buffers_received++;
@@ -1682,7 +1744,7 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
 	{
 	printf("\n\n*** ERROR *** - Data buffer incorrectly processed\n\n");
 	}
-
+  free(buf_ptr);
   free(buf->base);
 
   }
@@ -1794,113 +1856,34 @@ void *dataUpload(void *threadid) {
 }
 
 
-////////////////////////////////////////////////////////////////
-//////////   heartbeat simple //////////////////////////////////
-void heartbeat2(void *threadid) {
+/////////////////////////////////////////////////////////////////////////////
+//////////////  Heartbeat using standard tcp; triggered by uv timer  ////////
 
-    /* first what are we going to send and where are we going to send it? */
-    int portno =        5000;
-    char *host =        "192.168.1.67";
-    char *message_fmt = "POST /apikey/%s&command=%s HTTP/1.0\r\n\r\n";
+void heartbeat(uv_timer_t * timer_handle) {
+  printf("M: Heartbeat starting. . .\n");
 
-    struct hostent *server;
-    struct sockaddr_in serv_addr;
-    int sockfd, bytes, sent, received, total;
-    char message[1024],response[4096];
+  int portno = 5000;  // default, to be replaced by configured value.
 
-  //  if (argc < 3) { puts("Parameters: <apikey> <command>"); exit(0); }
-
-    /* fill in the parameters */
-    sprintf(message,message_fmt,"apikey","54321");
-    printf("HEARTBEATRequest:\n%s\n",message);
-while(1==1){
-    /* create the socket */
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) printf("ERROR opening socket");
-
-    /* lookup the ip address */
-    server = gethostbyname(host);
-    if (server == NULL) printf("ERROR, no such host");
-
-    /* fill in the structure */
-    memset(&serv_addr,0,sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(portno);
-    memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
-
-    /* connect the socket */
-    if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
-        printf("ERROR connecting");
-
-    /* send the request */
-    total = strlen(message);
-    sent = 0;
-    do {
-        bytes = write(sockfd,message+sent,total-sent);
-        if (bytes < 0)
-            printf("ERROR writing message to socket");
-        if (bytes == 0)
-            break;
-        sent+=bytes;
-    } while (sent < total);
-
-    /* receive the response */
-    memset(response,0,sizeof(response));
-    total = sizeof(response)-1;
-    received = 0;
-    do {
-        bytes = read(sockfd,response+received,total-received);
-        if (bytes < 0)
-            printf("ERROR reading response from socket");
-        if (bytes == 0)
-            break;
-        received+=bytes;
-    } while (received < total);
-
-    if (received == total)
-        printf("ERROR storing complete response from socket");
-
- 
-    /* close the socket */
-    close(sockfd);
-
-    /* process response */
-    printf("Response:\n%s\n",response);
-    sleep(60);   // heartbeat interval
- }
-    return ;
-
-}
-
-//////////////////////////////////////////////////////////////////
-//////////////   heartbeat using standard tcp & threading ////////
-//void *heartbeat1(void *threadid) {
-void heartbeat1(void *arg) {
-//void heartbeat(uv_timer_t * timer_handle) {
-
-int portno = 5000;  // default, to be replaced by configured value.
-
-char *host = "192.168.1.67"; // default, to be replaced by configurea value.
-char centralHost[20] = "192.168.1.67";
+//char *host = "192.168.1.67"; // default, to be replaced by configured value.
+  char centralHost[20] = "192.168.1.67";
 
 //char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
 
-struct hostent *server;
-struct sockaddr_in serv_addr;
-struct timeval timeout;
-int sockfd, bytes, sent, received, total;
-char message[1024],response[65536];
+  struct hostent *server;
+  struct sockaddr_in serv_addr;
+  struct timeval timeout;
+  int sockfd, bytes, sent, received, total;
+  char message[1024],response[65536];
 
-timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
-timeout.tv_usec = 0;  //  and will try again after the pause time
+  timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
+  timeout.tv_usec = 0;  //  and will try again after the pause time
 
-char tbuf[30];
-struct timeval tv;
-time_t curtime;
-int heartbeat_interval = 60;  // seconds
+  char tbuf[30];
+  struct timeval tv;  // for TOD calculations
+  time_t curtime;
 
- //while(1==1)  // heartbeat loop
- //{
+  signal(SIGPIPE, SIG_IGN); // ignore shutdown signal if server unreachable
+
   char mytoken[75];
 
   num_items = rconfig("token_value",configresult,0);
@@ -1913,18 +1896,6 @@ int heartbeat_interval = 60;  // seconds
     printf(" CONFIG RESULT = '%s'\n",configresult);
     printf("len =%lu\n",strlen(configresult));
     strcpy(mytoken, configresult);
-    }
-
-  num_items = rconfig("heartbeat_interval",configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - heartbeat_interval setting not found in config.ini");
-    }
-  else
-    {
-    printf(" CONFIG RESULT = '%s'\n",configresult);
-    printf("len =%lu\n",strlen(configresult));
-    heartbeat_interval = atoi(configresult);
     }
 
   num_items = rconfig("central_host",configresult,0);
@@ -1967,35 +1938,30 @@ int heartbeat_interval = 60;  // seconds
         sizeof(timeout)) < 0)
        printf("M: Set socket option send timeout failed\n");
 
-/* lookup the ip address */
- //server = gethostbyname(host);
+/* look up ip address */
+
   server = gethostbyname(centralHost);
   if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host: %s\n",centralHost);
 
-/* fill in the structure */
+/* fill in structure */
   memset(&serv_addr,0,sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(portno);
   memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
 
-/* connect the socket */
+/* connect socket */
   if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
     {
     printf("M: Heartbeat - Could not reach Central Control\n");
     close(sockfd);
-   // sleep(heartbeat_interval);
-   // continue;
-   // free(timer_handle);
+
     return;
     }
   else
     printf("Heartbeat socket connected\n");
 
-/* send the request */
- while(1==1)
-  {
-  printf("M: send heartbeat... \n");
   total = strlen(message);
+  printf("M: send heartbeat of length %i \n",total);
   sent = 0;
   do {
    bytes = write(sockfd,message+sent,total-sent);
@@ -2003,57 +1969,48 @@ int heartbeat_interval = 60;  // seconds
      {
      printf("M: Heartbeat - ERROR writing message to socket\n");
      close(sockfd);
-    // free(timer_handle);
      return;
-    // sleep(heartbeat_interval);
-   //  continue;
      }
    else
       printf("M: Heartbeat sent, # bytes = %i\n", bytes);
-   if (bytes == 0)
-     // free(timer_handle);
-      return;
-     // break;
+ //  if (bytes == 0)
+  //    free(timer_handle);
+  //    puts("return");
+  //    return;
+
    sent+=bytes;
   } while (sent < total);
-
-/* receive the response */
+  printf("M: HB sent\n");
+/* receive response */
   memset(response,0,sizeof(response));
   total = sizeof(response)-1;
   //printf("TOTAL RESPONSE SIZE=%i\n",total);
   received = 0;
 
   do {
-
-
+  printf("M: HB, read from Central\n");
    bytes = read(sockfd,response+received,total-received);
+   printf("M: HB bytes received from Central = %i\n",bytes);
    if (bytes < 0)
     {
     printf("M: Heartbeat - ERROR reading response from socket\n");
     close(sockfd);
-   // free(timer_handle);
-    //return;
-   // sleep(heartbeat_interval);
-   // continue;
     return;
     }
    else
     printf("M: Heartbeat Response received from Central Control - %i bytes\n",bytes);
+    break;
    if (bytes == 0)
-   // free(timer_handle);
-   // return;
-     break;
+
+     return;
   received+=bytes;
-  } while (received < total);
+  } while (received < total);  // emd of the do-while
 
   if (received == total)
     {
-    printf("M: Heartbeat - ERROR storing complete response from socket");
+    printf("M: Heartbeat - ERROR storing complete response from socket\n");
     close(sockfd);
-    sleep(heartbeat_interval);
-    continue;
-  //  free(timer_handle);
-   // return;
+    return;
     }
 
 /* process response */
@@ -2080,13 +2037,7 @@ int heartbeat_interval = 60;  // seconds
     }
    }
 */
- // close(sockfd);
-  //sleep(heartbeat_interval);
-
-  //  free(timer_handle);
-    
-
-  }  // end of heatbeat loop
+  close(sockfd);
 
 return ;
 
@@ -2228,11 +2179,8 @@ void central_write_cb(uv_write_t *req, int status)
   printf("- - - - Central write cb status = %i\n",status);
   uv_write_t *wr = (uv_write_t *)req;
   free(wr->bufs->base);
-
   free(wr);  // BUG - this needs fixed
   }
-
-
 
 
 
@@ -2520,22 +2468,6 @@ int main(int argc, char *argv[]) {
     }
 
 
-/*
-// Set up to listen on TCP port for responses coming from Central Control
-// These may be simple response to heartbeat packets, or may also contain
-// a data request for uploa of Ringbuffer data
-
-  printf("CONNECT TO CENTRAL\n");
-
-  socket_central = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
-  uv_tcp_init(loop, socket_central);
-  uv_connect_t* connect = (uv_connect_t*)malloc(sizeof(uv_connect_t));
-  struct sockaddr_in central_dest;
-  uv_ip4_addr("192.168.1.67", 5000, &central_dest);
-  uv_tcp_connect(connect, socket_central, (const struct sockaddr*)&central_dest, on_central_connect);
-*/
-  
-
 ///////////////////
   puts("prep to receive UDP data");
   uv_udp_t recv_socket;
@@ -2602,10 +2534,26 @@ int main(int argc, char *argv[]) {
 
     int hbrc = 0;
     long h;
+  int heartbeat_interval = 60;  // seconds
+  num_items = rconfig("heartbeat_interval",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - heartbeat_interval setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    heartbeat_interval = atoi(configresult);
+    }
 
   printf("M: Start hearbeat timer\n");
-  uv_thread_t hb_id;
-  uv_thread_create(&hb_id, heartbeat2, NULL);
+
+  uv_timer_t timer_req;
+  uv_timer_init(loop, &timer_req);
+  uv_timer_start(&timer_req, heartbeat, 5000, heartbeat_interval*1000); // interval is in msec
+//  uv_thread_t hb_id;
+ // uv_thread_create(&hb_id, heartbeat2, NULL);
 
 ////////////////////////////////////////////////////////////////
 	

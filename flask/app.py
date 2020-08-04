@@ -112,10 +112,10 @@ def send_to_mainctl(cmdToSend,waitTime):
        d = received.decode()
        print("F: decoded:",d)
        print("F: buftype is '",received[0:2],"'")
-       print("bytes=",received[0],"/",received[1],"/",received[2])
+       print("F: bytes=",received[0],"/",received[1],"/",received[2])
 #       print("find:",received[0:2].find("DR"))
        if(d.find("DR") !=  -1):
-         print("DR buffer received")
+         print("F: DR buffer received")
          parser = configparser.ConfigParser(allow_no_value=True)
          parser.read('config.ini')
          rateList = []
@@ -181,6 +181,7 @@ def send_channel_config():  # send channel configuration command to DE
     configCmd = configCmd + str(ch) + "," + parser['channels']['p' + str(ch)] + ","
     configCmd = configCmd + parser['channels']['f' + str(ch)] + ","
   print("Sending CH config command to DE")
+
   send_to_mainctl(configCmd,1);
   return
 
@@ -309,7 +310,10 @@ def restart():
    channel_request()
    print("Request Data Rate List")
    send_to_mainctl(DATARATE_INQUIRY,0.1)
+
    send_channel_config()
+   print("F: Config Channel sent");
+
 # ringbuffer setup
    ringbufferPath =    parser['settings']['ringbuffer_path']
    ringbufferMaxSize = parser['settings']['ringbuffer_max_size']
@@ -319,7 +323,7 @@ def restart():
    rcmd = 'drf ringbuffer -z ' + ringbufferMaxSize + ' -p 120 -v ' + ringbufferPath + ' &'
 # spin off this process asynchornously (notice the & at the end)
    returned_value = os.system(rcmd)
-   print("ringbuffer control activated")
+   print("F: ringbuffer control activated")
    return redirect('/')
 
 @app.route("/datarates")
