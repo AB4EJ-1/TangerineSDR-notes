@@ -16,6 +16,7 @@ import h5py
 import numpy as np
 import datetime
 from datetime import datetime
+import threading
 
 #from array import *
 from email.mime.multipart import MIMEMultipart 
@@ -72,6 +73,17 @@ STOP_FT8_COLL      = "XF"
 LED_SET            = "SB"  
 UNLINK             = "UL"
 HALT_DE            = "XX"
+
+class hbThread (threading.Thread):
+   def __init__(self, threadID, name, counter):
+      threading.Thread.__init__(self)
+      self.threadID = threadID
+      self.name = name
+      self.counter = counter
+   def run(self):
+      print ("Starting " + self.name)
+      ping_mainctl()
+      print ("Exiting " + self.name)
 
 def is_numeric(s):
   try:
@@ -167,6 +179,15 @@ def check_status_once():
   send_to_mainctl(STATUS_INQUIRY,4)
   print("after check status once, theStatus=",theStatus)
   return
+
+def ping_mainctl():
+  while(1):
+    time.sleep(60)
+    localtime = time.asctime(time.localtime(time.time()))
+    print("F: ping mainctl at ", localtime)
+    send_to_mainctl("S?",1)
+    print("F: mainctl replied")
+  
 
 def send_channel_config():  # send channel configuration command to DE
   global theStatus
@@ -324,6 +345,9 @@ def restart():
 # spin off this process asynchornously (notice the & at the end)
    returned_value = os.system(rcmd)
    print("F: ringbuffer control activated")
+# start heartbeat thread that pings mainctl at intervals
+   thread1 = hbThread(1, "pingThread-1",1)
+   thread1.start()
    return redirect('/')
 
 @app.route("/datarates")
@@ -966,7 +990,7 @@ def ft8list():
     ib = "ftant" + str(i)
     if(parser['settings'][ib] != "Off"):
       band.append(parser['settings'][ia])
-      print("ft8 band list=" + band[i])
+    #  print("ft8 band list=" + band[i])
 
   try:
     plist = []
@@ -991,7 +1015,7 @@ def ft8list():
     ft8string = ft8string + '"end":" "}'
   #  print("ft8string= " , ft8string)
   except Exception as ex:
-    print(ex)
+   # print(ex)
 # no-op
     z=1
 

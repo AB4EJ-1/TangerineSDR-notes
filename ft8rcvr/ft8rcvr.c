@@ -31,8 +31,8 @@
 #include <complex.h>
 #include "de_signals.h"
 
-#define PORT	40003 
-#define BUFSIZE 8300
+#define PORT	 40003   // TODO: needs to be computed/configurable
+#define BUFSIZE  8300
 #define FT8FSIZE 236000   // # samples collected before invoking decoder
 
 static struct VITAdataBuf ft8buffer;
@@ -53,20 +53,105 @@ int inputcount[8];
 float chfrequency[8];
 int ft8active[8];      // indicates if ft8 has started for this streamNo
 
-static char pathToRAMdisk[100] = "/mnt/RAM_disk";  // temp hard-coded
+//static char pathToRAMdisk[100] = "/mnt/RAM_disk";  // temp hard-coded
+
+extern char rconfig(char * arg, char * result, int testThis);
 
 int main() { 
+
+  char pathToRAMdisk[100];
+  char configresult[100];
+  char mycallsign[20];
+  char mygrid[20];
+  char myantenna0[50];  // there is length limit on these in upload-to-pskreporter
+  char myantenna1[50];
+
+  int num_items = 0;
+  printf("ft8rcvr start\n");
+  num_items = rconfig("ramdisk_path",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - RAMdisk path setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("RAMdisk path CONFIG RESULT = '%s'\n",configresult);
+    strcpy(pathToRAMdisk,configresult);
+    } 
+  printf("Ramdisk path =%s\n",pathToRAMdisk);
+
+  num_items = rconfig("callsign",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - callsign setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("callsign CONFIG RESULT = '%s'\n",configresult);
+    strcpy(mycallsign,configresult);
+    } 
+  printf("callsign =%s\n",mycallsign);
+
+  num_items = rconfig("grid",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - grid setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("grid CONFIG RESULT = '%s'\n",configresult);
+    strcpy(mygrid,configresult);
+    } 
+  printf("grid =%s\n",mygrid);
+
+  num_items = rconfig("antenna0",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - antenna0 setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("antenna0 CONFIG RESULT = '%s'\n",configresult);
+    strcpy(myantenna0,configresult);
+    } 
+  printf("antenna0 =%s\n",myantenna0);
+
+
     printf("Starting FT8 receiving, port=%i\n",PORT);
     int streamID = 0;
 	int sockfd; 
 	struct sockaddr_in servaddr, cliaddr; 
     int idialfreq = 0;
 
-    for(int i=0; i<8; i++)
+    for(int i=0; i<8; i++)  // Go thru 8 possible channels & set up
       {
       ft8active[i] = 0;  // mark them all inactive to start
       inputcount[i] = 0;
+      char channel_no[8];
+      char result[5]="";
+      sprintf(channel_no,"ftant%i",i);
+
+
+  num_items = rconfig(channel_no,configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - channel setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("%s CONFIG RESULT = '%s'\n",channel_no,configresult);
+    strcpy(result,configresult);
+     
+    if(strncmp(result,"0",1) == 0 | strncmp(result,"1",1) ==0)
+      {
+      sprintf(channel_no,"ft8%if",i);
+      num_items = rconfig(channel_no,configresult,0);
+      if(num_items == 1)
+        dialfreq[i] = atof(configresult) * 1000000;
+        printf("dialfreq %i %f \n",i,dialfreq[i]);
       }
+     }
+    }
 
 	// Create socket file descriptor 
 	if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
@@ -168,18 +253,25 @@ int main() {
            char mycmd[100];
  
            int ret = system(mycmd);
-  // TODO: following can be simplified to a single sprintf
-           strcpy(mycmd, "./ft8d_del "); 
-           strcat(mycmd,name[streamID]);
-           strcat(mycmd," > ");
-           strcat(mycmd,pathToRAMdisk);
-           strcat(mycmd, "/FT8/decoded");
-           strcat(mycmd, chstr);
-           strcat(mycmd, ".txt &");  // here add & to run asynch (but beware of file delete!)
+
+       //    strcpy(mycmd, "./ft8d_del "); 
+      //     strcat(mycmd,name[streamID]);
+       //    strcat(mycmd," > ");
+      //     strcat(mycmd,pathToRAMdisk);
+      //     strcat(mycmd, "/FT8/decoded");
+       //    strcat(mycmd, chstr);
+      //     strcat(mycmd, ".txt &");  // here add '&' to run asynch (but beware of file delete!)
+           sprintf(mycmd,"./ft8d_del %s > %s/FT8/decoded%i.txt",name[streamID],pathToRAMdisk,streamID);
            printf("issue command: %s\n",mycmd);
-           ret = system(mycmd);
-           puts("ft8 decode ran");
            // Note: this assumes that decoder (ft8d_del) deletes work file when done.
+           ret = system(mycmd);
+           printf("ft8 decode ran, rc = %i\n",ret);
+           sprintf(mycmd,"./upload-to-pskreporter %s %s %s %s/FT8/decoded%d.txt", mycallsign, mygrid,
+              myantenna0, pathToRAMdisk, streamID);
+           ret = system(mycmd);
+           printf("psk upload ran, rc = %i\n",ret);
+
+
            }
          }
      

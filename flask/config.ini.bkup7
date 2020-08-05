@@ -7,7 +7,7 @@ latitude = -37.123
 longitude = 87.432
 elevation = 100
 test_value = T123
-antenna0 = Hexbeam
+antenna0 = dxengineering_hexbeam
 antenna1 = 80m_dipole
 
 [settings]
