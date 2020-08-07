@@ -195,7 +195,8 @@ def send_channel_config():  # send channel configuration command to DE
   channelcount = parser['channels']['numChannels']
   rate_list = []
   numRates = parser['datarates']['numRates']
-  configCmd = CONFIG_CHANNELS + "," + channelcount + "," + parser['channels']['datarate'] + ","
+# this is channel zero (RG-type data)
+  configCmd = CONFIG_CHANNELS + ", 0, " + channelcount + "," + parser['channels']['datarate'] + ","
   for ch in range(int(channelcount)):
     print("add channel ",ch)
     configCmd = configCmd + str(ch) + "," + parser['channels']['p' + str(ch)] + ","
