@@ -54,6 +54,7 @@ static uint16_t DE_CONF_IN_port;  // port B ; DE listens for config request on t
 static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
 
 int main() {
+ printf("Starting DEctl\n");
  while(1)
  {
 
