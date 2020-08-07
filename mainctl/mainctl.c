@@ -110,6 +110,8 @@ static	int marching_periods = 1; /*  marching periods when writing */
 static	char uuid[100] = "DE output";
 static  char hdf5File[50];  
 
+static int compression_setting;
+
 static uint64_t theUnixTime = 0;
 
 //char *filename = "/media/odroid/hamsci/raw_data/dat3.dat";  // for testing raw binary output
@@ -627,6 +629,18 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
       strcpy(total_hdf5_path,ringbuffer_path);
       sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
       }
+
+    num_items = rconfig("drf_compression",configresult,0);
+    if(num_items == 0)
+      {
+      printf("ERROR - drf_compression config setting not found in config.ini\n");
+      }
+    else
+      {
+      printf("drf_compression CONFIG RESULT = '%s'\n",configresult);
+      compression_setting = atoi(configresult);
+      printf("compression level set to %i\n",compression_setting);
+      } 
     
     printf("deleting old propeties file: %s\n",cleanup);
     int retcode = system(cleanup);
@@ -638,11 +652,11 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
 
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
-    printf("M: Storing to: %s\n",total_hdf5_path);
+    printf("M: Using compression level %i; Storing to: %s\n",compression_setting, total_hdf5_path);
 //    int compression_level = 9; // TODO: this should be configurable
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
-     "TangerineSDR", compression_level, 0, 1, bufferChannels, 1, 1);
+     "TangerineSDR", compression_setting, 0, 1, bufferChannels, 1, 1);
       }
 
 // here we write out DRF
@@ -861,15 +875,26 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 	memcpy(h.channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
     int chNo = 0;  // this is channel zero
     h.channelBuffer.channelNo = chNo;
+
+    memcpy(h.channelBuffer.VITA_type,"VT",2); 
     const char comma[2] = ",";
     char *token;
     token = strtok(mybuf, comma);
     printf("initial token = %s\n", token);
+
+    token = strtok(NULL, comma);   // second token is channel#
+    printf("second token (channel#) = %s\n", token);
+    h.channelBuffer.channelNo = atoi(token);
+    if(h.channelBuffer.channelNo == 0) // RG-type data to be in VITA-T (interleaved IQ)
+        memcpy(h.channelBuffer.VITA_type,"VT",2); 
+    if(h.channelBuffer.channelNo == 1) // FT8-type data to be in standard VITA-49 format
+        memcpy(h.channelBuffer.VITA_type,"V4",2);
+      
     token = strtok(NULL, comma);   // second token is # active channels
-    printf("second token (# subchannels) = %s\n", token);
+    printf("third token (# subchannels) = %s\n", token);
     h.channelBuffer.activeSubChannels = atoi(token);
     token = strtok(NULL, comma);   
-    printf("third token (data rate) = %s\n", token);
+    printf("fourth token (data rate) = %s\n", token);
     h.channelBuffer.channelDatarate = atoi(token);
     sample_rate_numerator= atoi(token); // set this for data acquisition
 
@@ -1001,22 +1026,12 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
 	}
 
+  /////////////////////////////////////////////////////////////////
   if(memcmp(mybuf, START_DATA_COLL , 2)==0)
-	{
-
-    num_items = rconfig("DRF_compression",configresult,0);
-    if(num_items == 0)
-      {
-      printf("ERROR - DRF compression config setting not found in config.ini\n");
-      }
-    else
-      {
-      printf("DRF compression CONFIG RESULT = '%s'\n",configresult);
-      compression_level = atoi(configresult);
-      } 
+	{                     
 
     printf("M: START DATA COLL COMMAND RECEIVED\n");
-// determine what mode to run
+   // determine what mode to run
    num_items = rconfig("mode",configresult,0);
    if(strncmp(configresult,"snapshotter",11)==0)
     {
@@ -1166,7 +1181,6 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 	for(int i=0; i< 60; i++) { b[i] = 0; }
  //   printf("M: ry to print subdir 2\n");
 	strcpy(b, START_DATA_COLL );
-  //  const char* frombuf = mybuf;
     for(int z=0; z < 15; z++)
      {
      hdf5subdirectory[z] = mybuf[z+3];
