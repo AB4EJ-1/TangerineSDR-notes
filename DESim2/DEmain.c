@@ -105,12 +105,7 @@ union {
     CHANNELBUF chBuf;
     } cb ;
 
-/*
-union {
-  char mybuf1[100];
-  CONFIGBUF myConfigBuf;
-       } LH;
-*/
+
 
 static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
 static uint16_t LH_CONF_OUT_port; // for sending (outbound) config request to DE
@@ -232,7 +227,7 @@ void *sendFT8flex(void * threadid){
 	      (struct sockaddr*)&client_addr2, sizeof(client_addr2));
        outputbuffercount[streamNo] = 0;
        totaloutputbuffercount[streamNo] ++;
-       printf("sent bytes %i\n",sentBytes);
+   //    printf("sent bytes %i\n",sentBytes);
       }
 
     }  // end of inputbuffercount loop (512 samples in the flex IQ packet)
@@ -334,13 +329,9 @@ void *sendFlexData(void * threadid){
       iqbuffer2_out.theDataSample[i + 512] = iqbuffer2_in.theDataSample[i];
      }
 
-
-  //  int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2_out, sizeof(iqbuffer2_out), 0, 
-	//      (struct sockaddr*)&client_addr, sizeof(client_addr));
     int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2_out, sizeof(iqbuffer2_out), 0, 
 	      (struct sockaddr*)&portF_addr, sizeof(portF_addr));
-    printf("Send to portF, bytes = %i\n",sentBytes);
-
+  //  printf("Send to portF, bytes = %i\n",sentBytes);
 
     }
    }  // end of repeating loop
@@ -379,7 +370,7 @@ void *awaitConfig(void *threadid) {
         (struct sockaddr*)&config_in_addr, &addr_len);
 
     printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
-    noOfChannels = cb.chBuf.activeChannels;
+    noOfChannels = cb.chBuf.activeSubChannels;
     dataRate = cb.chBuf.channelDatarate;
     printf("active channels: %i, rate = %i\n", noOfChannels, dataRate);
     for (int i=0; i < noOfChannels; i++) 
@@ -387,7 +378,7 @@ void *awaitConfig(void *threadid) {
       if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
         continue;
       else
-        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
+        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].subChannelNo, 
         cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
       }
   
@@ -481,90 +472,7 @@ void *sendData1(void *threadid) {
 
 }
 
-/*
-// thread to receive/forward packets from flexadapter
-void *sendData2(void *threadid) {
- printf("Senddata2 thread start\n");
-  int yes = 1;
- // struct sockaddr_in client_addr3;
-  struct sockaddr_in server_addr3;
-  int addr_len;
-  int count;
-  int ret;
-  long bufcount = 0;
-  int sentBytes = 0;
-  fd_set readfd;
-  //char buffer[9000];
 
-  sock3 = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock3 < 0) {
-    perror("sock1 error\n");
-     int r=-1;
-    int *ptoi;
-    ptoi = &r;
-    return (ptoi);
-  }
-
-  addr_len = sizeof(struct sockaddr_in);
-
-  memset((void*)&server_addr3, 0, addr_len);
-  server_addr3.sin_family = AF_INET;
-  server_addr3.sin_addr.s_addr = htons(INADDR_ANY);
-  server_addr3.sin_port = htons(UDPPORT);
-
-  ret = bind(sock3, (struct sockaddr*)&server_addr3, addr_len);
-  if (ret < 0) {
-    perror("UDP bind error\n");
-    int r=-1;
-    int *ptoi;
-    ptoi = &r;
-    return (ptoi);
-  }
-  while (1) {
-    FD_ZERO(&readfd);
-    FD_SET(sock3, &readfd);
-    printf("read from port %i\n",UDPPORT);
-  //  ret = select(sock3, &readfd, NULL, NULL, 0);
-    ret = 1;
-  //  printf("ret = %i\n",ret);
-    if (ret > 0) {
-      if (FD_ISSET(sock3, &readfd)) {
-        printf("attempt read\n");
-        count = recvfrom(sock3, &iqbuffer2, sizeof(iqbuffer2), 0, (struct sockaddr*)&server_addr3, &addr_len);
-        printf("bytes received:  %i\n",count);
-
-
-	    time_t epoch = time(NULL);
-	//printf("unix time = %ld\n", epoch);
-        strncpy(iqbuffer.bufType,"FT",2);
-	    iqbuffer.timeStamp = (double) epoch;
-        iqbuffer.channelCount = 1;  // probably duplicates functinoality in pihpsdr
-      //  iqbuffer.dval.bufCount = bufcount++;
-      //  iqbuffer.channelNo = 0;
-        client_addr.sin_port = htons(LH_DATA_IN_port);
-        printf("forwarding bytes %i, count=%li\n",count,bufcount);
-        sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer, sizeof(iqbuffer), 0, 
-	        (struct sockaddr*)&client_addr, sizeof(client_addr));
-        printf("port %i, bytes sent: %i \n",LH_DATA_IN_port, sentBytes); 
-
-        if(stopData)
-	    {
-         puts("UDP thread end; close socket");
-         close(sock3);
-	     pthread_exit(NULL);
-	    }
-
-
-         //   memcpy(buffer, IP_FOUND_ACK, strlen(IP_FOUND_ACK)+1);
-         //   count = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr*)&client_addr, addr_len);
-        
-      }
-    }
-
-  }
-
-}
-*/
 
 /////////////////////////////////////////////////////////////////////////////////////
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
@@ -580,7 +488,7 @@ void *sendData(void *threadid) {
       if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
         continue;
       else
-        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
+        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].subChannelNo, 
         cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
       }
 
@@ -818,7 +726,7 @@ int *run_DE(void)
     memcpy(bufstr, buffer, count);
     printf("Raw buf= %s\n",bufstr);
    // command processsing
-printf("check for S? \n");
+    printf("check for S? \n");
     if(strncmp(bufstr, "S?",2) == 0 )
 	  { 
 	  printf("STATUS INQUIRY\n");
@@ -831,12 +739,12 @@ printf("check for S? \n");
 	  continue;
 	  }
 
-printf("check for CC \n");
+    printf("check for CC \n");
     if(memcmp(bufstr, CONFIG_CHANNELS,2) == 0)
       {
       memcpy(cb.configBuffer,buffer,sizeof(buffer));
       printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
-      noOfChannels = cb.chBuf.activeChannels;
+      noOfChannels = cb.chBuf.activeSubChannels;
       dataRate = cb.chBuf.channelDatarate;
       printf("active channels: %i, rate = %i\n", noOfChannels, dataRate);
       for (int i=0; i < noOfChannels; i++) 
@@ -844,7 +752,7 @@ printf("check for CC \n");
         if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
           continue;
         else
-          printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].channelNo, 
+          printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].subChannelNo, 
           cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
       }
   
@@ -899,8 +807,8 @@ printf("check for CH \n");
 
       memcpy(d.mybuf1, buffer, 6);
 
-      printf("CREATE CHANNEL RECD, cmd = %s, port C = %hu, port F = %hu \n",
-          d.myConfigBuf.cmd, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+      printf("CREATE CHANNEL RECD, cmd = %s, channl#=%i port C = %hu, port F = %hu \n",
+          d.myConfigBuf.cmd, d.myConfigBuf.channelNo, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
   //    if(config_busy)  // the channels already configured
    //     {
    //      puts("Command channel already set up; ignoring");
@@ -995,51 +903,7 @@ printf("I think it is: %c %c \n",bufstr[0],bufstr[1]);
 
 
 
- // below is old code, before Flex support (see above)
-/*
-    if(strncmp(buffer, "SF",2)==0)
-      {
-      if (ft8active)
-        {
-        puts("FT8 already running");
-        continue;
-        }
-      printf("Start FT8 command received\n");
-      char cmdline[200];
-      strncpy(cmdline, buffer, count);  // get command info 
-      printf("cmdline = %s\n",cmdline);
-      char *pch;
-      char thecmd[2];
-      int channel[8];
-      float ft8freq[8];
-      sscanf(cmdline,"%s %d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f",
-         thecmd, &channel[0],&channel[1],&channel[2],&channel[3],
-         &channel[4],&channel[5],&channel[6],&channel[7],
-         &ft8freq[0],&ft8freq[1],&ft8freq[2],&ft8freq[3],
-         &ft8freq[4],&ft8freq[5],&ft8freq[6],&ft8freq[7]);
-      printf("conversion = %s %d %d %d %d %d %d %d %d %f %f %f %f %f %f %f %f \n",
-         thecmd, channel[0],channel[1],channel[2],channel[3],
-         channel[4],channel[5],channel[6],channel[7],
-         ft8freq[0],ft8freq[1],ft8freq[2],ft8freq[3],
-         ft8freq[4],ft8freq[5],ft8freq[6],ft8freq[7]);
 
-      pthread_t ft8nthread[8];  
-      long k;
-      int rc;    // create one thread for each ft8 channel to run
-      for(int ft8chan = 0; ft8chan < 8; ft8chan++)
-       {
-         if(channel[ft8chan] == -1) continue;  // bypass any channels turned off
-         k = ft8chan;
-         rc = pthread_create(&ft8nthread[ft8chan], NULL, sendFT8, (void*)k);
-         printf("startng ft8 channel %d %d \n",ft8chan,rc);
-       }
-      stopft8 = 0;
-   //   int j = 2;
-  //    pthread_t ft8thread;
-   //   int rc = pthread_create(&ft8thread, NULL, sendFT8, (void*)j);
-      continue;
-      }
-*/
 printf("check for XF \n");
     if(memcmp(bufstr, "XF",2)==0)
       {
@@ -1102,23 +966,11 @@ int main(int argc, char** argv) {
 //  3 - port A
  printf("Starting DEmain; port B = %s\n",argv[1]);
 
-
-/*
-  	  pthread_t datathread;
-      int j = 321;
-  	  int rc = pthread_create(&datathread, NULL, sendData1, (void *)j);
-  	  printf("thread start rc = %d\n",rc);
-
-*/
-
-
-
-
 // port on which to await CC   (create channel request)
  CCport = atoi(argv[1]);  // port B
  LH_port = ntohs(atoi(argv[3]));
  inet_pton(AF_INET, argv[2], &client_addr.sin_addr);  // LH IP addr
- inet_pton(AF_INET, argv[2], &LH_IP);
+ inet_pton(AF_INET, argv[2], &LH_IP);  // this is not used TODO; fix
  client_addr.sin_port = LH_port;  // port A
  
  int *r =  run_DE();

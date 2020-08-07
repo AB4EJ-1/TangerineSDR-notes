@@ -140,10 +140,6 @@ int main() {
     return -1;
     }
 
-
-
-
-
           printf("DEctl: Send Discovery reply to: IP: %s, Port: %d\n", 
             inet_ntoa(client_addr.sin_addr), LH_port);
 	      buffer[10] = 0x07;
