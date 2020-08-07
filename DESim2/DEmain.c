@@ -119,6 +119,7 @@ static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on thi
 static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
 static uint16_t LH_DATA_OUT_port; // for sending (outbound) data (e.g., mic audio) to DE
 
+/////////////////////////////////////////////////////////////////////
 void *sendFT8flex(void * threadid){
 
   fd_set readfd;
@@ -244,7 +245,7 @@ void *sendFT8flex(void * threadid){
 
  }  // end of function
 
-
+//////////////////////////////////////////////////////////////////////////////
 void *sendFlexData(void * threadid){
 // forward IQ data from flex to LH in VITA format, with minor mods
 
@@ -334,20 +335,21 @@ void *sendFlexData(void * threadid){
      }
 
 
-  //  printf("try to send \n");
+  //  int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2_out, sizeof(iqbuffer2_out), 0, 
+	//      (struct sockaddr*)&client_addr, sizeof(client_addr));
     int sentBytes = sendto(sock, (const struct dataBuf *)&iqbuffer2_out, sizeof(iqbuffer2_out), 0, 
-	      (struct sockaddr*)&client_addr, sizeof(client_addr));
+	      (struct sockaddr*)&portF_addr, sizeof(portF_addr));
+    printf("Send to portF, bytes = %i\n",sentBytes);
 
 
     }
-  }  // end of repeating loop
+   }  // end of repeating loop
   }
 
- }
+}
 
 
-
-
+////////////////////////////////////////////////////////////////////////////
 void *awaitConfig(void *threadid) {
 
   config_busy = 1;
@@ -396,6 +398,7 @@ void *awaitConfig(void *threadid) {
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////////
 // this thread gets UDP packets being sent by pihpsdr, forwards to mainctl on command
 void *sendData1(void *threadid) {
 
@@ -563,7 +566,9 @@ void *sendData2(void *threadid) {
 }
 */
 
+/////////////////////////////////////////////////////////////////////////////////////
 ///// Data acquisition (ring buffer or firehose) simulation thread ////////////////////////
+//////////  creates a totally simulated signal (no data from any radio )/////////////////
 void *sendData(void *threadid) {
   int addr_len;
   
@@ -660,6 +665,7 @@ void *sendData(void *threadid) {
 
 }
 
+/////////////////////////////////////////////////////////////////////
 void discoveryReply(char buffer[1024]) {
   fprintf(stderr,"discovery packet detected\n"); 
   buffer[10] = 0x07;
@@ -697,7 +703,7 @@ int *run_DE(void)
     return (ptoi);
     }
 
-  sock1 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
+  sock1 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port 
   if (sock1 < 0) {
     perror("sock1 error\n");
     int r=-1;
@@ -706,7 +712,7 @@ int *run_DE(void)
     return (ptoi);
     }
 
-  sock4 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
+  sock4 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port 
   if (sock4 < 0) {
     perror("sock4 error\n");
     int r=-1;
@@ -715,7 +721,7 @@ int *run_DE(void)
     return (ptoi);
     }
 
-  sock5 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port B
+  sock5 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port 
   if (sock5 < 0) {
     perror("sock5 error\n");
     int r=-1;
@@ -775,7 +781,8 @@ int *run_DE(void)
       addr_len = sizeof(struct sockaddr_in);
       memset((void*)&portF_addr, 0, addr_len);
       portF_addr.sin_family = AF_INET;
-      portF_addr.sin_addr.s_addr = htons(LH_IP);
+   //   portF_addr.sin_addr.s_addr = htons(LH_IP);
+      portF_addr.sin_addr.s_addr = client_addr.sin_addr.s_addr;
       portF_addr.sin_port = htons(LH_DATA_IN_port);
       ret = bind(sock, (struct sockaddr*)&portF_addr, addr_len);
 
@@ -815,8 +822,8 @@ printf("check for S? \n");
     if(strncmp(bufstr, "S?",2) == 0 )
 	  { 
 	  printf("STATUS INQUIRY\n");
-      client_addr.sin_port = htons(LH_port);  // this may wipe desired port
-
+  //    client_addr.sin_port = htons(LH_port);  // this may wipe desired port
+      client_addr.sin_port = LH_port;  // this works for status but ruins data collection
       count = sendto(sock1, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
       printf("response = %d  sent to ",count);
       printf(" IP: %s, Port: %d\n", 
@@ -1056,6 +1063,9 @@ printf("check for SC \n");
  // 	  int rc = pthread_create(&datathread, NULL, sendData1, (void *)j);
   	  int rc = pthread_create(&datathread, NULL, sendFlexData, (void *)j);
   	  printf("thread start rc = %d\n",rc);
+
+// following code is superfluous; DE does not plan to ACK the SC command
+
 	  printf("SEND ACK to port %u\n",LH_CONF_IN_port);
       client_addr.sin_port = htons(LH_CONF_IN_port);  // this may wipe desired port
       count = sendto(sock1, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);

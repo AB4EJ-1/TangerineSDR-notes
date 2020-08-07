@@ -50,7 +50,7 @@ typedef struct dataBuf
 	//struct dataSample myDataSample[1024]; this is the logical layout using dataSample.
     //    Below is what Digital RF reequires to be able to understand the samples.
     //    In the array, starting at zero, sample[j] = I, sample[j+1] = Q (complex data)
-    struct dataSample theDataSample[1024];  // should be double the number of samples
+    struct dataSample theDataSample[1024];  
 	} DATABUF ;
 
 typedef struct VITAdataBuf
@@ -63,16 +63,6 @@ typedef struct VITAdataBuf
  struct dataSample theDataSample[1024];
  } VITABUF;
 
-typedef struct FT8record
- {
-  char  receiverCall [12] ;     
-  char  receiverLocator[12] ;
-  char  senderCall[12] ;
-  char  senderLocator[12] ;
-  char  senderSNR[4] ;
-  uint32_t  flowStartSeconds;
-  char   frequency[12] ;
- } FT8REC;
 
 struct datarateEntry
     {
@@ -108,6 +98,7 @@ struct channelBlock
     int antennaPort;
     double channelFreq;
     };
+
 typedef struct channelBuf
 	{
     char chCommand[2];
@@ -115,4 +106,5 @@ typedef struct channelBuf
     int channelDatarate;
     struct channelBlock channelDef[16];
     } CHANNELBUF;
+
 
