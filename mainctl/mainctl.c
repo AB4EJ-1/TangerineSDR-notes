@@ -639,7 +639,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
     printf("M: Storing to: %s\n",total_hdf5_path);
-    int compression_level = 0; // TODO: this should be configurable
+//    int compression_level = 9; // TODO: this should be configurable
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", compression_level, 0, 1, bufferChannels, 1, 1);
@@ -801,6 +801,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
 // NOTE! if controller does not send \n at end of buffer, commmand will be truncated (above)
   
+  /////////////////////////////////////////////////////////////////
   if(memcmp(mybuf, CREATE_CHANNEL, 2)==0)  // Request to create a configureation/data channel pair
 	{
  //   printf("Create Channel received at maintcl; port1=%s \n",d.c.port1);
@@ -816,8 +817,10 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     token = strtok(mybuf, comma);
     printf("initial token = %s\n", token);
     token = strtok(NULL, comma);
-
-    printf("second token = %s\n", token);
+    printf("second token (channel#) = %s\n", token);
+    configBuf_ptr->channelNo = atoi(token);
+    token = strtok(NULL, comma);
+    printf("third token (Port C) = %s\n", token);
 //  Set up "Port C" where we listen for config request response
     int ret = sscanf(token,"%5hu",&LH_CONF_IN_port );
     printf("port conversion done, ret= %d\n",ret);
@@ -827,7 +830,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     configBuf_ptr->configPort = LH_CONF_IN_port;
     token = strtok(NULL, comma);
     
-    printf("third token = %s\n", token);
+    printf("fourth token (port F) = %s\n", token);
 
     ret = sscanf(token,"%5hu",&LH_DATA_IN_port );
     printf("port conversion done, ret= %d\n",ret);
@@ -835,7 +838,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
     configBuf_ptr->dataPort = LH_DATA_IN_port;
     memcpy(b,configBuf_ptr,sizeof(CONFIGBUF));
-    puts("port C print done");
+    printf("CC buffer port C=%i, port F=%i\n", configBuf_ptr->configPort, configBuf_ptr->dataPort );
 
 	const uv_buf_t a[] = {{.base = b, .len = sizeof(CONFIGBUF)}};
 
@@ -849,33 +852,34 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 	}
 
 //////////////////////////////////////////////////////////////////////
-////////////////// Process CH arriving from app /////////////////////
+////////////////// Process CH arriving from app.py /////////////////////
   if(memcmp(mybuf, CONFIG_CHANNELS, 2)==0) 
     {
     uv_udp_send_t send_req;
     char b[400];
     printf("Config channels (CH) received from app.py=%s\n",mybuf);
 	memcpy(h.channelBuffer.chCommand, CONFIG_CHANNELS, sizeof(CONFIG_CHANNELS));  // Put the command into buf
-   
+    int chNo = 0;  // this is channel zero
+    h.channelBuffer.channelNo = chNo;
     const char comma[2] = ",";
     char *token;
     token = strtok(mybuf, comma);
     printf("initial token = %s\n", token);
     token = strtok(NULL, comma);   // second token is # active channels
-    printf("second token (# channels) = %s\n", token);
-    h.channelBuffer.activeChannels = atoi(token);
+    printf("second token (# subchannels) = %s\n", token);
+    h.channelBuffer.activeSubChannels = atoi(token);
     token = strtok(NULL, comma);   
     printf("third token (data rate) = %s\n", token);
     h.channelBuffer.channelDatarate = atoi(token);
     sample_rate_numerator= atoi(token); // set this for data acquisition
 
-    for (int i=0; i < h.channelBuffer.activeChannels; i++)
+    for (int i=0; i < h.channelBuffer.activeSubChannels; i++)
       {
       token = strtok(NULL, comma);
-      printf("Channel# %s :\n",token);
+      printf("SubChannel# %s :\n",token);
  //     printf("next token = %s\n", token);
-      int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].channelNo );
-      printf("converted to %i \n",h.channelBuffer.channelDef[i].channelNo);
+      int ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].subChannelNo );
+      printf("converted to %i \n",h.channelBuffer.channelDef[i].subChannelNo);
       token = strtok(NULL, comma);
       printf("antenna port = %s\n", token);
       ret = sscanf(token,"%i",&h.channelBuffer.channelDef[i].antennaPort);
@@ -999,6 +1003,18 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
 
   if(memcmp(mybuf, START_DATA_COLL , 2)==0)
 	{
+
+    num_items = rconfig("DRF_compression",configresult,0);
+    if(num_items == 0)
+      {
+      printf("ERROR - DRF compression config setting not found in config.ini\n");
+      }
+    else
+      {
+      printf("DRF compression CONFIG RESULT = '%s'\n",configresult);
+      compression_level = atoi(configresult);
+      } 
+
     printf("M: START DATA COLL COMMAND RECEIVED\n");
 // determine what mode to run
    num_items = rconfig("mode",configresult,0);

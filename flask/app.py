@@ -172,7 +172,7 @@ def channel_request():
   configPort =  parser['settings']['configport']
   dataPort   =  parser['settings']['dataport']
 # commas must separate fields for token processing to work in mainctl
-  send_to_mainctl((CREATE_CHANNEL + "," + configPort + "," + dataPort),1 )
+  send_to_mainctl((CREATE_CHANNEL + "," + "0 ," + configPort + "," + dataPort),1 )
   
 def check_status_once():
   global theStatus

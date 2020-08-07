@@ -104,11 +104,12 @@ struct channelBlock
     };
 
 // This is the type of buffer sent from LH to DE to request
-// creatio of a data channel pair.
+// creation of a data channel pair.
 typedef struct channelBuf
 	{
     char chCommand[2];
     uint16_t channelNo;
+    char VITA_type[2];
     int activeSubChannels;
     int channelDatarate;
     struct channelBlock channelDef[16];
