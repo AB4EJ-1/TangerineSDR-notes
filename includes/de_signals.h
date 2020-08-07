@@ -69,7 +69,8 @@ struct datarateEntry
     int rateNumber;
     int rateValue;
     };
-
+// This is the buffer type sent from DE to LH when
+// LH has requested a list of supported data rates.
 typedef struct datarateBuf
 	{
 	char buftype[2];
@@ -85,24 +86,30 @@ typedef struct comboBuf
      }  ;
     } COMBOBUF;
 
+// This is the type of buffer sent from LH to DE to request
+//  creation of a configuration channel pair.
 typedef struct configChannelRequest
 	{
     char cmd[2];
+    uint16_t channelNo;
 	uint16_t configPort;  // Port C
 	uint16_t dataPort;    // Port F
 	} CONFIGBUF;
 
 struct channelBlock
 	{
-    int channelNo;
+    int subChannelNo;
     int antennaPort;
     double channelFreq;
     };
 
+// This is the type of buffer sent from LH to DE to request
+// creatio of a data channel pair.
 typedef struct channelBuf
 	{
     char chCommand[2];
-    int activeChannels;
+    uint16_t channelNo;
+    int activeSubChannels;
     int channelDatarate;
     struct channelBlock channelDef[16];
     } CHANNELBUF;
