@@ -269,6 +269,7 @@ else
 if (fp == NULL)
   {
   printf("ERROR - could not open config file at %s\n",configPath);
+  printf("ABEND 102");
   exit(-1);
   }
 //puts("read config");
@@ -287,10 +288,12 @@ while ((read = getline(&line, &len, fp)) != -1) {
   strncpy(result,token,strlen(token)-1);
   result[strlen(token)-1] = 0x00;  // terminate the string
   free(cp);
+  fclose(fp);
   return(1);
    }
   }
   free(cp);
+  fclose(fp);
   return(0);
 }
 
@@ -636,7 +639,7 @@ void on_UDP_data_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * bu
     strcat(total_hdf5_path,"/");
     strcat(total_hdf5_path, hdf5subdirectory);
     printf("M: Storing to: %s\n",total_hdf5_path);
-    int compression_level = 9;
+    int compression_level = 0; // TODO: this should be configurable
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
      "TangerineSDR", compression_level, 0, 1, bufferChannels, 1, 1);
@@ -897,6 +900,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     return;
     }
 
+  ///////////////////////////////////////////////////////////////////////////// 
   if(memcmp(mybuf, START_FT8_COLL , 2)==0) // got command to start FT8 reception
     {
 // update this in case user has changed it
@@ -927,13 +931,13 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     char mkcommand[20] = "mkdir ";
     strcat(mkcommand,pathToRAMdisk);
     strcat(mkcommand,"/FT8");
-  //  int rt =     system("mkdir /mnt/RAM_disk/FT8");
+
     printf("issue command: %s\n",mkcommand);
     int rt = system(mkcommand);
     strcpy(mkcommand,"rm ");
     strcat(mkcommand,pathToRAMdisk);
     strcat(mkcommand,"/FT8/*.*");
-  //  rt = system("rm /mnt/RAM_disk/FT8/*.*");
+
     printf("issue command: %s\n",mkcommand);
     rt = system(mkcommand);
     strcpy(mkcommand,"killall -9 ft8rcvr");  // halt any existing instance(s)
@@ -1580,9 +1584,9 @@ void *dataUpload(void *threadid) {
 void heartbeat(uv_timer_t * timer_handle) {
   printf("M: Heartbeat starting. . .\n");
 
-  int portno = 5000;  // default, to be replaced by configured value.
+  int portno = 5000;  // TODO: default, to be replaced by configured value.
 
-//char *host = "192.168.1.67"; // default, to be replaced by configured value.
+//char *host = "192.168.1.67"; // TODO: default, to be replaced by configured value.
   char centralHost[20] = "192.168.1.67";
 
 //char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
@@ -1641,10 +1645,10 @@ void heartbeat(uv_timer_t * timer_handle) {
   gettimeofday(&tv, NULL);
   curtime = tv.tv_sec;
   strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
-  printf("Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
+  printf("M: Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
   sprintf(message,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n",mytoken,tbuf);
 //strcpy(message,"HB!");
-  printf("M: hearbeat - set up socket\n");
+ // printf("M: hearbeat - set up socket\n");
 /* create the socket */
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) printf("M: Heartbeat thread- ERROR opening socket\n");
@@ -1672,14 +1676,13 @@ void heartbeat(uv_timer_t * timer_handle) {
     {
     printf("M: Heartbeat - Could not reach Central Control\n");
     close(sockfd);
-
     return;
     }
   else
-    printf("Heartbeat socket connected\n");
+    printf("M: Heartbeat socket connected\n");
 
   total = strlen(message);
-  printf("M: send heartbeat of length %i \n",total);
+ // printf("M: send heartbeat of length %i \n",total);
   sent = 0;
   do {
    bytes = write(sockfd,message+sent,total-sent);
@@ -1706,7 +1709,7 @@ void heartbeat(uv_timer_t * timer_handle) {
   received = 0;
 
   do {
-  printf("M: HB, read from Central\n");
+   // printf("M: HB, read from Central\n");
    bytes = read(sockfd,response+received,total-received);
    printf("M: HB bytes received from Central = %i\n",bytes);
    if (bytes < 0)
@@ -1732,11 +1735,14 @@ void heartbeat(uv_timer_t * timer_handle) {
     }
 
 /* process response */
- // 
+
+/*
   printf("M: Heartbeat Response received from Central Control\n");
   printf("----------------------------------------------------\n");
   printf("%s\n",response);
   printf("----------------------------------------------------\n");
+
+ */
   char theStart[30];
   char theEnd[30];
 /*
@@ -1825,7 +1831,16 @@ void test_data_prep(void) {
   strcpy(startDT, "2020-06-08T00:00:00");
   strcpy(endDT, "2020-06-08T23:59:59");
   strcpy(rbufp,"/home/odroid/share1/TangerineData/uploads");
-  strcpy(pathToRAMdisk, "/mnt/RAM_disk");
+  num_items = rconfig("ramdisk_path",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - RAMdisk path setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("RAMdisk path CONFIG RESULT = '%s'\n",configresult);
+    strcpy(pathToRAMdisk,configresult);
+    } 
 
   int r = openConfigFile();
   int r1 = prep_data_files(startDT, endDT, rbufp);
@@ -2038,8 +2053,6 @@ int main(int argc, char *argv[]) {
     LH_DATA_IN_port = atoi(configresult);
     }
 
-//  strcpy(target,"DE_ip");
-//  int num_items = 0;
   puts("start");
  // printf("looking for '%s'\n",target);
   num_items = rconfig("DE_ip",configresult,0);

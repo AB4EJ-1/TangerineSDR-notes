@@ -122,7 +122,7 @@ def send_to_mainctl(cmdToSend,waitTime):
        received = tcp_client.recv(1024, socket.MSG_DONTWAIT)
  #      print("F: received data from DE: ", received)
        d = received.decode()
-       print("F: decoded:",d)
+     #  print("F: decoded:",d)
        print("F: buftype is '",received[0:2],"'")
        print("F: bytes=",received[0],"/",received[1],"/",received[2])
 #       print("find:",received[0:2].find("DR"))
@@ -184,10 +184,9 @@ def ping_mainctl():
   while(1):
     time.sleep(60)
     localtime = time.asctime(time.localtime(time.time()))
-    print("F: ping mainctl at ", localtime)
+    print("F: PING mainctl with S? at ", localtime)
     send_to_mainctl("S?",1)
-    print("F: mainctl replied")
-  
+    print("F: mainctl replied") 
 
 def send_channel_config():  # send channel configuration command to DE
   global theStatus
@@ -322,6 +321,7 @@ def restart():
 #   returned_value = os.system("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
  # start mainctl as a subprocess
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
+  # returned_value = os.system("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl 1>> main.log &")
    time.sleep(3)
    print("F: after restarting mainctl, retcode=",returned_value)
 #   stopcoll()
@@ -982,7 +982,7 @@ def propagation():
 def ft8list():
   ft8string = ""
   band = []
-  print("Entering _/ft8list")
+ # print("Entering _/ft8list")
   parser = configparser.ConfigParser(allow_no_value=True)
   parser.read('config.ini')
   for i in range(7):
@@ -997,11 +997,11 @@ def ft8list():
     for fno in range(len(band)):
 # TODO: following needs to come from configuration
      fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
-     print("checking file",fname)
+  #   print("checking file",fname)
      f = open(fname,"r")
     # print("ft8list" + len(f.readlines()))
      plist.append(len(f.readlines()))
-     print(plist)
+ #    print(plist)
      f.close()
       
 # here we build a JSON string to populate the FT8 panel
