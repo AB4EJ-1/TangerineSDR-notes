@@ -1,0 +1,539 @@
+starting
+UDPdiscovery    ******    *****
+LOOKING for old protocol **********************
+Starting standard discover process
+starting old discovery thread
+getsockname ret1 = 0 
+getsockname returns IP for outbound addr 192.168.1.207, Port is 42109
+	found server IP is 192.168.1.208, Port is 40196
+EFFE02000000000000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+	found server IP is 192.168.1.208, Port is 40196
+discovery selected LH port 42109 (Port A)
+Here's what we found:
+selected Tangerine at port 40196 (Port B)
+test - config init
+test - read config file
+test - look up config path
+Setting config file path to: /home/odroid/projects/TangerineSDR-notes/flask/config.ini
+
+start
+start fcn looking for configport
+ CONFIG RESULT = '40001'
+start fcn looking for dataport
+start
+start fcn looking for DE_ip
+ERROR - DE_ip setting not found in config.inistart fcn looking for DE_port
+ERROR - DE_ip setting not found in config.inistart fcn looking for controlport
+ CONFIG RESULT for control port= '6100'
+len =4
+start fcn looking for ringbuffer_path
+ CONFIG RESULT for ringbuffer path= '/media/usb0/hdf5'
+len =16
+start fcn looking for subdir_cadence
+ subdir cadence CONFIG RESULT = '20'
+len =2
+start fcn looking for milliseconds_per_file
+ subdir cadence CONFIG RESULT = '5000'
+len =4
+start fcn looking for central_host
+central host CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+central port CONFIG RESULT = '5000'
+start fcn looking for ramdisk_path
+RAMdisk path CONFIG RESULT = '/mnt/RAM_disk'
+start fcn looking for firehoser_path
+FirehoseR path CONFIG RESULT = '/mnt/RAM_disk/firehose'
+start fcn looking for fftoutput_path
+FFToutput path CONFIG RESULT = '/home/odroid/share1'
+Bind to input (terminal) port for listening
+prep to receive UDP data
+will listen on port A 42109 
+prep to send UDP data (commands)
+Prep to handle config request and reply
+will listen on port C 40001 
+prep to send UDP config (CH) using outbound port 40001
+UDP config port setup done
+Try to open directory '/media/usb0/hdf5'
+Digital RF directory found
+start fcn looking for heartbeat_interval
+ CONFIG RESULT = '180'
+len =3
+M: Start hearbeat timer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: CC len= 15
+initial token = CC
+second token = 40001
+port conversion done, ret= 1
+Port C assigned as 40001 
+third token = 40002
+port conversion done, ret= 1
+Port F assigned as 40002 
+port C print done
+Sending CREATE CHANNEL (CC) to 192.168.1.208  port A=40196
+After CC, Port D set to 50001
+UDP send complete, status: 0
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: R? len= 3
+Forward datarate inquiry to DE
+Sending DATARATE INQUIRY to 192.168.1.208  port 40196
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 164
+buffer = DR 
+DR string= DR:1,8;2,4000;3,8000;4,48000;5,96000;6,192000;7,384000;8,768000;9,1536000;
+intial entry 1 8 
+M: Forward datarate response to webcontrol
+set up write_req
+44 52 0 0 1 0 0 0 8 0 0 0 2 0 0 0 
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: CH len= 22
+Config channels (CH) received from app.py=CH,1,48000,0,0,18.10,
+initial token = CH
+second token (# channels) = 1
+third token (data rate) = 48000
+Channel# 0 :
+converted to 0 
+antenna port = 0
+antenna port converted to 0 
+next token = 18.10
+freq converted to 18.100000 
+done with conversion
+Sending CONFIG CHANNELS (CH) to 192.168.1.208  port 40196
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+AK buffer contains 41 4b  
+M: Forward the ACK
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: Heartbeat starting. . .
+start fcn looking for token_value
+ CONFIG RESULT = '3BD69855A8BAE408366C10002CF'
+len =27
+start fcn looking for central_host
+ CONFIG RESULT = '192.168.1.67'
+start fcn lookingstarting
+UDPdiscovery    ******    *****
+LOOKING for old protocol **********************
+Starting standard discover process
+starting old discovery thread
+getsockname ret1 = 0 
+getsockname returns IP for outbound addr 192.168.1.207, Port is 34358
+	found server IP is 192.168.1.208, Port is 54857
+EFFE02000000000000000700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+	found server IP is 192.168.1.208, Port is 54857
+discovery selected LH port 34358 (Port A)
+Here's what we found:
+selected Tangerine at port 54857 (Port B)
+test - config init
+test - read config file
+test - look up config path
+Setting config file path to: /home/odroid/projects/TangerineSDR-notes/flask/config.ini
+
+start
+start fcn looking for configport
+ CONFIG RESULT = '40001'
+start fcn looking for dataport
+start
+start fcn looking for DE_ip
+ERROR - DE_ip setting not found in config.inistart fcn looking for DE_port
+ERROR - DE_ip setting not found in config.inistart fcn looking for controlport
+ CONFIG RESULT for control port= '6100'
+len =4
+start fcn looking for ringbuffer_path
+ CONFIG RESULT for ringbuffer path= '/media/usb0/hdf5'
+len =16
+start fcn looking for subdir_cadence
+ subdir cadence CONFIG RESULT = '20'
+len =2
+start fcn looking for milliseconds_per_file
+ subdir cadence CONFIG RESULT = '5000'
+len =4
+start fcn looking for central_host
+central host CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+central port CONFIG RESULT = '5000'
+start fcn looking for ramdisk_path
+RAMdisk path CONFIG RESULT = '/mnt/RAM_disk'
+start fcn looking for firehoser_path
+FirehoseR path CONFIG RESULT = '/mnt/RAM_disk/firehose'
+start fcn looking for fftoutput_path
+FFToutput path CONFIG RESULT = '/home/odroid/share1'
+Bind to input (terminal) port for listening
+prep to receive UDP data
+will listen on port A 34358 
+prep to send UDP data (commands)
+Prep to handle config request and reply
+will listen on port C 40001 
+prep to send UDP config (CH) using outbound port 40001
+UDP config port setup done
+Try to open directory '/media/usb0/hdf5'
+Digital RF directory found
+start fcn looking for heartbeat_interval
+ CONFIG RESULT = '180'
+len =3
+M: Start hearbeat timer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: CC len= 15
+initial token = CC
+second token = 40001
+port conversion done, ret= 1
+Port C assigned as 40001 
+third token = 40002
+port conversion done, ret= 1
+Port F assigned as 40002 
+port C print done
+Sending CREATE CHANNEL (CC) to 192.168.1.208  port A=54857
+After CC, Port D set to 50001
+UDP send complete, status: 0
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: R? len= 3
+Forward datarate inquiry to DE
+Sending DATARATE INQUIRY to 192.168.1.208  port 54857
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 164
+buffer = DR 
+DR string= DR:1,8;2,4000;3,8000;4,48000;5,96000;6,192000;7,384000;8,768000;9,1536000;
+intial entry 1 8 
+M: Forward datarate response to webcontrol
+set up write_req
+44 52 0 0 1 0 0 0 8 0 0 0 2 0 0 0 
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: CH len= 22
+Config channels (CH) received from app.py=CH,1,48000,0,0,18.10,
+initial token = CH
+second token (# channels) = 1
+third token (data rate) = 48000
+Channel# 0 :
+converted to 0 
+antenna port = 0
+antenna port converted to 0 
+next token = 18.10
+freq converted to 18.100000 
+done with conversion
+Sending CONFIG CHANNELS (CH) to 192.168.1.208  port 54857
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+AK buffer contains 41 4b  
+M: Forward the ACK
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: Heartbeat starting. . .
+start fcn looking for token_value
+ CONFIG RESULT = '3BD69855A8BAE408366C10002CF'
+len =27
+start fcn looking for central_host
+ CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+M: Heartbeat TOD: '08-06-2020-16:51:30.' 709691
+M: Heartbeat socket connected
+M: Heartbeat sent, # bytes = 74
+M: HB sent
+M: HB bytes received from Central = 195
+M: Heartbeat Response received from Central Control - 195 bytes
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: CH len= 22
+Config channels (CH) received from app.py=CH,1,48000,0,0,18.10,
+initial token = CH
+second token (# channels) = 1
+third token (data rate) = 48000
+Channel# 0 :
+converted to 0 
+antenna port = 0
+antenna port converted to 0 
+next token = 18.10
+freq converted to 18.100000 
+done with conversion
+Sending CONFIG CHANNELS (CH) to 192.168.1.208  port 54857
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+AK buffer contains 41 4b  
+M: Forward the ACK
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: Heartbeat starting. . .
+start fcn looking for token_value
+ CONFIG RESULT = '3BD69855A8BAE408366C10002CF'
+len =27
+start fcn looking for central_host
+ CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+M: Heartbeat TOD: '08-06-2020-16:54:30.' 711194
+M: Heartbeat socket connected
+M: Heartbeat sent, # bytes = 74
+M: HB sent
+M: HB bytes received from Central = 195
+M: Heartbeat Response received from Central Control - 195 bytes
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: Heartbeat starting. . .
+start fcn looking for token_value
+ CONFIG RESULT = '3BD69855A8BAE408366C10002CF'
+len =27
+start fcn looking for central_host
+ CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+M: Heartbeat TOD: '08-06-2020-16:57:30.' 764052
+M: Heartbeat socket connected
+M: Heartbeat sent, # bytes = 74
+M: HB sent
+M: HB bytes received from Central = 195
+M: Heartbeat Response received from Central Control - 195 bytes
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: Heartbeat starting. . .
+start fcn looking for token_value
+ CONFIG RESULT = '3BD69855A8BAE408366C10002CF'
+len =27
+start fcn looking for central_host
+ CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+M: Heartbeat TOD: '08-06-2020-17:00:30.' 764705
+M: Heartbeat socket connected
+M: Heartbeat sent, # bytes = 74
+M: HB sent
+M: HB bytes received from Central = 195
+M: Heartbeat Response received from Central Control - 195 bytes
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from DE!  It's alive!!
+set up write_req
+Send OK status to webcontrol
+M: webctl write status = 0
+M: free req
+process_local_command routine triggered
+
+ignore 1 buffer
+M: Heartbeat starting. . .
+start fcn looking for token_value
+ CONFIG RESULT = '3BD69855A8BAE408366C10002CF'
+len =27
+start fcn looking for central_host
+ CONFIG RESULT = '192.168.1.67'
+start fcn looking for central_port
+M: Heartbeat TOD: '08-06-2020-17:03:30.' 789290
+M: Heartbeat socket connected
+M: Heartbeat sent, # bytes = 74
+M: HB sent
+M: HB bytes received from Central = 195
+M: Heartbeat Response received from Central Control - 195 bytes
+M: new incoming connection.
+process_local_command routine triggered
+
+Command received from web control: S? len= 3
+Forward status inquiry to DE
+Sending STATUS INQUIRY to 192.168.1.208  port 54857
+	(Listening on port 34358 )
+UDP send complete, status: 0
+M: UDP data recvd, bytes = 2
+OK status message received from
