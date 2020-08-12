@@ -347,8 +347,8 @@ def restart():
    returned_value = os.system(rcmd)
    print("F: ringbuffer control activated")
 # start heartbeat thread that pings mainctl at intervals
-   thread1 = hbThread(1, "pingThread-1",1)
-   thread1.start()
+ #  thread1 = hbThread(1, "pingThread-1",1)
+ #  thread1.start()
    return redirect('/')
 
 @app.route("/datarates")

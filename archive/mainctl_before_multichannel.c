@@ -49,13 +49,10 @@ static uint16_t LH_port;   // port A, used on LH (local host) for sending to DE,
 static uint16_t DE_port;   // port B, that DE will listen on
 static char DE_IP[16];
 
-// These ports work in sets, assigned to an application use case.
-// The subscript is the channel#.
-// 0 = RG data,  1 = FT8,  2 = WSPR
-static uint16_t LH_CONF_IN_port[3];  // port C, receives ACK or NAK from config request
-static uint16_t DE_CONF_IN_port[3];  // port D; DE listens for config request on this port
-static uint16_t LH_DATA_IN_port[3];  // port F; LH listens for spectrum data on this port
-static uint16_t DE_DATA_IN_port[3];  // port E; DE listens for xmit data on this port
+static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
+static uint16_t DE_CONF_IN_port;  // port D; DE listens for config request on this port
+static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
+static uint16_t DE_DATA_IN_port;  // port E; DE listens for xmit data on this port
 
 
 union {
@@ -319,7 +316,6 @@ void free_write_req(uv_write_t *req) {
 
 void on_UDP_send(uv_udp_send_t *req, int status)
 {
-    printf("UDP send complete... I think...\n");
     if (status) 
         fprintf(stderr, "M: *** *** uvlib UDP Send error %s\n", uv_strerror(status));
  
@@ -775,12 +771,12 @@ int getDataDates(char *input, char* startpoint, char* endpoint)
 
 
 //////  Function to check LH_DATA_IN_port, and open it if not already open
-void recv_port_check(int channelNo) {
+void recv_port_check() {
   if(recv_port_status == 0)   // if port not already open, open it
       {
 // start a listener on Port F
       uv_udp_init(loop, &data_socket);
-      uv_ip4_addr("0.0.0.0", LH_DATA_IN_port[channelNo], &recv_data_addr);
+      uv_ip4_addr("0.0.0.0", LH_DATA_IN_port, &recv_data_addr);
       printf("I/Q DATA: start listening on port %u\n",htons(recv_data_addr.sin_port));
       int retcode = uv_udp_bind(&data_socket, (const struct sockaddr *)&recv_data_addr, UV_UDP_REUSEADDR);
       printf("bind retcode = %d\n",retcode);
@@ -791,132 +787,6 @@ void recv_port_check(int channelNo) {
   else
     puts("recv port already open");
 }
-
-////////////////////////////////////////////////////////////////////////////
-/////////   Function to build channel config (CH) request & pass to DE  ////
-void makeCHrequest(int channelNo){
-  printf("M: Build CH request\n");
-  struct channelBuf chBuf;         // create & initialize channel description
-  char b[sizeof(CHANNELBUF)];      // so we can copy to this later
-  uv_udp_send_t send_req;
-  memset(&chBuf, 0, sizeof(chBuf));
-  memcpy(chBuf.chCommand, CONFIG_CHANNELS, 2);
-  chBuf.channelNo = channelNo;
-  if(channelNo == 0)  // this is a RG-type channel
-    {
-    memcpy(chBuf.VITA_type,"VT",2);  // specify our special mod of VITA
-    int channelCount = 0;
-    // determine how many subchannels are configured
-    num_items = rconfig("numchannels",configresult,0);
-    if(num_items == 0)
-      {
-      printf("ERROR - numchannels setting not found in config.ini\n");
-      }
-    else
-      {
-      printf("numchannels CONFIG RESULT = '%s'\n",configresult);
-      channelCount = atoi(configresult);
-      printf("channel count= %i\n",channelCount);
-      chBuf.activeSubChannels = channelCount;
-      } 
-    num_items = rconfig("datarate",configresult,0);
-    if(num_items == 0)
-      {
-      printf("ERROR - datarate setting not found in config.ini\n");
-      }
-    else
-      {
-      printf("datarate CONFIG RESULT = '%s'\n",configresult);
-      chBuf.channelDatarate = atoi(configresult);
-      }
-    for(int i = 0; i < channelCount;i++)
-      {
-      chBuf.channelDef[i].subChannelNo = i;
-      char target[20];
-      sprintf(target,"p%i",i);  // fill in antenna setting
-      num_items = rconfig(target,configresult,0);
-      if(num_items == 0)
-        {
-        printf("ERROR - p%i setting not found in config.ini\n",i);
-        }
-      else
-        {
-        printf("p%i CONFIG RESULT = '%s'\n",i,configresult);
-        chBuf.channelDef[i].antennaPort = atoi(configresult);
-        }
-      sprintf(target,"f%i",i);  // fill in subchannel center frequency
-      num_items = rconfig(target,configresult,0);
-      if(num_items == 0)
-        {
-        printf("ERROR - f%i setting not found in config.ini\n",i);
-        }
-      else
-        {
-        printf("f%i CONFIG RESULT = '%s'\n",i,configresult);
-        chBuf.channelDef[i].channelFreq = (double)atof(configresult);
-        }
-      }  // end of subchannel for loop
-
-    struct sockaddr_in si_DE;
-    int s;
-    printf("define socket\n");
-    if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
-	  {
-	  	printf("socket s error");
-	  }  
-    memset((char *) &si_DE, 0, sizeof(si_DE));
-
-    si_DE.sin_family = AF_INET;
-    si_DE.sin_port = htons(DE_CONF_IN_port[0]);
-
-    if (inet_aton(DE_IP , &si_DE.sin_addr) == 0) 
-	  {
-	  	fprintf(stderr, "inet_aton() failed\n");
-	  }
-    printf("send\n");
-		//send the message
-    if (sendto(s, &chBuf, sizeof(chBuf) , 0 , (struct sockaddr *) &si_DE, sizeof(si_DE))==-1)
-		{
-			printf("sendto() error");
-		}
-    close(s);
-
-
-/*
-    memcpy(b,&chBuf,sizeof(chBuf));
-
-
-	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
-
-    struct sockaddr_in send_addr;
-    printf("Sending CONFIG CHANNELS (CH) to %s  port %u\n", DE_IP, DE_CONF_IN_port[0]);
-
-    uv_ip4_addr(DE_IP, DE_CONF_IN_port[0], &send_addr);    
-    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-    }
-
-
-
-
-
-
-
-}
-
 
 
 
@@ -968,7 +838,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     CONFIGBUF *configBuf_ptr;
     configBuf_ptr = (CONFIGBUF *)malloc(sizeof(CONFIGBUF));  
     memcpy(configBuf_ptr->cmd, mybuf,2);
-/*
+
     const char comma[2] = ",";
     char *token;
     token = strtok(mybuf, comma);
@@ -992,10 +862,8 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     ret = sscanf(token,"%5hu",&LH_DATA_IN_port );
     printf("port conversion done, ret= %d\n",ret);
     printf("Port F assigned as %d \n",LH_DATA_IN_port);
-*/
-    configBuf_ptr->channelNo = 0;
-    configBuf_ptr->configPort = LH_CONF_IN_port[0];
-    configBuf_ptr->dataPort = LH_DATA_IN_port[0];
+
+    configBuf_ptr->dataPort = LH_DATA_IN_port;
     memcpy(b,configBuf_ptr,sizeof(CONFIGBUF));
     printf("CC buffer port C=%i, port F=%i\n", configBuf_ptr->configPort, configBuf_ptr->dataPort );
 
@@ -1005,8 +873,7 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     uv_ip4_addr(DE_IP, DE_port, &send_addr);    
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     printf("After CC, Port D set to %d\n", ntohs(send_config_addr.sin_port));
-    DE_CONF_IN_port[0] = send_config_addr.sin_port;  // save this for later use
-
+    DE_CONF_IN_port = send_config_addr.sin_port;  // save this for later use
     free(configBuf_ptr);
     return;
 	}
@@ -1325,13 +1192,8 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
  //   printf("M: try to print subdir, 1\n");
 	char b[60];
 	for(int i=0; i< 60; i++) { b[i] = 0; }
-    struct commandBuf cmdBuf;
-    memset(&cmdBuf, 0, sizeof(cmdBuf));
-    memcpy(cmdBuf.cmd,"SC",2);
-    cmdBuf.channelNo = 0;
-
  //   printf("M: ry to print subdir 2\n");
-    memcpy(b, &cmdBuf, sizeof(cmdBuf));
+	strcpy(b, START_DATA_COLL );
     for(int z=0; z < 15; z++)
      {
      hdf5subdirectory[z] = mybuf[z+3];
@@ -1339,20 +1201,20 @@ void process_local_command(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
     hdf5subdirectory[16]=0;
  //   printf("M: try to print subdir 3\n");
     printf("HDF5 subdirectory = %s\n",hdf5subdirectory);
-	const uv_buf_t a[] = {{.base = b, .len = sizeof(cmdBuf)}};
+	const uv_buf_t a[] = {{.base = b, .len = 2}};
     if(recv_port_status == 0)   // if port not already open, open it
       {
 // start a listener on Port F
-      recv_port_check(0); // ensure port is open exactly once
+      recv_port_check(); // ensure port is open exactly once
 
       }
 
 
  //   uv_ip4_addr(DE_IP, DE_port, &send_addr);   
-    DE_CONF_IN_port[0] = 50001; 
-    printf("Sending START DATA COLLECTION  to %s  port %u\n", DE_IP, DE_CONF_IN_port[0]);
+    DE_CONF_IN_port = 50001;
+    printf("Sending START DATA COLLECTION  to %s  port %u\n", DE_IP, DE_CONF_IN_port);
 //    uv_ip4_addr(DE_IP, htons(DE_CONF_IN_port), &send_addr);  
-    uv_ip4_addr(DE_IP, DE_CONF_IN_port[0], &send_addr);  
+    uv_ip4_addr(DE_IP, DE_CONF_IN_port, &send_addr);  
     uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
     return;
 	}
@@ -1513,7 +1375,7 @@ void statusInquiry() {
 
 
 ///////////////////////////////////////////////////////////////
-//  Callback for when UDP packets received from DE 
+//  Callback for when UDP command/ACK/NAK packets received from DE 
 //  A separate callback handles incoming I/Q data, above
 //////////////////////////////////////////////////////////////
 void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
@@ -1609,8 +1471,8 @@ void on_UDP_read(uv_udp_t * recv_handle, ssize_t nread, const uv_buf_t * buf,
       memcpy(d.mybuf1, buf->base, sizeof(CONFIGBUF));
       printf("M: AK received from last command:  %s , channel# %i, ", d.myConfigBuf.cmd,d.myConfigBuf.channelNo);
       printf("M: DE receive ports = %hu  %hu \n", d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
-      DE_DATA_IN_port[d.myConfigBuf.channelNo] = d.myConfigBuf.dataPort;
-      DE_CONF_IN_port[d.myConfigBuf.channelNo] = d.myConfigBuf.configPort;
+      DE_DATA_IN_port = d.myConfigBuf.dataPort;
+      DE_CONF_IN_port = d.myConfigBuf.configPort;
 
       uv_write_t *write_req = (uv_write_t*)malloc(sizeof(uv_write_t));
 
@@ -1955,148 +1817,6 @@ return ;
 
 }  // end of heartbeat thread
 
-///////////////////////// Discover HIPSDR compliant devices ///////////////
-void discover_DE(){
-
-  puts("UDPdiscovery    ******    *****");
-
-  //DEdevice = UDPdiscoverNew();  // call UDP discovery rtn
-
-// here we look for compatible device
-  LH_port = 0;
-  discovered[0]= UDPdiscover(&LH_port);    // pass handle to outbound port
-  // discovery randomly selects an outbound port. DE will talk to that port.
-  // Here we find out what that port is, so we can listen on it.
-  // In documentation, this port is called "Port A"
-  printf("discovery selected LH port %d (Port A)\n", LH_port); 
-  puts("Here's what we found:");
-  for(int i=0;i<MAX_DEVICES;i++)
-	{
-	 if(strlen(discovered[i].name) == 0 ) break;   // apparently the end of the list
-     fprintf(stderr,"  ^^^^^^^ Device %d is %s at %s port %u  \n",i, discovered[i].name,
-	   inet_ntoa(discovered[i].info.network.address.sin_addr),   
-       htons(discovered[i].info.network.address.sin_port));
-    // TODO: temporary way to pick device on the wire; 
-    // will need to have a better way to select from multiple responding devices
-	if(discovered[i].device == DEVICE_TANGERINE) 
-	 {
-		strcpy(DE_IP, inet_ntoa(discovered[i].info.network.address.sin_addr));
-		DE_port = htons(discovered[i].info.network.address.sin_port);  // this is Port B
-		printf("Selected Tangerine at port %u (Port B)\n",DE_port);
-	  }
-	}
-
-
-}
-
-
-
-
-void die(char *s)
-{
-	perror(s);
-}
-
-//////////////////////////////////////////////////////////////
-////////////////////// Create Channel ///////////////////////
-int create_channel(int channelNo) {
-// This is a synchronous operation, as we cannot proceed until we have
-// created channels; hence, we do not use the libuv asych calls.
-  printf("M: Prep to send CREATE_CHANNEL for channel# %i\n",channelNo);
-  // first we have to get the port numbers to bs used.
-
-	struct sockaddr_in si_DE;
-    struct sockaddr_in si_LH;
-    struct configChannelRequest cc;
-  // Build the CC command buffer
-  memcpy(cc.cmd,CREATE_CHANNEL,2);
-  cc.channelNo = channelNo;
-  char portname[15];
-  sprintf(portname,"configport%i",channelNo);
-  printf("portname= %s\n",portname);
-  num_items = rconfig(portname,configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - configport setting not found in config.ini\n");
-    }
-  else
-    {
-    printf("configport CONFIG RESULT = '%s'\n",configresult);
-    cc.configPort = atoi(configresult);
-    } 
-  printf("Port C now set to %i\n",cc.configPort);  
-
-  sprintf(portname,"dataport%i",channelNo);
-  printf("portname= %s\n",portname);
-  num_items = rconfig(portname,configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - dataport setting not found in config.ini\n");
-    }
-  else
-    {
-    printf("dataport CONFIG RESULT = '%s'\n",configresult);
-    cc.dataPort = atoi(configresult);
-    } 
-     
-  int s, i, slen=sizeof(si_DE), s1;
-
-  if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
-	{
-		die("socket s");
-	}
-
-  if ( (s1=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
-	{
-		die("socket s1");
-	}
-
-  memset((char *) &si_DE, 0, sizeof(si_DE));
-  memset((char *) &si_LH, 0, sizeof(si_LH));
-  si_DE.sin_family = AF_INET;
-  si_DE.sin_port = htons(DE_port);
-
-  if (inet_aton(DE_IP , &si_DE.sin_addr) == 0) 
-	{
-		fprintf(stderr, "inet_aton() failed\n");
-	}
-
-		//send the message
-  if (sendto(s, &cc, sizeof(cc) , 0 , (struct sockaddr *) &si_DE, slen)==-1)
-		{
-			die("sendto()");
-		}
-		
-  si_DE.sin_port = htons(cc.configPort);
-  si_LH.sin_family = AF_INET;
-  si_LH.sin_port = htons(40001);
-  si_LH.sin_addr.s_addr = htonl(INADDR_ANY);
-
-  printf("bind to s1\n");
-  if( bind(s1 , (struct sockaddr*)&si_LH, sizeof(si_LH) ) == -1)
-	{
-		die("bind");
-	}	
-		//try to receive some data, this is a blocking call
-
-  printf("Listening on port %i\n",cc.configPort);
-  memset(&cc,'\0', sizeof(cc));
-  if (recvfrom(s1, &cc, sizeof(cc), 0, (struct sockaddr *) &si_LH, &slen) == -1)
-		{
-			die("recvfrom()");
-		}
-		
-  printf("TEST: DE responded to CC request; received from DE: %s, %i, %i, %i\n", cc.cmd, cc.channelNo,
-         cc.configPort, cc.dataPort);
-  DE_CONF_IN_port[cc.channelNo] = cc.configPort;
-  DE_DATA_IN_port[cc.channelNo] = cc.dataPort;
-	
-  close(s1);
-  close(s);
-  return 0;
-
-}
-
 
 /////////////////// UNIT TEST SETUP //////////////////////////////////
 
@@ -2112,7 +1832,6 @@ int clean_suite(void) { return 0; }
 
 void test_case_sample(void)
 {
-  // These first few tests simply verify that the test system is working.
    CU_ASSERT(CU_TRUE);
    CU_ASSERT_NOT_EQUAL(2, -1);
    CU_ASSERT_STRING_EQUAL("string #1", "string #1");
@@ -2162,7 +1881,6 @@ void test_data_prep(void) {
   strcpy(startDT, "2020-06-08T00:00:00");
   strcpy(endDT, "2020-06-08T23:59:59");
   strcpy(rbufp,"/home/odroid/share1/TangerineData/uploads");
-  int r = openConfigFile();
   num_items = rconfig("ramdisk_path",configresult,0);
   if(num_items == 0)
     {
@@ -2174,7 +1892,7 @@ void test_data_prep(void) {
     strcpy(pathToRAMdisk,configresult);
     } 
 
-//  int r = openConfigFile();
+  int r = openConfigFile();
   int r1 = prep_data_files(startDT, endDT, rbufp);
   CU_ASSERT_EQUAL(r1,0);   // dummy statement for now
 }
@@ -2183,15 +1901,16 @@ void date_test(void) {
   char theInput[300] = "HTTP/1.0 200 OK\nConnection: close\nContent-Length: 42\nContent-Type: text/html; charset=utf-8\nDate: Mon, 08 Jun 2020 20:40:53 GMT\nServer: waitress\n\nDR2020-06-08T00:00:00Z2020-06-08T23:59:59Z";
   char theStart[30];
   char theEnd[30];
-  int r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
-  CU_ASSERT_EQUAL(r2,1);  // here we have found a DR command
-  printf("In test, endpoint = %s\n", theEnd);
-  printf("In test, startpoint = %s\n", theStart);
-  CU_ASSERT_STRING_EQUAL(theStart, "2020-06-08T00:00:00");
-  CU_ASSERT_STRING_EQUAL(theEnd, "2020-06-08T23:59:59");
-  strcpy(theInput, "HTTP/1.0 200 OK\nConnection: close\nContent-Length: 42\nContent-Type: text/html; charset=utf-8\nDate: Mon, 08 Jun 2020 20:40:53 GMT\nServer: waitress\n\n");
-  r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
-  CU_ASSERT_EQUAL(r2,0);  // here we have found no command
+
+ int r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
+ CU_ASSERT_EQUAL(r2,1);  // here we have found a DR command
+ printf("In test, endpoint = %s\n", theEnd);
+ printf("In test, startpoint = %s\n", theStart);
+ CU_ASSERT_STRING_EQUAL(theStart, "2020-06-08T00:00:00");
+ CU_ASSERT_STRING_EQUAL(theEnd, "2020-06-08T23:59:59");
+ strcpy(theInput, "HTTP/1.0 200 OK\nConnection: close\nContent-Length: 42\nContent-Type: text/html; charset=utf-8\nDate: Mon, 08 Jun 2020 20:40:53 GMT\nServer: waitress\n\n");
+ r2 = getDataDates(theInput, &theStart[0], &theEnd[0]);
+ CU_ASSERT_EQUAL(r2,0);  // here we have found no command
 }
 
 void buildFileName_test(void) {
@@ -2199,6 +1918,7 @@ void buildFileName_test(void) {
 // set up config file for the test
 
   int r = openConfigFile();
+
   char theNode[10] = "";
   char theGrid[10] = "";
   printf("look in config for node\n");
@@ -2234,41 +1954,8 @@ void testUploadThread(){
   printf("M: join complete\n");
 }
 
-void testCreateChannel() {
-  printf("Test CC - will only pass if DE is connected & working\n");
-  printf("TEST to see if there is a DE on the network\n");
-  DE_port = 0;
-  discover_DE();
-  CU_ASSERT_NOT_EQUAL(DE_port,0);  // did we find a DE?
-  printf("TEST found DE at IP %s Port B = %d\n",DE_IP,DE_port);
-  // section to test channel 0
-  int channelNo = 0;
-  DE_CONF_IN_port[0] = 0;
-  create_channel(channelNo);
-  printf("TEST to see if DE responds to Create Channel %i request\n", channelNo);
-  CU_ASSERT_NOT_EQUAL(DE_CONF_IN_port[0],0);
 
 
-/*
-// Section to test channel 1
-  channelNo = 1;
-  DE_CONF_IN_port[1] = 0;
-  create_channel(channelNo);
-  printf("TEST to see if DE responds to Create Channel %i request\n", channelNo);
-  CU_ASSERT_NOT_EQUAL(DE_CONF_IN_port[1],0);
-*/
-}
-
-void testConfigureChannels() {
-  printf("Test CH - will only pass if Test CC worked\n");
-
-  int channelNo = 0;
-  makeCHrequest(channelNo);
-
-}
-
-
-/*    OBSOLETE
 // write callback - to be used only when buffer has been created with malloc
 void central_write_cb(uv_write_t *req, int status)
   {
@@ -2277,7 +1964,7 @@ void central_write_cb(uv_write_t *req, int status)
   free(wr->bufs->base);
   free(wr);  // BUG - this needs fixed
   }
-*/
+
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -2310,9 +1997,7 @@ int run_all_tests()
           (NULL == CU_add_test(pSuite, "data_prep_test", test_data_prep)) ||
           (NULL == CU_add_test(pSuite, "date_extract", date_test)) ||
           (NULL == CU_add_test(pSuite, "buildFileName", buildFileName_test)) ||
-          (NULL == CU_add_test(pSuite, "testUploadThread", testUploadThread)) ||
-          (NULL == CU_add_test(pSuite, "testCreateChannal", testCreateChannel)) ||
-          (NULL == CU_add_test(pSuite, "testConfigureChannels", testConfigureChannels))
+          (NULL == CU_add_test(pSuite, "testUploadThread", testUploadThread))
       )
    {
       CU_cleanup_registry();
@@ -2391,7 +2076,7 @@ int main(int argc, char *argv[]) {
 	 {
 		strcpy(DE_IP, inet_ntoa(discovered[i].info.network.address.sin_addr));
 		DE_port = htons(discovered[i].info.network.address.sin_port);  // this is Port B
-		printf("Selected Tangerine at port %u (Port B)\n",DE_port);
+		printf("selected Tangerine at port %u (Port B)\n",DE_port);
 	  }
 	}
 
@@ -2402,22 +2087,24 @@ int main(int argc, char *argv[]) {
   int controller_port;
   int rc = openConfigFile();
 
-/*
-  num_items = rconfig("configportrg",configresult,0);
+  puts("start");
+ // printf("looking for '%s'\n",target);
+  num_items = rconfig("configport",configresult,0);
   if(num_items == 0)
     {
-    printf("ERROR - configportrg setting not found in config.ini");
+    printf("ERROR - configport setting not found in config.ini");
     }
   else
     {
     printf(" CONFIG RESULT = '%s'\n",configresult);
  //   printf("len =%lu\n",strlen(result));
-    LH_CONF_IN_port[0] = atoi(configresult);
-    num_items = rconfig("dataportrg",configresult,0);
-    LH_DATA_IN_port[0] = atoi(configresult);
+    LH_CONF_IN_port = atoi(configresult);
+    num_items = rconfig("dataport",configresult,0);
+    LH_DATA_IN_port = atoi(configresult);
     }
-*/
 
+  puts("start");
+ // printf("looking for '%s'\n",target);
   num_items = rconfig("DE_ip",configresult,0);
   if(num_items == 0)
     {
@@ -2563,12 +2250,11 @@ int main(int argc, char *argv[]) {
 
 
 ///////////////////
-  puts("M: Prep to receive UDP data");
+  puts("prep to receive UDP data");
   uv_udp_t recv_socket;
   uv_udp_init(loop, &recv_socket);
 
  // here we will listen on that port broadcast earlier selected ("Port A")
- // DE should reply to this port after it receives CREATE_CHANNEL packet(s).
   uv_ip4_addr("localhost", LH_port, &recv_addr);   // TODO: should be localhost (?)
   printf("will listen on port A %u \n", LH_port);
   uv_udp_bind(&recv_socket, (const struct sockaddr *)&recv_addr, UV_UDP_REUSEADDR);
@@ -2583,11 +2269,6 @@ int main(int argc, char *argv[]) {
 
 /////////////////////////////////////////////////////////////////
 // here we will set up to send and receive on "Port C"
-/*
-
-
-All this to be done synchronously
-
 
   puts("Prep to handle config request and reply");
   uv_udp_t config_socket;
@@ -2607,7 +2288,7 @@ All this to be done synchronously
  // send_config_addr.sin_port = htons(LH_CONF_IN_port);  // can we force it?
   uv_udp_bind(&send_config_socket, (const struct sockaddr *)&send_config_addr, 0);
   printf("UDP config port setup done\n");
-*/
+
 
 ///////////////////////////////////////////////////////////////////////
 
