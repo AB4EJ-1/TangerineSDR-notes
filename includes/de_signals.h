@@ -86,32 +86,40 @@ typedef struct comboBuf
      }  ;
     } COMBOBUF;
 
+typedef struct commandBuf
+    {
+    char cmd[2];
+    uint16_t channelNo;
+    } COMMANDBUF;
+
 // This is the type of buffer sent from LH to DE to request
 //  creation of a configuration channel pair.
+// The cmd field gets filled with CREATE_CHANNEL commnand string.
 typedef struct configChannelRequest
 	{
     char cmd[2];
     uint16_t channelNo;
-	uint16_t configPort;  // Port C
-	uint16_t dataPort;    // Port F
+	uint16_t configPort;  // Port C for this channelNo
+	uint16_t dataPort;    // Port F for this channelNo
 	} CONFIGBUF;
 
 struct channelBlock
 	{
-    int subChannelNo;
-    int antennaPort;
-    double channelFreq;
+    int subChannelNo;    
+    int antennaPort;     // Which DE antenna port (0 or 1 for TangerineSDR) 
+    double channelFreq;  // Center frequency for this subchannel
     };
 
 // This is the type of buffer sent from LH to DE to request
 // creation of a data channel pair.
+// The chCommand field gets filled with the CONFIG_CHANNELS command string.
 typedef struct channelBuf
 	{
     char chCommand[2];
     uint16_t channelNo;
-    char VITA_type[2];
-    int activeSubChannels;
-    int channelDatarate;
+    char VITA_type[2];      // Which version of VITA is data to use
+    int activeSubChannels;  // How many subchannels are defined in channelBlock list
+    int channelDatarate;    // Data acquisition rate for this channel in samples/sec
     struct channelBlock channelDef[16];
     } CHANNELBUF;
 
