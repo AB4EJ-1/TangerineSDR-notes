@@ -676,10 +676,12 @@ int *run_DE(void)
 
   //    CONFIGBUF myConfigBuf;
 
-      memcpy(d.mybuf1, buffer, 6);
+      memcpy(d.mybuf1, buffer, sizeof(CONFIGBUF));
 
-      printf("CREATE CHANNEL RECD, cmd = %s, port C = %hu, port F = %hu \n",
-          d.myConfigBuf.cmd, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+  //    printf("CREATE CHANNEL RECD, cmd = %s, port C = %hu, port F = %hu \n",
+   //       d.myConfigBuf.cmd, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
+      printf("CREATE CHANNEL RECD, cmd = %s, channel#=%i port C = %hu, port F = %hu \n",
+          d.myConfigBuf.cmd, d.myConfigBuf.channelNo, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
 
       LH_CONF_IN_port = d.myConfigBuf.configPort;
     
@@ -722,7 +724,7 @@ int *run_DE(void)
     count = recvfrom(sock1, buffer, cmdport , 0, (struct sockaddr*)&client_addr, &addr_len);
    // LH_port = ntohs(client_addr.sin_port);
     printf("command recd %c%c %x %x %x %x from port %d, bytes=%d\n",buffer[0],buffer[1],buffer[2],buffer[3],buffer[4],buffer[5], LH_port,count);
-    char bufstr[50];
+    char bufstr[100];
     memcpy(bufstr, buffer, count);
     printf("Raw buf= %s\n",bufstr);
    // command processsing
@@ -739,13 +741,18 @@ int *run_DE(void)
 	  continue;
 	  }
 
-    printf("check for CC \n");
+    printf("check for CH \n");
     if(memcmp(bufstr, CONFIG_CHANNELS,2) == 0)
       {
-      memcpy(cb.configBuffer,buffer,sizeof(buffer));
+      memcpy(cb.configBuffer,bufstr,sizeof(cb.configBuffer));
       printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
+      for (int i=0;i < 14; i++)
+         printf("%x ",cb.configBuffer[i]);
+      
+      printf("\n");
       noOfChannels = cb.chBuf.activeSubChannels;
       dataRate = cb.chBuf.channelDatarate;
+      printf("VITA format requested = %s\n",cb.chBuf.VITA_type);
       printf("active channels: %i, rate = %i\n", noOfChannels, dataRate);
       for (int i=0; i < noOfChannels; i++) 
         {
@@ -799,6 +806,7 @@ printf("memcmp = %i\n",memcmp(bufstr,"R?",2));
 	  continue;
      }
 
+/*
 printf("check for CH \n");
     if(memcmp(bufstr, CREATE_CHANNEL ,2) == 0)
       {
@@ -807,7 +815,7 @@ printf("check for CH \n");
 
       memcpy(d.mybuf1, buffer, 6);
 
-      printf("CREATE CHANNEL RECD, cmd = %s, channl#=%i port C = %hu, port F = %hu \n",
+      printf("CREATE CHANNEL RECD, cmd = %s, channel#=%i port C = %hu, port F = %hu \n",
           d.myConfigBuf.cmd, d.myConfigBuf.channelNo, d.myConfigBuf.configPort, d.myConfigBuf.dataPort);
   //    if(config_busy)  // the channels already configured
    //     {
@@ -864,14 +872,15 @@ printf("check for CH \n");
       pthread_t configthread;
       int rc = pthread_create(&configthread, NULL, awaitConfig, (void *)c);
 
-/*
-      pthread_t chthread;
-      rc = pthread_create(&chthread, NULL, awaitCH, (void *)ch);
-*/
+
+  //    pthread_t chthread;
+  //    rc = pthread_create(&chthread, NULL, awaitCH, (void *)ch);
+
 
 	  continue;
 
       }
+*/
 printf("check for UL \n");
     if(memcmp(bufstr, "UL",2) == 0)
 	  {  // future function for allowing LH to drop its link to this DE
@@ -964,7 +973,7 @@ int main(int argc, char** argv) {
 //  1 - port B
 //  2 - IP addr of LH
 //  3 - port A
- printf("Starting DEmain; port B = %s\n",argv[1]);
+ printf("- - - - - Starting DEmain; port B = %s\n",argv[1]);
 
 // port on which to await CC   (create channel request)
  CCport = atoi(argv[1]);  // port B
