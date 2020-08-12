@@ -34,8 +34,8 @@
 //#define IP_FOUND_ACK "IP_FOUND_ACK"
 #define PORT 1024
 
-#define  DE_CONF_IN 50001  //fixed port on which to receive config request (CC)
-#define  DE_CH_IN   50002   // fixed port on which to receive channel setup req. (CH)
+//#define  DE_CONF_IN 50001  //fixed port on which to receive config request (CC)
+//#define  DE_CH_IN   50002   // fixed port on which to receive channel setup req. (CH)
 
 #define UDPPORT 7100
 
@@ -46,12 +46,12 @@ struct sockaddr_in config_in_addr;
 
 int sock;
 int sock1;
-int cmdport;
+//int cmdport;
 
-static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
-static uint16_t LH_CONF_OUT_port; // for sending (outbound) config request to DE
-static uint16_t DE_CONF_IN_port;  // port B ; DE listens for config request on this port
-static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
+//static uint16_t LH_CONF_IN_port;  // port C, receives ACK or NAK from config request
+//static uint16_t LH_CONF_OUT_port; // for sending (outbound) config request to DE
+//static uint16_t DE_CONF_IN_port;  // port B ; DE listens for config request on this port
+//static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
 
 int main() {
  printf("Starting DEctl\n");
@@ -66,9 +66,9 @@ int main() {
   int count;
   int ret;
   char syscommand_start[100] = "";
-  char syscommand_kill[100]  = "killall -9 ./DEmain";
-  DE_CONF_IN_port = DE_CONF_IN;  //fixed port on which to receive config request (CC)
-  DE_CH_IN_port = DE_CH_IN;   // fixed port on which to receive channel setup req. (CH)
+  char syscommand_kill[100]  = "killall -9 ./DEmain2";
+//  DE_CONF_IN_port = DE_CONF_IN;  //fixed port on which to receive config request (CC)
+ // DE_CH_IN_port = DE_CH_IN;   // fixed port on which to receive channel setup req. (CH)
   fd_set readfd;
   char buffer[1024];
   printf("set up sock \n");
@@ -90,8 +90,8 @@ int main() {
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = htons(INADDR_ANY);
   server_addr.sin_port = htons(PORT);
-  cmdport = PORT;  // this could be made to follow randomly chosen port
-  cmdport = DE_CONF_IN_port;
+  //cmdport = PORT;  // this could be made to follow randomly chosen port
+ // cmdport = DE_CONF_IN_port;
   // bind to our port to listen on
   printf("bind to sock\n");
   ret = bind(sock, (struct sockaddr*)&server_addr, addr_len);
@@ -153,7 +153,7 @@ int main() {
           if(getsockname(sock1,(struct sockaddr *)&server_addr,&sa_len) == -1)
            printf("getsockname failed\n");
           printf("Local port# = %d\n",(int)ntohs(server_addr.sin_port));
-          sprintf(syscommand_start,"./DEmain %i %s %i &",(int)ntohs(server_addr.sin_port),inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+          sprintf(syscommand_start,"./DEmain2 %i %s %i &",(int)ntohs(server_addr.sin_port),inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
             printf("command = %s \n",syscommand_start);
 
