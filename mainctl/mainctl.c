@@ -251,6 +251,8 @@ static char data_path[100];
 static char temp_path[100];
 static char the_node[20];
 
+static int dataRatesReceived = 0;
+
 
 //// *********************** Start of Code  *******************************//////
 
@@ -304,28 +306,14 @@ while ((read = getline(&line, &len, fp)) != -1) {
 /////////////////////////////////////////////////////////////////
 //  Callback after packet sent by UDP
 ///////////////////////////////////////////////////////////////
-/*
-typedef struct {
-    uv_write_t req;
-    uv_buf_t buf;
-} write_req_t;
 
-void free_write_req(uv_write_t *req) {
-    write_req_t *wr = (write_req_t*) req;
-    free(wr->buf.base);
-    free(wr);
-}
-*/
 
 void on_UDP_send(uv_udp_send_t *req, int status)
 {
     printf("UDP send complete... I think...\n");
     if (status) 
         fprintf(stderr, "M: *** *** uvlib UDP Send error %s\n", uv_strerror(status));
- 
- // free(req);   // not sure if this is right; may crash
-  //puts("free memory completed");
-  // TODO: see libuv stream write documentation: a much more elaborate memory free-up probably needed
+
   return;
 }
 
@@ -516,6 +504,198 @@ void firehose_uploader(void *threadid) {
    }
 
   return;
+}
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////
+//////////   Function to send command to DE //////////////////////////////
+void sendCommandToDE(int channelNo, char command[2]) {
+
+  printf("M: Prep to send command %s to DE, channel %i\n",command,channelNo);
+  struct commandBuf cmdBuf;
+  char buf[1024];
+  memset(&cmdBuf, 0, sizeof(cmdBuf));
+  memcpy(&cmdBuf,command, 2);
+
+  // send CH command to Port D
+    struct sockaddr_in si_DE;
+    struct sockaddr_in si_LH;
+
+    int s, s1;
+    printf("define socket\n");
+    if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	  {
+	  	printf("socket s error");
+	  }  
+    if ( (s1=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	  {
+	  	printf("socket s1 error");
+	  } 
+    memset((char *) &si_DE, 0, sizeof(si_DE));
+    memset((char *) &si_LH, 0, sizeof(si_LH));
+    si_DE.sin_family = AF_INET;
+    si_LH.sin_family = AF_INET;
+    si_DE.sin_port = htons(DE_CONF_IN_port[channelNo]);
+    si_LH.sin_port = htons(LH_CONF_IN_port[channelNo]);
+    struct commandBuf reqBuf;
+    struct datarateBuf replyBuf;
+    memset((char *)&reqBuf,0,sizeof(reqBuf));
+    if (inet_aton(DE_IP , &si_DE.sin_addr) == 0) 
+	  {
+	  	fprintf(stderr, "inet_aton() failed\n");
+	  }
+    si_LH.sin_addr.s_addr = htonl(INADDR_ANY);
+ // Prep to receive AK from DE
+    printf("Bind to port %i for receiving a response from DE\n",LH_CONF_IN_port[channelNo]);
+    if( bind(s1, (struct sockaddr*)&si_LH, sizeof(si_LH)) == -1)
+      {
+        printf("s1 bind error\n");
+     //   die("s1 bind error");
+      }
+
+    printf("sending %s\n",cmdBuf.cmd);
+		//send the message
+    if (sendto(s, &cmdBuf, sizeof(cmdBuf) , 0 , (struct sockaddr *) &si_DE, sizeof(si_DE))==-1)
+		{
+			printf("sendto() error\n");
+         //   die("send to DE error");
+		}
+    int sDE = sizeof(si_DE);
+   
+ //   while(1) {
+    int recv_len = 0;
+    if (recv_len = recvfrom(s1, &buf, sizeof(buf), 0, (struct sockaddr *) &si_DE, 
+               &sDE ) == -1)
+        {
+           printf("recvfrom error\n");
+        //   die("recvfrom DE error");
+
+         }
+    else
+         {
+         char test[2];
+         memcpy(&test,&buf,2);
+         printf("Buffer starts with %s\n",test);
+         if(memcmp(&buf,"DR",2) == 0)
+           {
+           printf("DR detected\n");
+           memcpy(&replyBuf, buf, sizeof(replyBuf));
+           }
+         printf("Received %i bytes starting with %s from DE at %s:%d\n",recv_len,replyBuf.buftype,
+            inet_ntoa(si_DE.sin_addr), ntohs(si_DE.sin_port));
+         if (memcmp(replyBuf.buftype, DATARATE_RESPONSE, 2) == 0)
+           {
+           printf("Datarate response received\n");
+           for(int i=0;i < 20;i++) {
+             if(replyBuf.dataRate[i].rateNumber == 0)
+               {
+               close(s);
+               close(s1);
+               break;
+               }
+             printf("Rate # %i = %i sps\n",replyBuf.dataRate[i].rateNumber,
+               replyBuf.dataRate[i].rateValue); 
+             dataRatesReceived = i;
+             }
+         //  dataRatesReceived = 1;
+           }
+         }
+   //  }
+    close(s);
+    close(s1);
+  // end of code to send command to Port D
+
+
+
+}
+
+
+
+
+
+
+/////////////////////////////////////////////////////////////////
+//////////////  Thread for processing commands from app.py //////
+void * processUserActions(void *threadid){
+  printf("Start processUserActions thread\n");
+
+    int sockfd, connfd, len; 
+    struct sockaddr_in servaddr, cli; 
+  
+    // socket create and verification 
+    sockfd = socket(AF_INET, SOCK_STREAM, 0); 
+    if (sockfd == -1) { 
+        printf("socket creation failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Socket successfully created..\n"); 
+    bzero(&servaddr, sizeof(servaddr)); 
+  
+    // assign IP, PORT 
+    servaddr.sin_family = AF_INET; 
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    servaddr.sin_port = htons(6100); 
+  
+    // Binding newly created socket to given IP and verification 
+    if ((bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr))) != 0) { 
+        printf("socket bind failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Socket successfully bound..\n"); 
+  
+    // Now server is ready to listen and verification 
+    if ((listen(sockfd, 5)) != 0) { 
+        printf("Listen failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Server listening..\n"); 
+    len = sizeof(cli); 
+  
+
+    // Accept the data packet from client and verification 
+    printf("Waiting to accept connection...\n");
+    connfd = accept(sockfd, (struct sockaddr*)&cli, &len); 
+    if (connfd < 0) { 
+        printf("server acccept failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("server acccept the client...\n"); 
+  
+
+    // After chatting close the socket 
+
+
+    char buff[80]; 
+    int n; 
+    // infinite loop for chat 
+    while(1) { 
+        memset(&buff, 0, sizeof(buff));
+        printf("Ready to process command from app.py\n");
+        // read the message from client and copy it in buffer 
+        n = read(connfd, buff, sizeof(buff)); 
+        // print buffer which contains the client contents 
+        printf("Received %i bytes from client: %s\t ", n, buff); 
+        if(n < 0) continue;
+        char commandToSend[2];
+        memcpy(&commandToSend, buff, 2);
+        printf("M: Forwwarding command '%s' to DE\n",commandToSend);
+        sendCommandToDE(0, commandToSend);
+
+ 
+    } 
+    close(sockfd); 
+
+
+
+
+
 }
 
 
@@ -792,16 +972,26 @@ void recv_port_check(int channelNo) {
     puts("recv port already open");
 }
 
+
+
+
+
 ////////////////////////////////////////////////////////////////////////////
 /////////   Function to build channel config (CH) request & pass to DE  ////
-void makeCHrequest(int channelNo){
+int makeCHrequest(int channelNo){
+  int myretcode = -1;
   printf("M: Build CH request\n");
   struct channelBuf chBuf;         // create & initialize channel description
   char b[sizeof(CHANNELBUF)];      // so we can copy to this later
+  char target[20];
   uv_udp_send_t send_req;
   memset(&chBuf, 0, sizeof(chBuf));
   memcpy(chBuf.chCommand, CONFIG_CHANNELS, 2);
   chBuf.channelNo = channelNo;
+
+  // The 3 possible channel configuraations are slightly different, so we have 3
+  // sections to build the right stuff to set up each in the DE.
+
   if(channelNo == 0)  // this is a RG-type channel
     {
     memcpy(chBuf.VITA_type,"VT",2);  // specify our special mod of VITA
@@ -832,7 +1022,7 @@ void makeCHrequest(int channelNo){
     for(int i = 0; i < channelCount;i++)
       {
       chBuf.channelDef[i].subChannelNo = i;
-      char target[20];
+
       sprintf(target,"p%i",i);  // fill in antenna setting
       num_items = rconfig(target,configresult,0);
       if(num_items == 0)
@@ -857,63 +1047,125 @@ void makeCHrequest(int channelNo){
         }
       }  // end of subchannel for loop
 
+    }  // end of handling channel zero
+
+  if(channelNo == 1)  // this is a FT8-type channel
+    {
+    memcpy(chBuf.VITA_type,"V4",2);  // specify standard VITA-49
+    int channelCount = 0;
+    // determine how many subchannels are configured
+    chBuf.channelDatarate = 4000;   // hard coded for FT8 decoder
+    chBuf.activeSubChannels = 0;
+    for(int i=0;i < 8;i++) {
+      sprintf(target,"ftant%i",i);
+      num_items = rconfig(target,configresult,0);
+      if(num_items == 0)
+        {
+        printf("ERROR - ftant%i setting not found in config.ini\n",i);
+        }
+      else
+        {
+        printf("ftant%i CONFIG RESULT = '%s'\n",i,configresult);
+        if(memcmp(configresult, "Off",1) == 0)  // if this channel turned off,
+          continue;                             //  skip it 
+        chBuf.activeSubChannels++;
+        chBuf.channelDef[i].antennaPort = atoi(configresult);  // get antenna port
+        chBuf.channelDef[i].subChannelNo = i;
+        sprintf(target,"ft8%if",i);  // now look for the frequency of this subchannel
+        num_items = rconfig(target,configresult,0);
+        if(num_items == 0)
+          {
+          printf("ERROR - ft8%if setting not found in config.ini\n",i);
+          }
+        else
+          {
+          printf("ft8%if CONFIG RESULT = '%s'\n",i,configresult);
+       // TODO: the following probably needs to be multiplied by 1,000,000.0
+          chBuf.channelDef[i].channelFreq = (double) atof(configresult);
+          }
+        }
+      }
+    }  // end of handling channel 1
+
+
+/*
+This code only works when libuv loop is running (if then)
+
+    memcpy(b,&chBuf,sizeof(chBuf));
+	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
+    struct sockaddr_in send_addr;
+    printf("Sending CONFIG CHANNELS (CH) to %s  port %u\n", DE_IP, DE_CONF_IN_port[channelNo]);
+
+    uv_ip4_addr(DE_IP, DE_CONF_IN_port[channelNo], &send_addr);    
+    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
+*/
+
+
+  // send CH command to Port D
     struct sockaddr_in si_DE;
-    int s;
+    struct sockaddr_in si_LH;
+
+    int s, s1;
     printf("define socket\n");
     if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
 	  {
 	  	printf("socket s error");
 	  }  
+    if ( (s1=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	  {
+	  	printf("socket s1 error");
+	  } 
     memset((char *) &si_DE, 0, sizeof(si_DE));
-
+    memset((char *) &si_LH, 0, sizeof(si_LH));
     si_DE.sin_family = AF_INET;
-    si_DE.sin_port = htons(DE_CONF_IN_port[0]);
-
+    si_LH.sin_family = AF_INET;
+    si_DE.sin_port = htons(DE_CONF_IN_port[channelNo]);
+    si_LH.sin_port = htons(LH_CONF_IN_port[channelNo]);
+    struct commandBuf replyBuf;
+    memset((char *)&replyBuf,0,sizeof(replyBuf));
     if (inet_aton(DE_IP , &si_DE.sin_addr) == 0) 
 	  {
 	  	fprintf(stderr, "inet_aton() failed\n");
 	  }
+    si_LH.sin_addr.s_addr = htonl(INADDR_ANY);
+ // Prep to receive AK from DE
+    printf("Bind to port for receiving AK or NK from DE\n");
+    if( bind(s1, (struct sockaddr*)&si_LH, sizeof(si_LH)) == -1)
+      {
+        printf("s1 bind error\n");
+     //   die("s1 bind error");
+      }
+
     printf("send\n");
 		//send the message
     if (sendto(s, &chBuf, sizeof(chBuf) , 0 , (struct sockaddr *) &si_DE, sizeof(si_DE))==-1)
 		{
-			printf("sendto() error");
+			printf("sendto() error\n");
+         //   die("send to DE error");
 		}
+    int sDE = sizeof(si_DE);
+    int recv_len = 0;
+    if (recv_len = recvfrom(s1, &replyBuf, sizeof(replyBuf), 0, (struct sockaddr *) &si_DE, 
+               &sDE ) == -1)
+        {
+           printf("recvfrom error\n");
+        //   die("recvfrom DE error");
+
+         }
+    else
+         {
+         printf("Received %s from DE at %s:%d\n",replyBuf.cmd, inet_ntoa(si_DE.sin_addr),
+                ntohs(si_DE.sin_port));
+
+         if (memcmp(replyBuf.cmd,"AK",2) == 0)  // did we get AK from DE?
+            myretcode = 0;
+         }
+ 
     close(s);
+    close(s1);
+    return(myretcode);  // returns zero if expected "AK" received from DE (else -1)
 
-
-/*
-    memcpy(b,&chBuf,sizeof(chBuf));
-
-
-	const uv_buf_t a[] = {{.base = b, .len = sizeof(CHANNELBUF)}};
-
-    struct sockaddr_in send_addr;
-    printf("Sending CONFIG CHANNELS (CH) to %s  port %u\n", DE_IP, DE_CONF_IN_port[0]);
-
-    uv_ip4_addr(DE_IP, DE_CONF_IN_port[0], &send_addr);    
-    uv_udp_send(&send_req, &send_socket, a, 1, (const struct sockaddr *)&send_addr, on_UDP_send);
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-    }
-
-
-
-
-
-
+  // end of code to send CH command to Port D
 
 }
 
@@ -1990,15 +2242,14 @@ void discover_DE(){
 }
 
 
-
-
+///////////////// Error Reporting     ////////////////////////
 void die(char *s)
 {
 	perror(s);
 }
 
 //////////////////////////////////////////////////////////////
-////////////////////// Create Channel ///////////////////////
+////////////////////// Create Channel CC ///////////////////////
 int create_channel(int channelNo) {
 // This is a synchronous operation, as we cannot proceed until we have
 // created channels; hence, we do not use the libuv asych calls.
@@ -2013,7 +2264,7 @@ int create_channel(int channelNo) {
   cc.channelNo = channelNo;
   char portname[15];
   sprintf(portname,"configport%i",channelNo);
-  printf("portname= %s\n",portname);
+  printf("M: portname= %s\n",portname);
   num_items = rconfig(portname,configresult,0);
   if(num_items == 0)
     {
@@ -2023,6 +2274,7 @@ int create_channel(int channelNo) {
     {
     printf("configport CONFIG RESULT = '%s'\n",configresult);
     cc.configPort = atoi(configresult);
+    LH_CONF_IN_port[channelNo] = atoi(configresult);
     } 
   printf("Port C now set to %i\n",cc.configPort);  
 
@@ -2037,6 +2289,7 @@ int create_channel(int channelNo) {
     {
     printf("dataport CONFIG RESULT = '%s'\n",configresult);
     cc.dataPort = atoi(configresult);
+    LH_DATA_IN_port[channelNo] = atoi(configresult);
     } 
      
   int s, i, slen=sizeof(si_DE), s1;
@@ -2045,11 +2298,19 @@ int create_channel(int channelNo) {
 	{
 		die("socket s");
 	}
+  int yes = 1;
+  if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+         die("error setting sockopt reuseaddr for socket s\n");
+    }
 
   if ( (s1=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
 	{
 		die("socket s1");
 	}
+  yes = 1; printf("setsockopt for s1\n");
+  if (setsockopt(s1, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+         die("error setting sockopt reuseaddr for socket s1\n");
+    }
 
   memset((char *) &si_DE, 0, sizeof(si_DE));
   memset((char *) &si_LH, 0, sizeof(si_LH));
@@ -2062,14 +2323,14 @@ int create_channel(int channelNo) {
 	}
 
 		//send the message
+  printf("M: Send CC...\n");
   if (sendto(s, &cc, sizeof(cc) , 0 , (struct sockaddr *) &si_DE, slen)==-1)
 		{
 			die("sendto()");
 		}
-		
-  si_DE.sin_port = htons(cc.configPort);
+
   si_LH.sin_family = AF_INET;
-  si_LH.sin_port = htons(40001);
+  si_LH.sin_port = htons(cc.configPort);
   si_LH.sin_addr.s_addr = htonl(INADDR_ANY);
 
   printf("bind to s1\n");
@@ -2079,15 +2340,15 @@ int create_channel(int channelNo) {
 	}	
 		//try to receive some data, this is a blocking call
 
-  printf("Listening on port %i\n",cc.configPort);
+  printf("M: Listening for AK to CC on port %i\n",cc.configPort);
   memset(&cc,'\0', sizeof(cc));
   if (recvfrom(s1, &cc, sizeof(cc), 0, (struct sockaddr *) &si_LH, &slen) == -1)
 		{
 			die("recvfrom()");
 		}
 		
-  printf("TEST: DE responded to CC request; received from DE: %s, %i, %i, %i\n", cc.cmd, cc.channelNo,
-         cc.configPort, cc.dataPort);
+  printf("M: DE responded to CC request; received from DE: %s, %i, %i, %i\n", cc.cmd, 
+      cc.channelNo, cc.configPort, cc.dataPort);
   DE_CONF_IN_port[cc.channelNo] = cc.configPort;
   DE_DATA_IN_port[cc.channelNo] = cc.dataPort;
 	
@@ -2235,49 +2496,104 @@ void testUploadThread(){
 }
 
 void testCreateChannel() {
-  printf("Test CC - will only pass if DE is connected & working\n");
-  printf("TEST to see if there is a DE on the network\n");
+  printf("NOTE: If any of the following tests hang, it means DE is not responding.\n");
+  printf("1. Test CC - will only pass if DE is connected & working\n");
+  printf("2. TEST to see if there is a DE on the network\n");
   DE_port = 0;
   discover_DE();
   CU_ASSERT_NOT_EQUAL(DE_port,0);  // did we find a DE?
-  printf("TEST found DE at IP %s Port B = %d\n",DE_IP,DE_port);
+  printf("3. TEST found DE at IP %s Port B = %d\n",DE_IP,DE_port);
   // section to test channel 0
   int channelNo = 0;
   DE_CONF_IN_port[0] = 0;
+  printf("4. TEST to see if DE responds to Create Channel %i request\n", channelNo);
   create_channel(channelNo);
-  printf("TEST to see if DE responds to Create Channel %i request\n", channelNo);
   CU_ASSERT_NOT_EQUAL(DE_CONF_IN_port[0],0);
+  sleep(0.2);
 
-
-/*
 // Section to test channel 1
   channelNo = 1;
   DE_CONF_IN_port[1] = 0;
+  printf("*** 5. TEST to see if DE responds to Create Channel %i request\n", channelNo);
   create_channel(channelNo);
-  printf("TEST to see if DE responds to Create Channel %i request\n", channelNo);
   CU_ASSERT_NOT_EQUAL(DE_CONF_IN_port[1],0);
-*/
+
 }
 
 void testConfigureChannels() {
-  printf("Test CH - will only pass if Test CC worked\n");
-
+  printf("\n*** 6. Test CH 0 - will only pass if Test CC worked\n");
+  sleep(0.2);
   int channelNo = 0;
-  makeCHrequest(channelNo);
+  
+  int rc = makeCHrequest(channelNo);
+  CU_ASSERT_EQUAL(rc,0);
+
+  printf("\n*** 7. Test CH 1 - will only pass if Test CC worked\n");
+  sleep(0.2);
+  channelNo = 1;
+  rc= makeCHrequest(channelNo);
+  CU_ASSERT_EQUAL(rc,0);
 
 }
 
+void testDataRateReq() {
+  printf("\n8. TEST Rate Request\n");
+  dataRatesReceived = 0;
+  sendCommandToDE(0, "R?");
+  sleep(0.5);
+  CU_ASSERT_NOT_EQUAL(dataRatesReceived, 0);
 
-/*    OBSOLETE
-// write callback - to be used only when buffer has been created with malloc
-void central_write_cb(uv_write_t *req, int status)
-  {
-  printf("- - - - Central write cb status = %i\n",status);
-  uv_write_t *wr = (uv_write_t *)req;
-  free(wr->bufs->base);
-  free(wr);  // BUG - this needs fixed
-  }
-*/
+}
+
+void testprocessUserActions(){
+  printf("\n9. TEST processUserActions\n");
+  printf("Start thread for processing of user actions\n");
+  pthread_t threadID;
+  int err = pthread_create(&threadID, NULL, &processUserActions, NULL);
+  CU_ASSERT_EQUAL(err,0);
+  printf("thread creation retcode=%i; waiting 2 sec\n",err);
+  sleep(2.2);  // wait for thread to get started
+
+    int sockfd, connfd; 
+    struct sockaddr_in servaddr, cli; 
+  
+    // socket create and varification 
+    sockfd = socket(AF_INET, SOCK_STREAM, 0); 
+    if (sockfd == -1) { 
+        printf("Test package socket creation failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Test Package Socket successfully created..\n"); 
+    bzero(&servaddr, sizeof(servaddr)); 
+  
+    // assign IP, PORT 
+    servaddr.sin_family = AF_INET; 
+    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
+    servaddr.sin_port = htons(6100); 
+    sleep(0.2); // wait for accept to be in place at 
+    // connect the client socket to server socket 
+    if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) { 
+        printf("Test package connection with the server failed...\n"); 
+        exit(0); 
+    } 
+    else
+        {
+        char buff[80];
+        printf("Test package connected to the port..\n"); 
+        sleep(0.2);
+        bzero(buff, sizeof(buff)); 
+        strcpy(buff,"S?"); 
+        int w=write(sockfd, buff, sizeof(buff)); 
+        printf("Test Package Wrote %i bytes,  %s to socket\n",w,buff);
+        sleep(0.5);   // wait for reply
+
+       // close(sockfd);
+        }
+  
+    close(sockfd);
+
+}
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -2312,7 +2628,11 @@ int run_all_tests()
           (NULL == CU_add_test(pSuite, "buildFileName", buildFileName_test)) ||
           (NULL == CU_add_test(pSuite, "testUploadThread", testUploadThread)) ||
           (NULL == CU_add_test(pSuite, "testCreateChannal", testCreateChannel)) ||
-          (NULL == CU_add_test(pSuite, "testConfigureChannels", testConfigureChannels))
+          (NULL == CU_add_test(pSuite, "testConfigureChannels", testConfigureChannels)) ||
+          (NULL == CU_add_test(pSuite, "testDataRateReq", testDataRateReq)) ||
+          (NULL == CU_add_test(pSuite, "testprocessUserActions", testprocessUserActions))
+
+
       )
    {
       CU_cleanup_registry();
