@@ -75,7 +75,7 @@ struct sockaddr_in portF_addr;
 int sock;
 int sockft8out;
 int sock1;
-int sock2;
+
 int sock3;
 int sock5;
 int sock6;
@@ -398,7 +398,6 @@ while(1)
       portF_addr.sin_port = htons(LH_DATA_IN_port[d.myConfigBuf.channelNo]);
       printf("Bind to port %i\n",LH_DATA_IN_port[d.myConfigBuf.channelNo]);
 
-// here need to use a differet socket ??
 
       ret = bind(sock, (struct sockaddr*)&portF_addr, addr_len);
       printf("bind ret=%i\n",ret);
@@ -410,7 +409,6 @@ while(1)
       d.myConfigBuf.configPort = DE_CH_IN_port[ d.myConfigBuf.channelNo]; // this is port D for this channel
       d.myConfigBuf.dataPort = 0;  // this is Port E (mic) - currently unused
       printf("Sending AK to port %i\n",client_addr.sin_port );
-
       count = sendto(sock1, d.mybuf1, sizeof(d.myConfigBuf), 0, (struct sockaddr*)&client_addr, addr_len);
       printf("response AK %i %i, bytes = %d  sent to ", d.myConfigBuf.configPort, ntohs(d.myConfigBuf.dataPort) ,count);
       printf(" IP: %s, Port: %d\n", 
@@ -432,18 +430,20 @@ void *handleCommands(void* c)
 
   while (LH_CONF_IN_port[channelNo] == 0)
   {
-   printf("LH_CONF_IN_port[ %i ] = %i\n",channelNo, LH_CONF_IN_port[channelNo]);
-   sleep(1);
+   //printf("LH_CONF_IN_port[ %i ] = %i\n",channelNo, LH_CONF_IN_port[channelNo]);
+   sleep(0.1);
 
   } ;
 
   printf("Starting channel %i command processing\n",channelNo);
   printf("Port = %i\n",LH_CONF_IN_port[channelNo] );
+  struct commandBuf cmdBuf;
 
   int addr_len;
   int ret;
   int count;
   int optval;
+  int sock2;
 // create & bind socket for inbound config packets
   fd_set readcfg;
   sock2 = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
@@ -459,28 +459,80 @@ void *handleCommands(void* c)
   
   while(1)
     {
+    memset(&cmdBuf,0,sizeof(cmdBuf));  // clear this area
     printf("Ready to receive command on port D = %i\n", DE_CH_IN_port[channelNo]);
-    count = recvfrom(sock2, cb.configBuffer, sizeof(cb.configBuffer) , 0, 
+ //   count = recvfrom(sock2, cb.configBuffer, sizeof(cb.configBuffer) , 0, 
+ //       (struct sockaddr*)&config_in_addr, &addr_len);
+    count = recvfrom(sock2, &cmdBuf, sizeof(cmdBuf) , 0, 
         (struct sockaddr*)&config_in_addr, &addr_len);
+    printf("** Command received, %i bytes, cmd=%s\n",count,cmdBuf.cmd);
 
-    printf("CHANNEL Setup CH received %s\n",cb.chBuf.chCommand);
-    int channelNo = cb.chBuf.channelNo;
-    noOfChannels = cb.chBuf.activeSubChannels;
-    dataRate = cb.chBuf.channelDatarate;
-    printf("active channels: %i, rate = %i\n", noOfChannels, dataRate);
-    for (int i=0; i < noOfChannels; i++) 
+    if(memcmp(cmdBuf.cmd, STATUS_INQUIRY, 2) == 0)
       {
-      if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
-        continue;
-      else
-        printf("%i, Channel %i, Port %i, Freq %lf\n", i, cb.chBuf.channelDef[i].subChannelNo, 
-        cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
+      printf("STATUS INQUIRY received\n");
+      client_addr.sin_port = htons(LH_CONF_IN_port[channelNo] ); 
+      count = 0;
+      count = sendto(sock1, "OK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("Response OK = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port[channelNo]) ;
       }
-  
-    client_addr.sin_port = htons(LH_CONF_IN_port[cb.chBuf.channelNo] ); 
 
-    count = sendto(sock, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
-    printf("response = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port[channelNo]) ;
+    // is this CH command?
+    if(memcmp(cmdBuf.cmd, CONFIG_CHANNELS, 2) == 0)
+      {
+      printf(" **********  CONFIG CHANNELS received %s\n", cmdBuf.cmd);
+      memcpy(&cb,&cmdBuf,count);
+      int channelNo = cb.chBuf.channelNo;
+      noOfChannels = cb.chBuf.activeSubChannels;
+      dataRate = cb.chBuf.channelDatarate;
+      printf("Active subchannels: %i, rate = %i\n", noOfChannels, dataRate);
+      for (int i=0; i < noOfChannels; i++) 
+        {
+        if(cb.chBuf.channelDef[i].antennaPort == -1)  // means this channel is off
+          continue;
+        else
+          printf("Subchannel %i, Port %i, Freq %lf\n", cb.chBuf.channelDef[i].subChannelNo, 
+          cb.chBuf.channelDef[i].antennaPort, cb.chBuf.channelDef[i].channelFreq);
+        }
+  
+      client_addr.sin_port = htons(LH_CONF_IN_port[channelNo] ); 
+      count = 0;
+      count = sendto(sock1, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("Response AK = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port[channelNo]) ;
+      } // end of handling CH
+
+     if(memcmp(cmdBuf.cmd, DATARATE_INQUIRY, 2) == 0)
+      {
+      printf(" ******** DATARATE INQUIRY received \n");
+      sleep(0.2);
+      DATARATEBUF myDataRateBuf;
+      memset(&myDataRateBuf,0,sizeof(myDataRateBuf));
+      strncpy(myDataRateBuf.buftype, "DR",2);
+      myDataRateBuf.dataRate[0].rateNumber= 1;
+      myDataRateBuf.dataRate[0].rateValue = 8;
+      myDataRateBuf.dataRate[1].rateNumber= 2;
+      myDataRateBuf.dataRate[1].rateValue = 4000;
+      myDataRateBuf.dataRate[2].rateNumber= 3;
+      myDataRateBuf.dataRate[2].rateValue = 8000;
+      myDataRateBuf.dataRate[3].rateNumber= 4;
+      myDataRateBuf.dataRate[3].rateValue = 48000;
+      myDataRateBuf.dataRate[4].rateNumber= 5;
+      myDataRateBuf.dataRate[4].rateValue = 96000;
+      myDataRateBuf.dataRate[5].rateNumber= 6;
+      myDataRateBuf.dataRate[5].rateValue = 192000;
+      myDataRateBuf.dataRate[6].rateNumber= 7;
+      myDataRateBuf.dataRate[6].rateValue = 384000;
+      myDataRateBuf.dataRate[7].rateNumber= 8;
+      myDataRateBuf.dataRate[7].rateValue = 768000;
+      myDataRateBuf.dataRate[8].rateNumber= 9;
+      myDataRateBuf.dataRate[8].rateValue = 1536000;
+      client_addr.sin_port = htons(LH_CONF_IN_port[channelNo] ); 
+      printf("Sending Datarate response to LH\n");
+      count = 0;
+      count = sendto(sock1, &myDataRateBuf, sizeof(myDataRateBuf), 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("Response: DATARATEBUF of %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port[channelNo]) ;
+
+      }
+
     }
 ///////////////////// end of command processing section ////////////////
 
@@ -504,6 +556,7 @@ void *awaitConfig(void *threadid) {
   int ret;
   int count;
   int optval;
+  int sock2;
 // create & bind socket for inbound config packets
   fd_set readcfg;
   sock2 = socket(AF_INET,SOCK_DGRAM,0);
@@ -1049,7 +1102,7 @@ int main(int argc, char** argv) {
  printf("DE exited, rc = %i; closing sockets & threads\n", *r);
  close(sock);
  close(sock1);
- close(sock2);
+ //close(sock2);
  stoplink = 1;
  stopData = 1;
  stopft8 = 1;
