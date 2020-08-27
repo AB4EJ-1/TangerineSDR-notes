@@ -10,6 +10,9 @@ class MainControlForm(FlaskForm):
   mode = SelectField('Mode', choices = [('snapshotter','Snapshotter'),
      ('ringbuffer','Ringbuffer'), ('snapring','SnapRing'), ('firehoseR','FirehoseRemote'),
      ('firehoseL','FirehoseLocal')])
+  modeR = BooleanField('Ringbuffer',default=False)
+  modeS = BooleanField('Snapshotter',default=False)
+  modeF = BooleanField('Firehose(upload)',default=False)
   startDC = SubmitField("Start Data Collection")
   stopDC = SubmitField("Stop Data Collection")
   prop = SelectField('Type', choices = [('FT8','FT8'),('WSPR','WSPR')])

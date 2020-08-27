@@ -18,6 +18,8 @@ Maps program mnemonics to 2-byte commands to be passed to DE
 #define DEFINE_FT8_CHAN     "FT"  // gives DE configuration for one FT8 channel
 #define START_FT8_COLL      "SF"  // asks DE to start collecting FT8 data on all FT8 channels
 #define STOP_FT8_COLL       "XF"  // asks DE to stop collecting FT8 data
+#define START_WSPR_COLL     "SW"  // asks DE to start collecting WSPR data
+#define STOP_WSPR_COLL      "XW"  // asks DE to stop collecting WSPR data
 #define LED_SET             "SB"  // in case we need to send a binary LED set byte
 #define UNLINK              "UL"  // asks DE to disconnect from this LH
 #define HALT_DE             "XX"  // asks DE to halt

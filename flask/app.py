@@ -49,6 +49,7 @@ dataCollStatus = 0;
 theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
+global tcp_client
 f = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
 # Here are commands that can be sent to mainctl and forwarded to DE.
@@ -94,22 +95,11 @@ def is_numeric(s):
    return False
 
 def send_to_mainctl(cmdToSend,waitTime):
-  global theStatus, rateList
+  global theStatus, rateList, tcp_client
   print("F: sending:" + cmdToSend)
-  host_ip, server_port = "127.0.0.1", 6100
-  data = cmdToSend + "\n"  
-    # Initialize a TCP client socket using SOCK_STREAM 
+
+  data = cmdToSend                 # + "\n"  
   try:
-     print("F: define socket")
-     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#    Settings to keep TCP port from disconnecting when not used for a while
-     tcp_client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE,1)
-     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)
-     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
-     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 15)
-    # Establish connection to TCP server and exchange data
-     print("F: *** WC: *** connect to socket, port ", server_port)
-     tcp_client.connect((host_ip, server_port))
      print("F: send cmd:",cmdToSend)
      tcp_client.sendall(data.encode())
      print("F: wait for DE response")
@@ -160,16 +150,18 @@ def send_to_mainctl(cmdToSend,waitTime):
 
   except Exception as e: 
      print(e)
-     theStatus = "Exception " + str(e)
+     theStatus = "F: send command to mainctl, Exception " + str(e)
   finally:
-     tcp_client.close()
+     print("F: bypassing TCP close")
+   #  print("F: close connection to mainctl")
+   #  tcp_client.close()
 
 def channel_request():
   print("  * * * * * Send channel creation request * * * *")   
   parser = configparser.ConfigParser(allow_no_value=True)
   parser.read('config.ini')
 # ports that mainctl will listen on for traffic from DE
-  configPort =  parser['settings']['configport']
+  configPort =  parser['settings']['controlport']
   dataPort   =  parser['settings']['dataport']
 # commas must separate fields for token processing to work in mainctl
   send_to_mainctl((CREATE_CHANNEL + "," + "0 ," + configPort + "," + dataPort),1 )
@@ -212,32 +204,78 @@ def send_channel_config():  # send channel configuration command to DE
 @app.route("/", methods = ['GET', 'POST'])
 def sdr():
    form = MainControlForm()
-   global theStatus, theDataStatus
+   global theStatus, theDataStatus, tcp_client
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
   # print("CSRF time limit=" + WTF_CSRF_TIME_LIMIT + " ;")
    if request.method == 'GET':  
-     form.mode.data = parser['settings']['mode']
+  #   form.mode.data = parser['settings']['mode']
+     if(parser['settings']['ringbuffer_mode'] == "On"):
+       form.modeR.data = True
+     else:
+       form.modeR.data  = False
+     if(parser['settings']['snapshotter_mode'] == "On"):
+       form.modeS.data = True
+     else:
+       form.modeS.data  = False
+     if(parser['settings']['firehoser_mode'] == "On"):
+       form.modeF.data = True
+     else:
+       form.modeF.data  = False
+
      form.destatus = theStatus
      form.dataStat = theDataStatus
      print("F: home page, status = ",theStatus)
      return render_template('tangerine.html',form = form)
 
    if request.method == 'POST':
-      print("F: Main control POST; mode set to ",form.mode.data)
+ #     print("F: Main control POST; mode set to ",form.mode.data)
+      print("F: Main control POST; modeR=",form.modeR.data)
+      print("F: Main control POST; modeS=",form.modeS.data)
+      print("F: Main control POST; modeF=",form.modeF.data)
       form.errline = ""
-      if form.validate() == False:
-         flash('All fields are required.')
-         return render_template('tangerine.html', form = form)
+ #     if form.validate() == False:
+ #        print("F: failed validation")
+ #        flash('All fields are required.')
+ #        return render_template('tangerine.html', form = form)
+ #     else:
+      result = request.form
+  #       print('F: mode set to:"',form.mode.data,'"')
+  #       parser.set('settings','mode',form.mode.data)  # update config file to reflect mode setting
+
+ # Check for errors and missing configurations
+
+      if (form.modeR.data == True and form.modeF.data == True):
+        print("F: error - user selected both ringbuffer and firehose")
+        form.errline = "Select EITHER Ringbuffer or Firehose mode"
+        return render_template('tangerine.html', form = form)
+
+# Other checks to be added include - paths/directories exist for all selected outputs;
+#  URL for Central Control; at least one subchannel setup exists
+
+# Set configuration to reflect current settings.
+
+      print("F: setting config for modes")
+      if(form.modeR.data == True):
+        parser.set('settings','ringbuffer_mode','On')
       else:
-         result = request.form
-         print('F: mode set to:"',form.mode.data,'"')
-         parser.set('settings','mode',form.mode.data)  # update config file to reflect mode setting
-         fp = open('config.ini','w')
-         parser.write(fp)
-         fp.close()
-         print('F: start set to ',form.startDC.data)
-         print('F: stop set to ', form.stopDC.data)
+        parser.set('settings','ringbuffer_mode','Off')
+
+      if(form.modeS.data == True):
+        parser.set('settings','snapshotter_mode','On')
+      else:
+        parser.set('settings','snapshotter_mode','Off')
+
+      if(form.modeF.data == True):
+        parser.set('settings','firehoser_mode','On')
+      else:
+        parser.set('settings','firehoser_mode','Off')
+
+      fp = open('config.ini','w')
+      parser.write(fp)
+      fp.close()
+      print('F: start set to ',form.startDC.data)
+      print('F: stop set to ', form.stopDC.data)
 
 # following code is a demo for how to make GNURadio show FFT of a file.
 # file name is temporarily hard-coded in displayFFT.py routine
@@ -247,7 +285,7 @@ def sdr():
 #           print(stdout)
 #        return  render_template('tangerine.html', form = form)
 
-         if(form.startDC.data ):
+      if(form.startDC.data ): # User clicked button to start ringbuffer-type data collection
             if   ( len(parser['settings']['firehoser_path']) < 1 
                    and form.mode.data == 'firehoseR') :
               print("F: configured temp firehose path='", parser['settings']['firehoser_path'],"'", len(parser['settings']['firehoser_path']))
@@ -259,11 +297,14 @@ def sdr():
             else:
 
           # User wants to start data collection. Is there an existing drf_properties file?
+          # If so, we delete it so that system will build a new one reflecting
+          # current settings.
 
               now = datetime.now()
          #     subdir = "D" + now.strftime('%Y%m%d%H%M%S')
-              subdir = "TangerineData"
-              print("SEND START DATA COLLECTION COMMAND, subdirectory=" + subdir)
+         #    subdir = "TangerineData"
+              subdir = "" # temporary - remove add'l subdirectory path mod
+              print("F: SEND START DATA COLLECTION COMMAND, subdirectory=" + subdir)
               if(form.mode.data == 'firehoseR'):
                 metadataPath = parser['settings']['firehoser_path'] + "/" + subdir
               else:
@@ -271,8 +312,10 @@ def sdr():
            #   print("metadata path="+metadataPath)
               returned_value = os.system("mkdir "+ metadataPath)
               print("F: after metadata creation, retcode=",returned_value)
-          # command mainctl to trigger DE to start sending ringbuffer data
-              send_to_mainctl(START_DATA_COLL + "," + subdir,1)
+          # Command mainctl to trigger DE to start sending ringbuffer data
+          # This always refers to channel zero (i.e., subchannels supported)
+           #   send_to_mainctl(START_DATA_COLL + "," + subdir,1)
+              send_to_mainctl(START_DATA_COLL,1)
               dataCollStatus = 1
 # write metadata describing channels into the drf_properties file
               ant = []
@@ -296,45 +339,56 @@ def sdr():
               except:
                 print("WARNING: unable to update DRF HDF5 properties file")
 
-         if(form.stopDC.data ):
-            send_to_mainctl(STOP_DATA_COLL,1)
+      if(form.stopDC.data ):
+            send_to_mainctl(STOP_DATA_COLL,0.5)
             dataCollStatus = 0;
-         if(form.startprop.data):
+         #   send_to_mainctl(STOP_DATA_COLL,0.5)
+         #   dataCollStatus = 0;
+      if(form.startprop.data):
             startprop()
-         if(form.stopprop.data) :
+      if(form.stopprop.data) :
             stopprop()
-         print("F: end of control loop; theStatus=", theStatus)
-         form.destatus = theStatus
-         form.dataStat = theDataStatus
-         return render_template('tangerine.html', form = form)
+      print("F: end of control loop; theStatus=", theStatus)
+      form.destatus = theStatus
+      form.dataStat = theDataStatus
+      return render_template('tangerine.html', form = form)
 
 @app.route("/restart") # restarts mainctl program
 def restart():
-   global theStatus, theDataStatus
+   global theStatus, theDataStatus, tcp_client
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    print("F: restart")
-  # send_to_mainctl("XX",1)
    returned_value = os.system("killall -9 mainctl")
    print("F: after killing mainctl, retcode=",returned_value)
    print("F: Trying to restart mainctl")
-# start mainctl as independent process
-#   returned_value = os.system("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
+
  # start mainctl as a subprocess
    returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
-  # returned_value = os.system("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl 1>> main.log &")
-   time.sleep(3)
+
+   time.sleep(2)
    print("F: after restarting mainctl, retcode=",returned_value)
 #   stopcoll()
 #   check_status_once()
    print("RESTART: status = ",theStatus, " received = ", received)
-   print("Call Channel Request")
-   channel_request()
-   print("Request Data Rate List")
-   send_to_mainctl(DATARATE_INQUIRY,0.1)
-
-   send_channel_config()
-   print("F: Config Channel sent");
+#
+   time.sleep(2);
+    # Initialize a TCP client socket using SOCK_STREAM 
+   try:
+     print("F: define socket")
+     host_ip, server_port = "127.0.0.1", 6100  # TODO: get port from config.ini
+     tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#    Settings to keep TCP port from disconnecting when not used for a while
+     tcp_client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE,1)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
+     tcp_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 15)
+    # Establish connection to TCP server and exchange data
+     print("F: *** WC: *** connect to socket, port ", server_port)
+     tcp_client.connect((host_ip, server_port))
+   except Exception as e: 
+     print(e)
+     theStatus = "F: TCP connect to mainctl, Exception " + str(e)
 
 # ringbuffer setup
    ringbufferPath =    parser['settings']['ringbuffer_path']
