@@ -31,11 +31,13 @@
 #include <complex.h>
 #include "de_signals.h"
 
-#define PORT	 40003   // TODO: needs to be computed/configurable
+// #define PORT	 40003   // TODO: needs to be computed/configurable
 #define BUFSIZE  8300
 #define FT8FSIZE 236000   // # samples collected before invoking decoder
 
 static struct VITAdataBuf ft8buffer;
+
+static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
 
 // variables for FT8 reception
 char date[12];
@@ -48,7 +50,8 @@ double dialfreq[8];  // array of dial frequencies for FT8
 
 int ft8active[8];    // flag to indicate if a given ft8 channel is collecting data
 int ft8counter[8];   // counter of how many ft8 samples saved in this collection period
-int inputcount[8];
+int inputcount[8];    
+int upload = 0;      // set to 1 if user wants to upload spots to PSKReporter
 
 float chfrequency[8];
 int ft8active[8];      // indicates if ft8 has started for this streamNo
@@ -116,8 +119,26 @@ int main() {
     } 
   printf("antenna0 =%s\n",myantenna0);
 
+  num_items = rconfig("psk_upload",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - psk_upload setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("psk_upload CONFIG RESULT = '%s'\n",configresult);
+    if(strncmp(configresult, "On", 2) == 0)
+      upload = 1;
+    else
+      upload = 0;
+    } 
+  printf("antenna0 =%s\n",myantenna0);
 
-    printf("Starting FT8 receiving, port=%i\n",PORT);
+    num_items = rconfig("dataport1",configresult,0);
+    LH_DATA_IN_port = atoi(configresult);
+
+
+    printf("Starting FT8 receiving, port=%i\n",LH_DATA_IN_port);
     int streamID = 0;
 	int sockfd; 
 	struct sockaddr_in servaddr, cliaddr; 
@@ -165,7 +186,7 @@ int main() {
 	// Filling server information 
 	servaddr.sin_family = AF_INET; // IPv4 
 	servaddr.sin_addr.s_addr = INADDR_ANY; 
-	servaddr.sin_port = htons(PORT); 
+	servaddr.sin_port = htons(LH_DATA_IN_port); 
 	
 	// Bind the socket with the server address 
 	if ( bind(sockfd, (const struct sockaddr *)&servaddr, 
@@ -254,32 +275,26 @@ int main() {
  
            int ret = system(mycmd);
 
-       //    strcpy(mycmd, "./ft8d_del "); 
-      //     strcat(mycmd,name[streamID]);
-       //    strcat(mycmd," > ");
-      //     strcat(mycmd,pathToRAMdisk);
-      //     strcat(mycmd, "/FT8/decoded");
-       //    strcat(mycmd, chstr);
-      //     strcat(mycmd, ".txt &");  // here add '&' to run asynch (but beware of file delete!)
            sprintf(mycmd,"./ft8d_del %s > %s/FT8/decoded%i.txt",name[streamID],pathToRAMdisk,streamID);
            printf("issue command: %s\n",mycmd);
            // Note: this assumes that decoder (ft8d_del) deletes work file when done.
            ret = system(mycmd);
            printf("ft8 decode ran, rc = %i\n",ret);
-           sprintf(mycmd,"./upload-to-pskreporter %s %s %s %s/FT8/decoded%d.txt", mycallsign, mygrid,
-              myantenna0, pathToRAMdisk, streamID);
-           ret = system(mycmd);
-           printf("psk upload ran, rc = %i\n",ret);
-
-
+           if(upload == 1)
+             {
+             printf("Upload to PSKReporter\n");
+             sprintf(mycmd,"./upload-to-pskreporter %s %s %s %s/FT8/decoded%d.txt", 
+                mycallsign, mygrid, myantenna0, pathToRAMdisk, streamID);
+             ret = system(mycmd);
+             printf("psk upload ran, rc = %i\n",ret);
+             }
+          
            }
          }
      
 
-
       } // end of while(1) loop
 
-	
 	return 0; 
 } 
 

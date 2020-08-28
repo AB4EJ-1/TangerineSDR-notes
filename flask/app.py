@@ -96,7 +96,7 @@ def is_numeric(s):
 
 def send_to_mainctl(cmdToSend,waitTime):
   global theStatus, rateList, tcp_client
-  print("F: sending:" + cmdToSend)
+  print("F: sending:'" + cmdToSend +"'")
 
   data = cmdToSend                 # + "\n"  
   try:
@@ -341,13 +341,16 @@ def sdr():
 
       if(form.stopDC.data ):
             send_to_mainctl(STOP_DATA_COLL,0.5)
-            dataCollStatus = 0;
-         #   send_to_mainctl(STOP_DATA_COLL,0.5)
-         #   dataCollStatus = 0;
+            dataCollStatus = 0
+
       if(form.startprop.data):
-            startprop()
+            send_to_mainctl(START_FT8_COLL,0)
+            thePropStatus = 0
+
       if(form.stopprop.data) :
-            stopprop()
+             send_to_mainctl(STOP_FT8_COLL,0)
+             thePropStatus = 0
+
       print("F: end of control loop; theStatus=", theStatus)
       form.destatus = theStatus
       form.dataStat = theDataStatus
@@ -392,7 +395,7 @@ def restart():
 
 # ringbuffer setup
    ringbufferPath =    parser['settings']['ringbuffer_path']
-   ringbufferMaxSize = parser['settings']['ringbuffer_max_size']
+   ringbufferMaxSize = parser['settings']['ringbuf_maxsize']
 # halt any previously started ringbuffer task(s)
    rcmd = 'killall -9 drf'
    returned_value = os.system(rcmd)
@@ -459,54 +462,54 @@ def channelantennasetup():
    global theStatus, theDataStatus
    return render_template('channelantennasetup.html')
 
-@app.route("/desetup1",methods=['POST','GET'])
-def desetup1():
-   print("hit desetup1; request.method=",request.method)
-   global theStatus, theDataStatus
-   form = ChannelControlForm()
-   channellistform = ChannelListForm()
+#@app.route("/desetup1",methods=['POST','GET'])
+#def desetup1():
+#   print("hit desetup1; request.method=",request.method)
+#   global theStatus, theDataStatus
+#   form = ChannelControlForm()
+#   channellistform = ChannelListForm()
 
 #   form.chp_setting = [('0'),('0')]
-   parser = configparser.ConfigParser(allow_no_value=True)
-   parser.read('config.ini')
-   ringbufferPath = parser['settings']['ringbuffer_path']
-   theStatus = ""
-   if request.method == 'GET':
+#   parser = configparser.ConfigParser(allow_no_value=True)
+#   parser.read('config.ini')
+#   ringbufferPath = parser['settings']['ringbuffer_path']
+#   theStatus = ""
+#   if request.method == 'GET':
 # temporary.   This list must be built based on DE report of available data rates
-    rate =[('4000',4000),('8000',8000),('12000',12000),('24000',24000)]
-    rate_list = []
-    for r in range(3):
-      rate_list.append(rate[r])
+#    rate =[('4000',4000),('8000',8000),('12000',12000),('24000',24000)]
+#    rate_list = []
+#    for r in range(3):
+#      rate_list.append(rate[r])
  #   print("rate_list=",rate_list)
-    form.channelrate.choices = rate_list
+ #   form.channelrate.choices = rate_list
     
-    print("channellistform channels=",channellistform.channels)
-    return render_template('desetup1.html',
-	  ringbufferPath = ringbufferPath,
-      form = form, status = theStatus,
-      channellistform = channellistform)
+  #  print("channellistform channels=",channellistform.channels)
+  #  return render_template('desetup1.html',
+#	  ringbufferPath = ringbufferPath,
+#      form = form, status = theStatus,
+#      channellistform = channellistform)
 
-   if request.method == 'POST':
-      result = request.form
-      ringbufferPath = parser['settings']['ringbuffer_path']
-      print("F: result=", result.get('csubmit'))
-      if result.get('csubmit') == "Set no. of channels":
-        channelcount = result.get('channelcount')
+ #  if request.method == 'POST':
+ #     result = request.form
+ #     ringbufferPath = parser['settings']['ringbuffer_path']
+ #     print("F: result=", result.get('csubmit'))
+ #     if result.get('csubmit') == "Set no. of channels":
+ #       channelcount = result.get('channelcount')
 #        channellistform.channels.min_entries = channelcount
-        print("set #channels to ",channelcount)
-        form.port_list = []
-        form.freq_list = []
-        form.rate_list = []       
-        for ch in range(int(channelcount)):
-          channelform = ChannelForm()
-          channelform.channel_freq = 0.0
-          channellistform.channels.append_entry(channelform)
+  #      print("set #channels to ",channelcount)
+  #      form.port_list = []
+  #      form.freq_list = []
+  #      form.rate_list = []       
+  #      for ch in range(int(channelcount)):
+  #        channelform = ChannelForm()
+  #        channelform.channel_freq = 0.0
+  #        channellistform.channels.append_entry(channelform)
 
-        print("return to desetup2")
-        return render_template('desetup2.html',
-	      ringbufferPath = ringbufferPath, channelcount = channelcount,
-          form = form, status = theStatus,
-          channellistform = channellistform)
+   #     print("return to desetup2")
+   #     return render_template('desetup2.html',
+#	      ringbufferPath = ringbufferPath, channelcount = channelcount,
+ #         form = form, status = theStatus,
+ #         channellistform = channellistform)
 
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
@@ -515,13 +518,18 @@ def desetup():
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    ringbufferPath = parser['settings']['ringbuffer_path']
- #  form = ChannelControlForm()
+   maxringbufsize = parser['settings']['ringbuf_maxsize']
+
    if request.method == 'GET' :
     channellistform = ChannelListForm()
 # populate channel settings from config file
     channelcount = parser['channels']['numChannels']
     form = ChannelControlForm()
     form.channelcount.data = channelcount
+    print("form maxringbufsize=",form.maxRingbufsize.data)
+    print("Max ringbuf size=", maxringbufsize)
+    form.maxRingbufsize.data = maxringbufsize
+    print("form maxringbufsize=",form.maxRingbufsize.data)
     rate_list = []
 # populate rate capabilities from config file.
 # The config file should have been updated from DE sample rate list buffer.
@@ -541,6 +549,7 @@ def desetup():
       channelform.channel_ant  = parser['channels']['p' + str(ch)] 
       channelform.channel_freq = parser['channels']['f' + str(ch)]
       channellistform.channels.append_entry(channelform)
+    print("form maxringbufsize=",form.maxRingbufsize.data)
     return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath, channelcount = channelcount,
       channellistform = channellistform,
@@ -570,19 +579,18 @@ def desetup():
 
     form.channelrate.choices = rate_list
     rate1 = int(parser['channels']['datarate'])
- #   print("rate1 type = ",type(rate1))
     form.channelrate.data = rate1
-
+    form.maxRingbufsize.data = maxringbufsize
     for ch in range(int(channelcount)):
       channelform = ChannelForm()
       channelform.channel_ant  = parser['channels']['p' + str(ch)] 
       channelform.channel_freq = parser['channels']['f' + str(ch)]
       channellistform.channels.append_entry(channelform)
+
     return render_template('desetup.html',
 	  ringbufferPath = ringbufferPath, channelcount = channelcount,
       channellistform = channellistform,
       form = form, status = theStatus)
-
 
 # did user hit the Set channel count button?
 
@@ -601,6 +609,7 @@ def desetup():
      form.channelrate.choices = rate_list
      rate1 = int(parser['channels']['datarate'])
      form.channelrate.data = rate1
+     form.maxRingbufsize.data = maxringbufsize
      for ch in range(int(channelcount)):
   #    print("add channel ",ch)
       channelform = ChannelForm()
@@ -623,6 +632,9 @@ def desetup():
      theStatus = "ERROR-"
      channelcount = result.get('channelcount')
      channelrate = result.get('channelrate')
+     maxringbufsize = result.get('maxRingbufsize')
+     print("Set maxringbuf size to", maxringbufsize)
+     parser.set('settings','ringbuf_maxsize',maxringbufsize)
      print("set data rate to ", channelrate)
      parser.set('channels','datarate',channelrate)
    #  theStatus = ""
@@ -715,63 +727,6 @@ def desetup():
           form = form, status = theStatus,
           channellistform = channellistform)
 
-# start propagation monitoring for FT8
-def startprop():
-  global thePropStatus
-  parser = configparser.ConfigParser(allow_no_value=True)
-  parser.read('config.ini')
-  ft80f  =     parser['settings']['ft80f'] 
-  ftant0 =     parser['settings']['ftant0']
-  if (ftant0 == 'Off'): 
-    ftant0 = '-1'
-  ft81f  =     parser['settings']['ft81f'] 
-  ftant1 =     parser['settings']['ftant1']
-  if (ftant1 == 'Off'): 
-    ftant1 = '-1'
-  ft82f  =     parser['settings']['ft82f']
-  ftant2 =     parser['settings']['ftant2']
-  if (ftant2 == 'Off'): 
-    ftant2 = '-1'
-  ft83f  =     parser['settings']['ft83f']
-  ftant3 =     parser['settings']['ftant3']  
-  if (ftant3 == 'Off'): 
-    ftant3 = '-1'
-  ft84f  =     parser['settings']['ft84f']
-  ftant4 =     parser['settings']['ftant4']
-  if (ftant4 == 'Off'): 
-    ftant4 = '-1'
-  ft85f  =     parser['settings']['ft85f']
-  ftant5 =     parser['settings']['ftant5']  
-  if (ftant5 == 'Off'): 
-    ftant5 = '-1'
-  ft86f  =     parser['settings']['ft86f']
-  ftant6 =     parser['settings']['ftant6']
-  if (ftant6 == 'Off'): 
-    ftant6 = '-1'
-  ft87f  =     parser['settings']['ft87f']
-  ftant7 =     parser['settings']['ftant7']
-  if (ftant7 == 'Off'): 
-    ftant7 = '-1'
-
-  theCommand = START_FT8_COLL + ' ' + ftant0 + ' ' + ftant1 + ' ' + ftant2 + ' ' + \
-                            ftant3 + ' ' + ftant4 + ' ' + ftant5 + ' ' + \
-                            ftant6 + ' ' + ftant7 + ' ' + \
-                            ft80f  + ' ' + ft81f  + ' ' + ft82f + ' ' + \
-                            ft83f  + ' ' + ft84f  + ' ' + ft85f + ' ' + \
-                            ft86f  + ' ' + ft87f
-  print("start FT8 monitoring " + theCommand)
-  host_ip, server_port = "127.0.0.1", 6100
-  data = theCommand + "\n"  
-  send_to_mainctl(theCommand,0)
-  thePropStatus = 1
-  return
-
-
-# stop propagation monitoring for FT8
-def stopprop():
-  send_to_mainctl(STOP_FT8_COLL,0)
-  thePropStatus = 0
-  return
 
 
 @app.route("/throttle", methods = ['POST','GET'])
@@ -967,8 +922,16 @@ def propagation():
      ft85f =     parser['settings']['ft85f']
      ft86f =     parser['settings']['ft86f']
      ft87f =     parser['settings']['ft87f']
+     if(parser['settings']['psk_upload'] == "On"):
+       psk = True
+       form.pskindicator.data = True
+       print("detected psk = On")
+     else:
+       psk = False
+       print("detected psk=Off")
+       
      return render_template('ft8setup.html',
-      pskindicator = psk,
+  #    pskindicator = psk,
       form  = form,
       ft80f = ft80f,
 	  ft81f = ft81f,
@@ -1002,6 +965,10 @@ def propagation():
        parser.set('settings', 'ft86f',            str(result.get('ft86f')))
        parser.set('settings', 'ftant7',            form.antennaport7.data)
        parser.set('settings', 'ft87f',            str(result.get('ft87f')))  
+       if(form.pskindicator.data == True):
+         parser.set('settings','psk_upload', "On")
+       else:
+         parser.set('settings','psk_upload', "Off")
        fp = open('config.ini','w')
        parser.write(fp)
        fp.close()
@@ -1022,6 +989,10 @@ def propagation():
      ft85f =     parser['settings']['ft85f']
      ft86f =     parser['settings']['ft86f']
      ft87f =     parser['settings']['ft87f']
+     if(parser['settings']['psk_upload'] == "On"):
+       form.pskindicator.data = True
+     else:
+       form.pskindicator.data = False
      return render_template('ft8setup.html',
       form = form,
       ft80f = ft80f,

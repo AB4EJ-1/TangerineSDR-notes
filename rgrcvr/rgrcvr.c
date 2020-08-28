@@ -161,7 +161,6 @@ static char target[30];
 static int num_items = 0;
 static int snapshotterMode = 0;
 static int ringbufferMode = 0;
-//static int firehoseLMode = 0;
 static int firehoseRMode = 0;
 static int firehoseUploadActive = 0;
 static char pathToRAMdisk[100];
@@ -186,7 +185,7 @@ void* FFTanalyze(void *arg){  // argument is a struct with all fftwf data
   time_t T = time(NULL);
   struct tm tm = *gmtime(&T);  // UTC
   char FFToutputFile[75] = ""; 
-  printf("RG: start FFT for channel %i, freq %f \n",threadPkg->channelNo, threadPkg->centerFrequency);
+  printf("RG: start FFT for subchannel %i, freq %f \n",threadPkg->channelNo, threadPkg->centerFrequency);
   printf("RG: opening fft file: %s, time=",FFToutputFile);
   sprintf(FFToutputFile,"%s/fft%i.csv",FFToutputPath,threadPkg->channelNo);  
   fftfp = fopen(FFToutputFile,"a");
@@ -527,7 +526,25 @@ int main() {
     if ( memcmp(&configresult,"On",2) == 0)
       {
       snapshotterMode = 1;
-  // TODO: some addl data to be gotten here from config for snapshotter mode
+
+
+       num_items = rconfig("fftoutput_path",configresult,0);
+       if(num_items > 0)
+        {
+         strcpy(FFToutputPath,configresult);
+       
+        printf("RG: FFT output path set to %s\n",FFToutputPath);
+        }
+       else
+        {
+        printf("RG: Snapshotter mode specified but no data output path in config.ini\n");
+        exit(-1); 
+        }
+
+
+
+
+
       }
     else
       {
@@ -547,6 +564,12 @@ int main() {
 
     if ( memcmp(&configresult,"On",2) == 0)
       {
+      // config file specifies firehoser mode; if ringbuffer specified also, error
+      if(ringbufferMode == 1)
+        {
+        printf("* * * ERROR * * * CANNOT RUN RINGBUFFER AND FIREHOSE-R MODE AT SAME TIME");
+        exit(-1);
+        }
       firehoseRMode = 1;
       // get firehose R path, since firehoser mode is on
       num_items = rconfig("firehoser_path",configresult,0);
@@ -683,7 +706,7 @@ while(1)
     if(snapcount >= FFT_N)
       {
       fft_busy = 1;  // block further use of this until the thread(s) complete
-      printf("RG: **prep to start FFT thread ***\n");\
+      printf("RG: **prep to start FFT thread ***, snapcount=%i\n",snapcount);\
 
       pthread_t tid[8];
       for(int i=0; i <= numchannels-1; i++)
@@ -754,6 +777,8 @@ while(1)
       sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
       }
 */
+    // removed old drf properties file so DRF can record current config info
+    sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
     strcpy(total_hdf5_path,ringbuffer_path);
     sprintf(cleanup,"rm %s/drf_properties.h5",firehoseR_path); 
    
@@ -768,6 +793,8 @@ while(1)
   //  strcat(total_hdf5_path,"/");
   //  strcat(total_hdf5_path, hdf5subdirectory);
     printf("RG: Using compression level %i; Storing to: %s\n",compression_setting, total_hdf5_path);
+    printf("RG: subdir cadence=%li,msec=%li, rate=%li,chnls=%i\n",subdir_cadence,milliseconds_per_file, sample_rate_numerator,bufferChannels);
+
     // Create the new DRF directory structure & properties file
     DRFdata_object = digital_rf_create_write_hdf5(total_hdf5_path, H5T_NATIVE_FLOAT, subdir_cadence,
       milliseconds_per_file, global_start_sample, sample_rate_numerator, SAMPLE_RATE_DENOMINATOR,
