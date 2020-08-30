@@ -367,7 +367,7 @@ def restart():
    print("F: Trying to restart mainctl")
 
  # start mainctl as a subprocess
-   returned_value = subprocess.Popen("/home/odroid/projects/TangerineSDR-notes/mainctl/mainctl")
+   returned_value = subprocess.Popen("./mainctl/mainctl")
 
    time.sleep(2)
    print("F: after restarting mainctl, retcode=",returned_value)
