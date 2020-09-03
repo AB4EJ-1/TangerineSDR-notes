@@ -22,7 +22,7 @@ int openConfigFile()
 // python config file. Seems like a kludge, but allows flexibility in
 // system directory structure.
  // printf("test - read config file\n");
-  printf("CFG: opening main.cfg\n");
+ // printf("CFG: opening main.cfg\n"); 
   int r1 = system("pwd");
   if(! config_read_file(&cfg, "./mainctl/main.cfg"))
   {

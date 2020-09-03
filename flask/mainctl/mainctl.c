@@ -41,6 +41,8 @@
 #include "CUnit/CUnit.h"
 #include "CUnit/Basic.h"
 #include <assert.h>
+#include <netdb.h>
+#include <sys/time.h>
 #include "discovered.h"
 #include "de_signals.h"
 
@@ -123,88 +125,8 @@ static int DE_OK = 0;
 extern char rconfig(char * arg, char * result, int testThis);
 extern int  openConfigFile();
 
+
 //// *********************** Start of Code  *******************************//////
-
-  
-/*
-/////////////////////////////////////////////////////////////////////////////
-/////// function to read config items from the (python) config file /////////
-int rconfig(char * arg, char * result, int testThis) {
-const char delimiters[] = " =";
-printf("start fcn looking for %s\n", arg);
-FILE *fp;
-char *line = NULL;
-size_t len = 0;
-ssize_t read;
-char *token, *cp;
-if (testThis)
-  {
-  fp = fopen( "/home/odroid/projects/TangerineSDR-notes/flask/config.ini", "r");
-  }
-else
-  fp = fopen(configPath, "r");
-if (fp == NULL)
-  {
-  printf("ERROR - could not open config file at %s\n",configPath);
-  printf("ABEND 102");
-  exit(-1);
-  }
-//puts("read config");
-while ((read = getline(&line, &len, fp)) != -1) {
- // printf("line length %zu: ",read);
- // printf("%s \n",line);
-  cp = strdup(line);  // allocate enuff memory for a copy of this
-  //printf("cp=%s\n",cp);
-  token = strtok(cp, delimiters);
- // printf("first token='%s'\n",token);
-  if(strcmp(arg,token) == 0)
-   {
-  token = strtok(NULL, delimiters);
- // printf("second token=%s\n",token);
- // printf("config value found = '%s', length = %lu\n",token,strlen(token));
-  strncpy(result,token,strlen(token)-1);
-  result[strlen(token)-1] = 0x00;  // terminate the string
-  free(cp);
-  fclose(fp);
-  return(1);
-   }
-  }
-  free(cp);
-  fclose(fp);
-  return(0);
-}
-*/
-
-
-///////////////////////////////////////////////////////////////////////////
-///////// Thread for uploading firehoseR data to Central Control //////////
-void firehose_uploader(void *threadid) {
-
-  char sys_command[200];
-  printf("firehoseR uploader thread starting\n");
-  sleep(20);
-  while(1)
-   {
-   if (firehoseUploadActive == 0)  // firehoseR upload halted
-     {
-     printf("------ FIREHOSE UPLOAD SHUTTING DOWN -------\n");
-     return;
-     }
-   printf("------FIREHOSE UPLOAD-----------\n");
-
-  sprintf(sys_command,"./firehose_xfer_auto.sh %s %s %s", data_path,temp_path,the_node);
-  printf("M: Uploader - executing command: %s \n",sys_command); 
-  int r = system(sys_command); 
-  printf("M: System command retcode=%i\n",r);
-
-   sleep(10);
-
-   }
-
-  return;
-}
-
-
 
 //////////////////////////////////////////////////////////////////////////
 //////////   Function to send command to DE //////////////////////////////
@@ -228,8 +150,6 @@ void sendCommandToDE(int channelNo, char command[2]) {
     LH_CONF_IN_port[channelNo] = atoi(configresult);
     } 
   printf("M: Port C now set to %i\n", LH_CONF_IN_port[channelNo] ); 
-
-
 
   printf("M: Prep to send command %s to DE, channel %i\n",command,channelNo);
   printf("M: Now, LH_CONF_IN_port[%i] = %i\n",channelNo,LH_CONF_IN_port[channelNo]);
@@ -436,7 +356,6 @@ void *  processUserActions(void *threadid){
         // print buffer which contains the client contents 
         printf("M: Received %li bytes from client starting with %x %x\n", n, cmdBuf.cmd[0], cmdBuf.cmd[1]); 
 
-
         if (memcmp (cmdBuf.cmd, START_DATA_COLL, 2) == 0)
           {
           cmdBuf.channelNo = 0;  // this is for ringbuffer-type data
@@ -444,10 +363,12 @@ void *  processUserActions(void *threadid){
           char stoprgrcvr[50] = "killall -9 rgrcvr";
           printf("M: Issue command: %s\n",stoprgrcvr);
           int rcode = system(stoprgrcvr);
+
           char startrgrcvr[50] = "./mainctl/rgrcvr &";
           printf("M: Issue command: %s\n",startrgrcvr);
           rcode = system(startrgrcvr);
           }
+
         if (memcmp (cmdBuf.cmd, STOP_DATA_COLL, 2) == 0)
           {
           // stop rgrcvr
@@ -591,12 +512,17 @@ int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
 // the following function parses input to get start and end date-times for data upload
 int getDataDates(char *input, char* startpoint, char* endpoint)
  {
- // printf("input to extract from= '%s'\n", input);
+  printf("input to extract from= '%s'\n", input);
   int theLen = strlen(input);
   printf("len = %i\n",theLen);
   if(theLen < 180)
    {
-   return(0);  // this is not a DR command
+   return(-1);  // this is not a DR command
+   }
+  if(memcmp(&input[theLen - 42],"DR",2) != 0)
+   {
+   printf("M: response rec'd, not a DR (data request)\n");
+   return(-1);
    }
   printf("last char = %c\n",input[theLen - 1]);
   int s = 0;
@@ -801,38 +727,6 @@ int makeCHrequest(int channelNo){
 
 }
 
- 
-/*
-///////////////////// open config file ///////////////
-int openConfigFile()
-{
- // printf("test - config init\n");
-  config_init(&cfg);
-
-
-
-// The only thing we use this config file for is to get the path to the
-// python config file. Seems like a kludge, but allows flexibility in
-// system directory structure.
- // printf("test - read config file\n");
-  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
-  {
-    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
-            config_error_line(&cfg), config_error_text(&cfg));
-    puts("ERROR - there is a problem with main.cfg configuration file");
-    config_destroy(&cfg);
-    return(EXIT_FAILURE);
-  }
-//  printf("test - look up config path\n");
-  if(config_lookup_string(&cfg, "config_path", &configPath))
-    printf("Setting config file path to: %s\n\n", configPath);
-  else
-    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
-    return(EXIT_FAILURE);
- // printf("test - config path=%s\n",configPath);
-  return(0);
-} 
-*/
 
 ////////////// Data Uploader thread /////////////////////////////////////
 void *dataUpload(void *threadid) {
@@ -1062,6 +956,219 @@ int create_channel(int channelNo) {
 }
 
 
+
+//////////////////////////////////////////////////////////////////
+//////////////   heartbeat using standard tcp & threading ////////
+void * heartbeat(void *threadid) {
+
+printf("M: Starting HEARTBEAT thread  ###########################    \n");
+int portno = 5000;  // default, to be replaced by configured value.
+
+char *host = "192.168.1.67"; // default, to be replaced by configurea value.
+char centralHost[20] = "192.168.1.67";
+
+//char *message_fmt = "POST /apikey/SHGJKD HTTP/1.0\r\n\r\n";
+
+struct hostent *server;
+struct sockaddr_in serv_addr;
+struct timeval timeout;
+int sockfd, bytes, sent, received, total;
+char message[1024],response[65536];
+
+timeout.tv_sec = 10;  // if Central Host doesn't respond, we ignore
+timeout.tv_usec = 0;  //  and will try again after the pause time
+
+char tbuf[30];
+struct timeval tv;
+time_t curtime;
+int heartbeat_interval = 60;  // seconds
+
+char mytoken[75];
+
+num_items = rconfig("token_value",configresult,0);
+if(num_items == 0)
+  {
+  printf("ERROR - token_value setting not found in config.ini");
+  }
+else
+  {
+  printf(" CONFIG RESULT = '%s'\n",configresult);
+  printf("len =%lu\n",strlen(configresult));
+  strcpy(mytoken, configresult);
+  }
+
+num_items = rconfig("heartbeat_interval",configresult,0);
+if(num_items == 0)
+  {
+  printf("ERROR - heartbeat_interval setting not found in config.ini");
+  }
+ else
+  {
+  printf("M: HB interval CONFIG RESULT = '%s'\n",configresult);
+  printf("len =%lu\n",strlen(configresult));
+  heartbeat_interval = atoi(configresult);
+  }
+
+num_items = rconfig("central_host",configresult,0);
+if(num_items == 0)
+  {
+  printf("ERROR - central host setting not found in config.ini");
+  }
+else
+  {
+  printf(" CONFIG RESULT = '%s'\n",configresult);
+  strcpy(centralHost, configresult);
+  // strcpy(*host, configresult);
+  }
+num_items = rconfig("central_port",configresult,0);
+if(num_items == 0)
+  {
+  printf("ERROR - Central Port setting not found in config.ini");
+  }
+else
+  {
+  portno = atoi(configresult);
+  }
+
+while(1)  // start of heartbeat loop
+  {
+
+  printf("M: hearbeat - set up socket\n");
+
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) printf("M: Heartbeat thread- ERROR opening socket\n");
+
+  if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+        sizeof(timeout)) < 0)
+       printf("M: Set socket option rcv timeout failed\n");
+  if (setsockopt (sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+        sizeof(timeout)) < 0)
+       printf("M: Set socket option send timeout failed\n");
+
+  server = gethostbyname(centralHost);
+  if (server == NULL) printf("M: Heartbeat thread - ERROR, no such host: %s\n",centralHost);
+
+  memset(&serv_addr,0,sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(portno);
+  memcpy(&serv_addr.sin_addr.s_addr,server->h_addr,server->h_length);
+ int central_connect = 0;
+
+ do {
+  printf("M: try to connect to central...\n");
+  if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0)
+    {
+    printf("M: Heartbeat - Could not reach Central Control, will try again in 1 min.\n");
+  //  close(sockfd);
+    sleep(60);
+    }
+  else
+    central_connect = 1;
+    printf("Heartbeat socket connected\n");
+ }
+ while (central_connect == 0);
+
+
+  gettimeofday(&tv, NULL);
+  curtime = tv.tv_sec;
+  strftime(tbuf, 30, "%m-%d-%Y-%T.",localtime(&curtime));
+  printf("Heartbeat TOD: '%s' %ld\n",tbuf,tv.tv_usec);
+  sprintf(message,"POST /apikey/%s-%s HTTP/1.0\r\n\r\n",mytoken,tbuf);
+  printf("M: send heartbeat, message=%s \n",message);
+  total = strlen(message);
+
+  sent = 0;
+  do {
+   bytes = write(sockfd,message+sent,total-sent);
+   if (bytes < 0)
+     {
+     printf("M: Heartbeat - ERROR writing message to socket\n");
+     close(sockfd);
+     return NULL;
+     }
+   else
+      printf("M: Heartbeat sent, # bytes = %i\n", bytes);
+   if (bytes == 0)
+    //  return NULL;
+      break;
+   sent+=bytes;
+  } while (sent < total);
+
+  memset(response,0,sizeof(response));
+  total = sizeof(response)-1;
+
+  received = 0;
+
+  do {
+
+   bytes = read(sockfd,response+received,total-received);
+   if (bytes < 0)
+    {
+    printf("M: Heartbeat - ERROR reading response from socket\n");
+    close(sockfd);
+
+    return NULL;
+    }
+   else
+    printf("M: Heartbeat Response received from Central Control - %i bytes\n",bytes);
+   if (bytes == 0)
+     break;
+  received+=bytes;
+  } while (received < total);
+
+/*
+  if (received == total)
+    {
+    printf("M: Heartbeat - ERROR storing complete response from socket");
+    close(sockfd);
+    sleep(heartbeat_interval);
+    continue;
+    }
+*/
+
+
+
+ // 
+  printf("M: Heartbeat Response received from Central Control\n");
+  printf("----------------------------------------------------\n");
+  printf("%s\n",response);
+  printf("----------------------------------------------------\n");
+  char theStart[30];
+  char theEnd[30];
+  int fc = 0;
+  if(fc = getDataDates(response, &theStart[0], &theEnd[0]))
+   {
+   printf("M: Received a DR data request from Central; fc=%i\n",fc);
+
+   if(!uploadInProgress & fc == 0)
+    {
+    printf("M: preparing data\n");
+    int rp = prep_data_files(theStart, theEnd, ringbuffer_path);
+    int uplrc = 0;
+    long h;
+    pthread_t uplthread;
+    printf("M: Start upload thread\n");
+    uplrc = pthread_create(&uplthread, NULL, dataUpload, (void*)h);
+    }
+   }
+
+
+  printf("M: socket to Central, shutdown\n");
+  close(sockfd);
+ // sockfd.Disconnect(true);
+
+
+  printf("M: Heartbeat sleep for %i sec. starting\n",heartbeat_interval);
+  sleep(heartbeat_interval);
+
+  }  // end of heatbeat loop
+
+return NULL;
+
+}  // end of heartbeat thread
+
+
+//////////////////////////////////////////////////////////////////////
 /////////////////// UNIT TEST SETUP //////////////////////////////////
 
 int max (int n1, int n2 )
@@ -1565,6 +1672,26 @@ int main(int argc, char *argv[]) {
     sleep(0.2);
     }
 
+    int hbrc = 0;
+    long h;
+  int heartbeat_interval = 60;  // seconds
+  num_items = rconfig("heartbeat_interval",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - heartbeat_interval setting not found in config.ini");
+    }
+  else
+    {
+    printf(" CONFIG RESULT = '%s'\n",configresult);
+    printf("len =%lu\n",strlen(configresult));
+    heartbeat_interval = atoi(configresult);
+    }
+
+    pthread_t hb_tid;
+    int err1 = pthread_create(&hb_tid, NULL, heartbeat, NULL);
+
+
+
   // Start thread for processing user actions, i.e., commands arriving
   // on TCP port from app.py
 
@@ -1606,20 +1733,6 @@ int main(int argc, char *argv[]) {
 	pclose(fp2);
 	}
 
-    int hbrc = 0;
-    long h;
-  int heartbeat_interval = 60;  // seconds
-  num_items = rconfig("heartbeat_interval",configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - heartbeat_interval setting not found in config.ini");
-    }
-  else
-    {
-    printf(" CONFIG RESULT = '%s'\n",configresult);
-    printf("len =%lu\n",strlen(configresult));
-    heartbeat_interval = atoi(configresult);
-    }
 
 
 ////////////////////////////////////////////////////////////////

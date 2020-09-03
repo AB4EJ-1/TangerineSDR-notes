@@ -155,7 +155,6 @@ float chfrequency[8];
 
 struct sockaddr_in recv_data_addr;    // for data coming from DE
 
-
 const char *configPath;
 static int num_items;  // number of config items found
 static char configresult[100];
@@ -191,7 +190,7 @@ void* FFTanalyze(void *arg){  // argument is a struct with all fftwf data
   printf("RG: opening fft file: %s, time=",FFToutputFile);
   sprintf(FFToutputFile,"%s/fft%i.csv",FFToutputPath,threadPkg->channelNo);  
   fftfp = fopen(FFToutputFile,"a");
-  fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+//  fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
   printf("%04d-%02d-%02d %02d:%02d:%02d \n", tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
 //  printf("before fft \n");
 //  for(int k=0; k < 10; k++)
@@ -264,9 +263,39 @@ void* FFTanalyze(void *arg){  // argument is a struct with all fftwf data
 #else
 
 // this section is for outputting +/- 5 hz around center freq with FFT_N=1,048,576
+// assuming radio is tuned to 1 kHz below target signal (for now)
 
- // for(int i=maxbinT-100;i < maxbinT+100;i++)  
-  for(int i=CENTER-(WIDTH/2);i < CENTER+(WIDTH/2);i++) 
+
+// output the REAL part
+
+  fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,REAL,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+  for(int i=CENTER+(WIDTH/2);i > CENTER-(WIDTH/2);i--) 
+   {
+     fprintf(fftfp,"%15.10f,",creal(threadPkg->FFT_data[i]));
+   }
+
+
+// output the IMAGINARY part 
+
+//  fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,IMAGINARY,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+  fprintf(fftfp,"IMAGINARY,");
+
+  for(int i=CENTER+(WIDTH/2);i > CENTER-(WIDTH/2);i--) 
+   {
+     fprintf(fftfp,"%15.10f,",cimag(threadPkg->FFT_data[i]));
+   }
+
+
+
+// output TOTAL Magnitude
+
+//  fprintf(fftfp,"%f,%04d-%02d-%02d %02d:%02d:%02d,TOTAL,",threadPkg->centerFrequency, tm.tm_year+1900, tm.tm_mday, tm.tm_mon+1, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+  fprintf(fftfp,"TOTAL,");
+
+  for(int i=CENTER+(WIDTH/2);i > CENTER-(WIDTH/2);i--) 
    {
     M = sqrt( creal(threadPkg->FFT_data[i])*creal(threadPkg->FFT_data[i])+cimag(threadPkg->FFT_data[i])*cimag(threadPkg->FFT_data[i]) );
     if(M > maxval)
@@ -285,7 +314,8 @@ void* FFTanalyze(void *arg){  // argument is a struct with all fftwf data
 #endif
 
   printf("RG: maxbin = %li, maxval = %f\n",maxbinT,maxvalT);
-  fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
+//  fprintf(fftfp,"%li,%f,\n",maxbin,maxval);
+  fprintf(fftfp,"%li,%f,\n",CENTER - maxbin,maxval);
   fclose(fftfp);
 
 }
@@ -371,22 +401,33 @@ int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
  }
 
 
-
 ///////////////////////////////////////////////////////////////////////////
 ///////// Thread for uploading firehoseR data to Central Control //////////
-void firehose_uploader(void *threadid) {
+void* firehose_uploader(void *threadid) {
 
   char sys_command[200];
   printf("RG: firehoseR uploader thread starting\n");
+  num_items = rconfig("node",configresult,0);
+  if(num_items == 0)
+    {
+    printf("ERROR - node setting not found in config.ini\n");
+    }
+  else
+    {
+    printf("node CONFIG RESULT = '%s'\n",configresult);
+    strcpy(the_node,configresult);
+    }
   sleep(20);
   while(1)
    {
+/*
    if (firehoseUploadActive == 0)  // firehoseR upload halted
      {
      printf("RG: ------ FIREHOSE UPLOAD SHUTTING DOWN -------\n");
      return;
      }
-   printf("RG: ------FIREHOSE UPLOAD-----------\n");
+*/
+  printf("RG: ------FIREHOSE UPLOAD-----------\n");
 
   sprintf(sys_command,"./firehose_xfer_auto.sh %s %s %s", data_path,temp_path,the_node);
   printf("RG: Uploader - executing command: %s \n",sys_command); 
@@ -397,42 +438,8 @@ void firehose_uploader(void *threadid) {
 
    }
 
-  return;
 }
 
-/*
-///////////////////// open config file ///////////////
-int openConfigFile()
-{
-  printf("test - config init\n");
-  config_init(&cfg);
-
-  // Read the file. If there is an error, report it and exit. 
-
-// The only thing we use this config file for is to get the path to the
-// python config file. Seems like a kludge, but allows flexibility in
-// system directory structure.
-
-  printf("test - read config file\n");
-  if(! config_read_file(&cfg, "/home/odroid/projects/TangerineSDR-notes/mainctl/main.cfg"))
-  {
-    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
-            config_error_line(&cfg), config_error_text(&cfg));
-    puts("ERROR - there is a problem with main.cfg configuration file");
-    config_destroy(&cfg);
-    return(EXIT_FAILURE);
-  }
-  printf("test - look up config path\n");
-  if(config_lookup_string(&cfg, "config_path", &configPath))
-    printf("Setting config file path to: %s\n\n", configPath);
-  else
-    fprintf(stderr, "No 'config_path' setting in configuration file main.cfg.\n");
-    return(EXIT_FAILURE);
-  printf("test - config path=%s\n",configPath);
-  return(0);
-} 
-
-*/
 
 ///////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////
@@ -548,10 +555,6 @@ int main() {
         exit(-1); 
         }
 
-
-
-
-
       }
     else
       {
@@ -578,6 +581,7 @@ int main() {
         exit(-1);
         }
       firehoseRMode = 1;
+      printf("firehoseRMode ACTIVATED\n");
       // get firehose R path, since firehoser mode is on
       num_items = rconfig("firehoser_path",configresult,0);
       if(num_items == 0)
@@ -588,6 +592,18 @@ int main() {
         {
         printf("RG:  CONFIG RESULT = '%s'\n",configresult);
         strcpy(firehoseR_path, configresult);
+        strcpy(data_path, configresult);
+        }
+
+      num_items = rconfig("temp_path",configresult,0);
+      if(num_items == 0)
+        {
+        printf("RG: ERROR - temp_path setting not found in config.ini");
+        }
+     else
+        {
+        printf("RG:  CONFIG RESULT = '%s'\n",configresult);
+        strcpy(temp_path, configresult);
         }
 
       num_items = rconfig("drf_compression",configresult,0);
@@ -601,6 +617,18 @@ int main() {
         compression_setting = atoi(configresult);
         printf("RG: compression level set to %i\n",compression_setting);
         } 
+
+// Activate thread to upload firehoseR data
+        pthread_t ulid;
+        int rc = pthread_create(&ulid, NULL, &firehose_uploader, NULL);
+        if( rc == 0)
+          {
+          printf("RG: uploader thread created\n");
+          }
+        else
+          {
+          printf("Error %i creating uploader thread\n", rc);
+          }
 
       }
     else
@@ -716,7 +744,7 @@ while(1)
       printf("RG: **prep to start FFT thread ***, snapcount=%i\n",snapcount);\
 
       pthread_t tid[8];
-      for(int i=0; i <= numchannels-1; i++)
+      for(int i=0; i <= numchannels-1; i++)  // start all threads
        {
        printf(" \n");
        printf("RG: start thread %i\n",i);
@@ -724,18 +752,20 @@ while(1)
 // TODO: possibly all threads should be started here, and then all joins done
        pthread_create(&(tid[i]), NULL, FFTanalyze, &spectrumPackage[i]);    
 
-       printf("RG: join thread %i\n",i);
-
-       pthread_join(tid[i],NULL);
-
        printf("RG: DFT # %i done\n", i);
+       }
+      for(int i=0; i <=numchannels-1;i++) // wait on all threads to complete
+       {
+       printf("RG: join thread %i\n",i);
+       pthread_join(tid[i],NULL);
        }
  
       snapcount = 0;
       fft_busy = 0;
       }
-// we are done with snapshotter handing of this buffer; if user doesn't want ringbuffer also, free memory & exit
-    if(!ringbufferMode)
+// We are done with snapshotter handing of this buffer; if user wants neither rinbuffer nor
+//   snapshotter mode, then done with this buffer
+    if(!ringbufferMode & !snapshotterMode)
       {
       continue;
       } // if we fall thru the above if stmt, it means user wants both snapshotter & ringbuffer modes
@@ -771,23 +801,26 @@ while(1)
   if((packetCount == 0 || buffers_received == 1) && DRFdata_object == NULL) 
     {
     char cleanup[100]="";
+    printf("FIRST PACKET recvd, firehoseRMode = %i\n",firehoseRMode);
 
-/*
     if(firehoseRMode)  // decide where we will store the DRF (hdf5) files
       {
       strcpy(total_hdf5_path,firehoseR_path);
-      sprintf(cleanup,"rm %s/firehose/drf_properties.h5",firehoseR_path);
+      sprintf(cleanup,"rm %s/drf_properties.h5",firehoseR_path);
       }
     else
       {
       strcpy(total_hdf5_path,ringbuffer_path);
-      sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
+      sprintf(cleanup,"rm %s/drf_properties.h5",ringbuffer_path);
+
       }
-*/
+    printf("Total HDF5 path = %s\n",total_hdf5_path);
+
     // removed old drf properties file so DRF can record current config info
-    sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
-    strcpy(total_hdf5_path,ringbuffer_path);
-    sprintf(cleanup,"rm %s/drf_properties.h5",firehoseR_path); 
+ //   sprintf(cleanup,"rm %s/TangerineData/drf_properties.h5",ringbuffer_path);
+    
+  //  strcpy(total_hdf5_path,ringbuffer_path);
+  //  sprintf(cleanup,"rm %s/drf_properties.h5",firehoseR_path); 
    
     printf("RG: deleting old propeties file: %s\n",cleanup);
     int retcode = system(cleanup);
@@ -799,7 +832,7 @@ while(1)
 
   //  strcat(total_hdf5_path,"/");
   //  strcat(total_hdf5_path, hdf5subdirectory);
-    printf("RG: Using compression level %i; Storing to: %s\n",compression_setting, total_hdf5_path);
+    printf("RG: Using compression level %i; Storing to: '%s'\n",compression_setting, total_hdf5_path);
     printf("RG: subdir cadence=%li,msec=%li, rate=%li,chnls=%i\n",subdir_cadence,milliseconds_per_file, sample_rate_numerator,bufferChannels);
 
     // Create the new DRF directory structure & properties file
