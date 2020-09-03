@@ -493,15 +493,15 @@ int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
   printf("ringbuffer_path=%s\n",ringbuffer_path);
 // store the list of file names in the RAMdisk
   sprintf(fcommand,"drf ls %s -r -s %s -e %s > %s/dataFileList", ringbuffer_path, startDT, endDT, pathToRAMdisk);
-  printf(" ** drf fcommand1='%s'\n",fcommand);
+  printf("M: ** drf fcommand1='%s'\n",fcommand);
   int retcode = system(fcommand);  // execute the command
-  printf("drf return code=%i\n",retcode);
+  printf("M: drf return code=%i\n",retcode);
 // build arguments for a script that will tar the files, saving
 // the compressed (tar) file in same location as the ringbuffer
   int num_items = rconfig("node",theNode,0);
   num_items = rconfig("grid",theGrid,0);
   strcpy(fn, (char *)buildFileName(theNode, theGrid));
-  sprintf(fcommand,"./filecompress.sh %s  %s/dataFileList %s ", ringbuffer_path, pathToRAMdisk, fn);
+  sprintf(fcommand,"./filecompress.sh %s  %s/dataFileList /media/usb0/uploadTemp/%s ", ringbuffer_path, pathToRAMdisk, fn);
   printf("** file compress command=%s\n",fcommand);
   retcode = retcode + system(fcommand); // execute the command
   printf("compress retcode = %i\n",retcode);
@@ -541,7 +541,8 @@ int getDataDates(char *input, char* startpoint, char* endpoint)
    j++;
    } 
   startpoint[j] = 0;
-  return(1);
+  printf("M: start %s, end %s \n",startpoint,endpoint);
+  return(1);  // here, 1 indicates successful
  }
 
 
@@ -801,7 +802,8 @@ void *dataUpload(void *threadid) {
   sprintf(uploadCommand,"lftp -e 'set net:limit-rate %s;mirror -R --Remove-source-files --verbose %s %s/sftp-test;exit' -u %s,%s sftp://%s >> %s/upload.log",throttle,uploadPath,node,node,"odroid",hostURL,logPath);
   printf("Upload command=%s\n",uploadCommand);
   rc = system(uploadCommand);  // just do it
-
+  printf("M: Upload of ringbuffer data complete\n");
+  uploadInProgress = 0; // indicate that we are done
 }
 
 ///////////////////////// Discover HIPSDR compliant devices ///////////////
@@ -1138,9 +1140,9 @@ while(1)  // start of heartbeat loop
   int fc = 0;
   if(fc = getDataDates(response, &theStart[0], &theEnd[0]))
    {
-   printf("M: Received a DR data request from Central; fc=%i\n",fc);
+   printf("M: Received a DR data request from Central; fc=%i, u-i-p=%i\n",fc,uploadInProgress);
 
-   if(!uploadInProgress & fc == 0)
+   if(!uploadInProgress & fc == 1)
     {
     printf("M: preparing data\n");
     int rp = prep_data_files(theStart, theEnd, ringbuffer_path);

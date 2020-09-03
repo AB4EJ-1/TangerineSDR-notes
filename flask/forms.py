@@ -92,11 +92,11 @@ class ChannelControlForm(FlaskForm):
 class ThrottleControlForm(FlaskForm):
   throttle = SelectField('Bandwidth (bits/sec)', choices =
     [('Unlimited', 'Unlimited'),
-     ('10 kbps',  '10k'),
-     ('100 kbps', '100k'),
-     ('1 Mbps',   '1M'),
-     ('10 Mbps',  '10M'),
-     ('100 Mbps', '100M')])
+     ('10000',  '10k'),
+     ('100000', '100k'),
+     ('1000000',   '1M'),
+     ('10000000',  '10M'),
+     ('100000000', '100M')])
   submit = SubmitField("Set Bandwidth")
 
 class CallsignForm(FlaskForm):
