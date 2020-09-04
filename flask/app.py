@@ -898,8 +898,10 @@ def notification():
       smtptimeout = smtptimeout, smtpuid = smtpuid,
       smtppw = smtppw, status = theStatus)
 
+
+
 @app.route("/propagation",methods=['POST','GET'])
-def propagation():
+def propagation():   
    global theStatus, theDataStatus
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
@@ -914,14 +916,14 @@ def propagation():
      form.antennaport5.data =     parser['settings']['ftant5']
      form.antennaport6.data =     parser['settings']['ftant6']
      form.antennaport7.data =     parser['settings']['ftant7']
-     ft80f =     parser['settings']['ft80f'] 
-     ft81f =     parser['settings']['ft81f'] 
-     ft82f =     parser['settings']['ft82f']
-     ft83f =     parser['settings']['ft83f']
-     ft84f =     parser['settings']['ft84f']
-     ft85f =     parser['settings']['ft85f']
-     ft86f =     parser['settings']['ft86f']
-     ft87f =     parser['settings']['ft87f']
+     form.ft80f.data        =     parser['settings']['ft80f'] 
+     form.ft81f.data        =     parser['settings']['ft81f'] 
+     form.ft82f.data        =     parser['settings']['ft82f']
+     form.ft83f.data        =     parser['settings']['ft83f']
+     form.ft84f.data        =     parser['settings']['ft84f']
+     form.ft85f.data        =     parser['settings']['ft85f']
+     form.ft86f.data        =     parser['settings']['ft86f']
+     form.ft87f.data        =     parser['settings']['ft87f']
      if(parser['settings']['psk_upload'] == "On"):
        psk = True
        form.pskindicator.data = True
@@ -932,15 +934,8 @@ def propagation():
        
      return render_template('ft8setup.html',
   #    pskindicator = psk,
-      form  = form,
-      ft80f = ft80f,
-	  ft81f = ft81f,
-      ft82f = ft82f,
-	  ft83f = ft83f, 
-	  ft84f = ft84f, 
-	  ft85f = ft85f,
-	  ft86f = ft86f, 
-	  ft87f = ft87f  )
+      form  = form
+      )
 
    if request.method == 'POST':
      result = request.form
@@ -950,21 +945,21 @@ def propagation():
      else:
        print("F: POST ringbufferPath =", result.get('ringbufferPath'))
        parser.set('settings', 'ftant0',            form.antennaport0.data)
-       parser.set('settings', 'ft80f',            str(result.get('ft80f')))
+       parser.set('settings', 'ft80f',             form.ft80f.data)
        parser.set('settings', 'ftant1',            form.antennaport1.data)
-       parser.set('settings', 'ft81f',            str(result.get('ft81f')))
+       parser.set('settings', 'ft81f',             form.ft81f.data)
        parser.set('settings', 'ftant2',            form.antennaport2.data)
-       parser.set('settings', 'ft82f',            str(result.get('ft82f')))
+       parser.set('settings', 'ft82f',             form.ft82f.data)
        parser.set('settings', 'ftant3',            form.antennaport3.data)
-       parser.set('settings', 'ft83f',            str(result.get('ft83f')))
+       parser.set('settings', 'ft83f',             form.ft83f.data)
        parser.set('settings', 'ftant4',            form.antennaport4.data)
-       parser.set('settings', 'ft84f',            str(result.get('ft84f')))
+       parser.set('settings', 'ft84f',             form.ft84f.data)
        parser.set('settings', 'ftant5',            form.antennaport5.data)
-       parser.set('settings', 'ft85f',            str(result.get('ft85f')))
+       parser.set('settings', 'ft85f',             form.ft85f.data)
        parser.set('settings', 'ftant6',            form.antennaport6.data)
-       parser.set('settings', 'ft86f',            str(result.get('ft86f')))
+       parser.set('settings', 'ft86f',             form.ft86f.data)
        parser.set('settings', 'ftant7',            form.antennaport7.data)
-       parser.set('settings', 'ft87f',            str(result.get('ft87f')))  
+       parser.set('settings', 'ft87f',             form.ft87f.data)  
        if(form.pskindicator.data == True):
          parser.set('settings','psk_upload', "On")
        else:
@@ -994,16 +989,109 @@ def propagation():
      else:
        form.pskindicator.data = False
      return render_template('ft8setup.html',
-      form = form,
-      ft80f = ft80f,
-	  ft81f = ft81f,
-      ft82f = ft82f, 
-	  ft83f = ft83f,
-	  ft84f = ft84f, 
-	  ft85f = ft85f, 
-	  ft86f = ft86f, 
-	  ft87f = ft87f  )
+      form = form
+      )
 
+
+@app.route("/propagation2",methods=['POST','GET'])
+def propagation2():
+   global theStatus, theDataStatus
+   form = ChannelControlForm()
+   parser = configparser.ConfigParser(allow_no_value=True)
+   parser.read('config.ini')
+   psk = False
+   if request.method == 'GET':
+     form.antennaport0.data =     parser['settings']['wsant0']
+     form.antennaport1.data =     parser['settings']['wsant1']
+     form.antennaport2.data =     parser['settings']['wsant2']
+     form.antennaport3.data =     parser['settings']['wsant3']
+     form.antennaport4.data =     parser['settings']['wsant4']
+     form.antennaport5.data =     parser['settings']['wsant5']
+     form.antennaport6.data =     parser['settings']['wsant6']
+     form.antennaport7.data =     parser['settings']['wsant7']
+     form.ws0f.data         =     parser['settings']['ws0f'] 
+     form.ws1f.data         =     parser['settings']['ws1f'] 
+     form.ws2f.data         =     parser['settings']['ws2f']
+     form.ws3f.data         =     parser['settings']['ws3f']
+     form.ws4f.data         =     parser['settings']['ws4f']
+     form.ws5f.data         =     parser['settings']['ws5f']
+     form.ws6f.data         =     parser['settings']['ws6f']
+     form.ws7f.data         =     parser['settings']['ws7f']
+     if(parser['settings']['wspr_upload'] == "On"):
+       wspr = True
+       form.wsprindicator.data = True
+       print("F: user set upload wspr = On")
+     else:
+       wspr = False
+       form.wsprindicator.data = False
+       print("user set upload wspr=Off")
+       
+     return render_template('wsprsetup.html',
+  #    pskindicator = psk,
+      form  = form
+      )
+
+   if request.method == 'POST':
+     result = request.form
+     print("F: result=", result.get('csubmit'))
+     if result.get('csubmit') == "Discard Changes":
+       print("F: CANCEL")
+     else:
+
+       parser.set('settings', 'wsant0',            form.antennaport0.data)
+       parser.set('settings', 'ws0f',              form.ws0f.data)
+       parser.set('settings', 'wsant1',            form.antennaport1.data)
+       parser.set('settings', 'ws1f',              form.ws1f.data)
+       parser.set('settings', 'wsant2',            form.antennaport2.data)
+       parser.set('settings', 'ws2f',              form.ws2f.data)
+       parser.set('settings', 'wsant3',            form.antennaport3.data)
+       parser.set('settings', 'ws3f',              form.ws3f.data)
+       parser.set('settings', 'wsant4',            form.antennaport4.data)
+       parser.set('settings', 'ws4f',              form.ws4f.data)
+       parser.set('settings', 'wsant5',            form.antennaport5.data)
+       parser.set('settings', 'ws5f',              form.ws5f.data)
+       parser.set('settings', 'wsant6',            form.antennaport6.data)
+       parser.set('settings', 'ws6f',              form.ws6f.data)
+       parser.set('settings', 'wsant7',            form.antennaport7.data)
+       parser.set('settings', 'ws7f',              form.ws7f.data)   
+       if(form.wsprindicator.data == True):
+         parser.set('settings','wspr_upload', "On")
+       else:
+         parser.set('settings','wspr_upload', "Off")
+       fp = open('config.ini','w')
+       parser.write(fp)
+       fp.close()
+
+     form.antennaport0.data =     parser['settings']['wsant0']
+     form.antennaport1.data =     parser['settings']['wsant1']
+     form.antennaport2.data =     parser['settings']['wsant2']
+     form.antennaport3.data =     parser['settings']['wsant3']
+     form.antennaport4.data =     parser['settings']['wsant4']
+     form.antennaport5.data =     parser['settings']['wsant5']
+     form.antennaport6.data =     parser['settings']['wsant6']
+     form.antennaport7.data =     parser['settings']['wsant7']
+     ws0f =     parser['settings']['ws0f']
+     ws1f =     parser['settings']['ws1f']
+     ws2f =     parser['settings']['ws2f']
+     ws3f =     parser['settings']['ws3f']
+     ws4f =     parser['settings']['ws4f']
+     ws5f =     parser['settings']['ws5f']
+     ws6f =     parser['settings']['ws6f']
+     ws7f =     parser['settings']['ws7f']
+     if(parser['settings']['wspr_upload'] == "On"):
+       form.wsprindicator.data = True
+     else:
+       form.wsprindicator.data = False
+     return render_template('wsprsetup.html',
+      form = form
+      )
+
+
+
+
+
+# The following is called by a java script in tangerine.html for showing the
+# most recent number of FT8 spots by band
 @app.route('/_ft8list')
 def ft8list():
   ft8string = ""

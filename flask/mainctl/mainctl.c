@@ -500,6 +500,11 @@ int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
 // the compressed (tar) file in same location as the ringbuffer
   int num_items = rconfig("node",theNode,0);
   num_items = rconfig("grid",theGrid,0);
+
+// add command here to mkdir directory upload_path in case it is not there
+// then, refer to that in the filecompress command
+
+
   strcpy(fn, (char *)buildFileName(theNode, theGrid));
   sprintf(fcommand,"./filecompress.sh %s  %s/dataFileList /media/usb0/uploadTemp/%s ", ringbuffer_path, pathToRAMdisk, fn);
   printf("** file compress command=%s\n",fcommand);

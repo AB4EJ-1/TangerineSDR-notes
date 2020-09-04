@@ -12,7 +12,7 @@
 	     <hr class="tanger"><a href="/">
 		    <b style="font-size: 60px">TangerineSDR</b><br> </a>
 		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project</div>
-            <div style="font-size: 24px"><strong>FT8 Setup</strong></div>
+            <div style="font-size: 24px"><strong>WSPR Setup</strong></div>
 	     <hr class="tanger">
 	    </div>
 	</td>
@@ -26,13 +26,13 @@
       <center>
       To make a channel active, select antenna#; otherwise, set to off.
       </center>
-      <form action = "/propagation" method = "POST">
+      <form action = "/propagation2" method = "POST">
 	  <table style="margin-left:200px" border = "1" width=70% > 
 </td>
      <td><input type = "submit" name = "csubmit" value = "Save Changes" />  
          <input type = "submit" name = "csubmit" value = "Discard Changes" /></p>  
 </td>
-	<form action = "/propagation" method = "post">
+	<form action = "/propagation2" method = "post">
 	  <table style="margin-left:200px" border = "1" width=70% > 
 	  <tr><font color="white">
        <th style="width:50px" >Channel</th>
@@ -43,50 +43,50 @@
 
 	   <td>0</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport0 }} </td>
-	   <td style="width:50px">{{ form.ft80f }}  </td>
+	   <td style="width:50px">{{ form.ws0f }}  </td>
 
 	 <tr>
 	   <td>1</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport1 }} </td>
-	   <td style="width:50px">{{ form.ft81f }} </td>
+	   <td style="width:50px">{{ form.ws1f }}</td>
 
 	 <tr>
 	   <td>2</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport2 }} </td>
-	   <td style="width:50px">{{ form.ft82f }}  </td>
+	   <td style="width:50px">{{ form.ws2f }}</td>
 
 	 <tr>
 	   <td>3</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport3 }} </td>>
-	   <td style="width:50px">{{ form.ft83f }} </td>
+	   <td style="width:50px">{{ form.ws3f }} </td>
 
 	 <tr>
 	   <td>4</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport4 }} </td>>
-	   <td style="width:50px">{{ form.ft84f }}  </td>
+	   <td style="width:50px">{{ form.ws4f }}</td>
 
 	 <tr>
 	   <td>5</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport5 }} </td>
-	   <td style="width:50px">{{ form.ft85f }}  </td>
+	   <td style="width:50px">{{ form.ws5f }} </td>
 
 	 <tr>
 	   <td>6</td>{{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport6 }} </td>td>
-	   <td style="width:50px">{{ form.ft86f }}  </td>
+	   <td style="width:50px">{{ form.ws6f }} </td>
 
 	 <tr>
 	   <td>7</td> {{ form.hidden_tag() }} 
 	   <td style="width:50px">{{ form.antennaport7 }} </td>
-	   <td style="width:50px">{{ form.ft87f }}  </td>
+	   <td style="width:50px">{{ form.ws7f }}</td>
 
 	  </table>   
 
            </td>
   </tbody>
       <center><tr><font color="black">
-        <label class "psk checkbox">
-        {{ form.pskindicator }}Enable PSK Reporter Spotting<br>
+        <label class "wspr checkbox">
+        {{ form.wsprindicator }}Upload spots to WSPRNet<br>
            
         </label>
       </center>

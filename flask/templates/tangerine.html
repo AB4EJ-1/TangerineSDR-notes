@@ -45,9 +45,8 @@ setInterval("updateList()",15000)
    	    <div class="bgtangerine">
 	     <hr class="tanger">
 		    <b style="font-size: 60px">TangerineSDR</b><br> 
-		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project (version 0)</div>
-            <br></br>
-            <div style="font-size: 24px">Main Control Panel</div>
+		    <div style="font-size: 30px">a TAPR Modular Scientific Software Defined Radio Project (version 0.10)</div>
+            <div style="font-size: 24px"><strong>Main Control Panel</strong></div>
 	     <hr class="tanger">
 	    </div>
 	</td>
@@ -71,16 +70,23 @@ setInterval("updateList()",15000)
 		<td>Data Collection</td>
 	   <td>{{ form.dataStat }}</td>  
 	  </table>
-		   <p style="margin-left:200px" class="links"><b><a href="/config">Configure System</a> &nbsp; &nbsp; &nbsp;
-		   <a href="/TangerineSDR_documents/">Central Control System</a>
-		   </b></p>
-           <p style="margin-left:200px" class="links"><b><a href="/restart">Start/restart Main Control</a> (Please allow 7 seconds) &nbsp; &nbsp; &nbsp;
-           <a href="/propagation">Local Propagation Analyzer</a>
-           </b></p>
-    <form style="width:500px;margin-left:200px" width = 90% action = "/" method = post>
+      <fieldset style="width:900px; margin-left:200px; font-size: 14px" align="right">
+            <legend>Configure</legend>
+		 <p style="margin-left:10px" class="links"><b><a href="/config">User Profile</a> &nbsp; &nbsp; &nbsp;
+		 <a href="/TangerineSDR_documents/">Central Control System</a> &nbsp; &nbsp;
+         <a href="/desetup">Data Collection Setup</a> &nbsp;
+         <a href="/throttle">Throttling Setup</a></b></p>
+		 <p style="margin-left:10px" class="links"><b><a href="/callsign">Callsign/Grid Monitor Setup</a>&nbsp; &nbsp;
+		 <a href="/index.html">Magnetometer Setup/Test</a> &nbsp;&nbsp;
+         <a href="/notification">Notification Setup</a></b></p>
+         <p style="margin-left:10px" class="links"><b><a href="/restart">Start/restart Main Control</a> (Please allow 7 seconds) &nbsp; &nbsp; &nbsp;
+         <a href="/propagation">FT8 Setup</a>&nbsp; &nbsp;
+         <a href="/propagation2">WSPR Setup</a></b></p>
+     </fieldset>
+     <form style="width:500px;margin-left:200px" width = 90% action = "/" method = post>
        <table>
         <td> 
-         <fieldset style="width:300px" align="center" >
+         <fieldset style="width:300px" align="left" >
             <legend>Data Collection</legend>
             {{ form.hidden_tag() }}    
             <div style = font-size:15px; font-weight:bold; margin-left:100px;>
