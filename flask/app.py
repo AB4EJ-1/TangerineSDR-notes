@@ -71,6 +71,8 @@ STOP_DATA_COLL     = "XC"
 DEFINE_FT8_CHAN    = "FT"
 START_FT8_COLL     = "SF"
 STOP_FT8_COLL      = "XF"
+START_WSPR_COLL    = "SW"
+STOP_WSPR_COLL     = "XW"
 LED_SET            = "SB"  
 UNLINK             = "UL"
 HALT_DE            = "XX"
@@ -200,16 +202,23 @@ def send_channel_config():  # send channel configuration command to DE
 
 
 #####################################################################
-# Here is the home page
+# Here is the home page (Tangerine.html)
 @app.route("/", methods = ['GET', 'POST'])
 def sdr():
    form = MainControlForm()
    global theStatus, theDataStatus, tcp_client
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
-  # print("CSRF time limit=" + WTF_CSRF_TIME_LIMIT + " ;")
+
    if request.method == 'GET':  
-  #   form.mode.data = parser['settings']['mode']
+     if(parser['settings']['FT8_mode'] == "On"):
+       form.propFT.data = True
+     else:
+       form.propFT.data  = False
+     if(parser['settings']['WSPR_mode'] == "On"):
+       form.propWS.data = True
+     else:
+       form.propWS.data  = False
      if(parser['settings']['ringbuffer_mode'] == "On"):
        form.modeR.data = True
      else:
@@ -270,6 +279,16 @@ def sdr():
         parser.set('settings','firehoser_mode','On')
       else:
         parser.set('settings','firehoser_mode','Off')
+
+      if(form.propFT.data == True):
+        parser.set('settings','FT8_mode','On')
+      else:
+        parser.set('settings','FT8_mode','Off')
+
+      if(form.propWS.data == True):
+        parser.set('settings','WSPR_mode','On')
+      else:
+        parser.set('settings','WSPR_mode','Off')
 
       fp = open('config.ini','w')
       parser.write(fp)
@@ -344,12 +363,18 @@ def sdr():
             dataCollStatus = 0
 
       if(form.startprop.data):
+        if(form.propFT.data == True):
             send_to_mainctl(START_FT8_COLL,0)
-            thePropStatus = 0
+        if(form.propWS.data == True):
+            send_to_mainctl(START_WSPR_COLL,0)
+        thePropStatus = 1
 
       if(form.stopprop.data) :
-             send_to_mainctl(STOP_FT8_COLL,0)
-             thePropStatus = 0
+        if(form.propFT.data == True):
+            send_to_mainctl(STOP_FT8_COLL,0)
+        if(form.propWS.data == True):
+            send_to_mainctl(STOP_WSPR_COLL,0)
+        thePropStatus = 0
 
       print("F: end of control loop; theStatus=", theStatus)
       form.destatus = theStatus
@@ -375,7 +400,7 @@ def restart():
 #   check_status_once()
    print("RESTART: status = ",theStatus, " received = ", received)
 #
-   time.sleep(2);
+   time.sleep(4);
     # Initialize a TCP client socket using SOCK_STREAM 
    try:
      print("F: define socket")

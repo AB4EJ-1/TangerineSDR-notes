@@ -207,7 +207,12 @@ void sendCommandToDE(int channelNo, char command[2]) {
         printf("s1 bind error\n");
       }
 
-    printf("M: sending %s\n",cmdBuf.cmd);
+
+    printf("M: now, channelNo = %i, DE_CONF_IN_port[channelNo] = %i\n",channelNo, DE_CONF_IN_port[channelNo]);
+    
+    si_DE.sin_port = htons(DE_CONF_IN_port[channelNo]);  // in case it was reset
+    printf("M: after assignment, si_DE.sin_port = %i\n",(int)ntohs(si_DE.sin_port));
+    printf("M: sending %s to port %d, addr %s\n",cmdBuf.cmd, (int)ntohs(si_DE.sin_port), inet_ntoa(si_DE.sin_addr));
     socklen_t sil = sizeof(si_DE);
 		//send the message
  //   if (sendto(s, &cmdBuf, sizeof(cmdBuf) , 0 , (struct sockaddr *) &si_DE, sizeof(si_DE)) <0 )
@@ -405,7 +410,8 @@ void *  processUserActions(void *threadid){
           rt = system(mkcommand);
           printf("M: retcode = %i\n",rt);
 
-
+         // The command to DE to start data collection for any mode is SC;
+         // The different modes are each associated with a specific channel.
           memcpy(&cmdBuf.cmd, "SC",2);
           cmdBuf.channelNo = 1;  // this is for FT8-type data
           }
@@ -419,17 +425,15 @@ void *  processUserActions(void *threadid){
         if (memcmp (cmdBuf.cmd, START_WSPR_COLL, 2) == 0)
           {
           cmdBuf.channelNo = 2;  // this is for WSPR-type data
+          memcpy(&cmdBuf.cmd, "SC",2);
+  // here add code to start WSPR decoder
           }
 
-/*
-        if(n<4)
+        if (memcmp (cmdBuf.cmd, STOP_WSPR_COLL, 2) == 0)
           {
-          cmdBuf.channelNo = 0; // for testing with nc, zero out channelNo
+          cmdBuf.channelNo = 2;  // this is for WSPR-type data
+          memcpy(&cmdBuf.cmd, "XC",2);
           }
-        printf("Command is: %s for channel# %i\n",cmdBuf.cmd,cmdBuf.channelNo);
-*/
-
-
 
 
         char commandToSend[2];
@@ -504,7 +508,6 @@ int prep_data_files(char *startDT, char *endDT, char *ringbuffer_path)
 // add command here to mkdir directory upload_path in case it is not there
 // then, refer to that in the filecompress command
 
-
   strcpy(fn, (char *)buildFileName(theNode, theGrid));
   sprintf(fcommand,"./filecompress.sh %s  %s/dataFileList /media/usb0/uploadTemp/%s ", ringbuffer_path, pathToRAMdisk, fn);
   printf("** file compress command=%s\n",fcommand);
@@ -556,7 +559,7 @@ int getDataDates(char *input, char* startpoint, char* endpoint)
 /////////   Function to build channel config (CH) request & pass to DE  ////
 int makeCHrequest(int channelNo){
   int myretcode = -1;
-  printf("M: Build CH request\n");
+  printf("M: Build CH request, channel %i\n",channelNo);
   struct channelBuf chBuf;         // create & initialize channel description
   char b[sizeof(CHANNELBUF)];      // so we can copy to this later
   char target[20];
@@ -622,7 +625,7 @@ int makeCHrequest(int channelNo){
         chBuf.channelDef[i].channelFreq = (double)atof(configresult);
         }
       }  // end of subchannel for loop
-
+    chBuf.channelNo = 0;  // temp for debugging
     }  // end of handling channel zero
 
   if(channelNo == 1)  // this is a FT8-type channel
@@ -661,16 +664,63 @@ int makeCHrequest(int channelNo){
           }
         }
       }
+    chBuf.channelNo = 1;  // temp for debugging
     }  // end of handling channel 1
 
+// Note: a channel setup call must be done for a mode when user starts data collection
+// on that mode, so that (a) if user has changed frequency or other setting, it takes effect;,
+// and (b) channel setup should be done only for the mode(s) user has started so that
+// any already-running data collection is not disturbed.
+  if(channelNo == 2)  // this is a WSPR-type channel
+    {
+    memcpy(chBuf.VITA_type,"V4",2);  // specify standard VITA-49
+    int channelCount = 0;
+    // determine how many subchannels are configured
+    chBuf.channelDatarate = 375;   // hard coded for FT8 decoder
+    chBuf.activeSubChannels = 0;
 
+
+
+
+    for(int i=0;i < 8;i++) {
+      sprintf(target,"wsant%i",i);
+      num_items = rconfig(target,configresult,0);
+      if(num_items == 0)
+        {
+        printf("ERROR - wsant%i setting not found in config.ini\n",i);
+        }
+      else
+        {
+        printf("ftant%i CONFIG RESULT = '%s'\n",i,configresult);
+        if(memcmp(configresult, "Off",1) == 0)  // if this channel turned off,
+          continue;                             //  skip it 
+        chBuf.activeSubChannels++;
+        chBuf.channelDef[i].antennaPort = atoi(configresult);  // get antenna port
+        chBuf.channelDef[i].subChannelNo = i;
+        sprintf(target,"ws%if",i);  // now look for the frequency of this subchannel
+        num_items = rconfig(target,configresult,0);
+        if(num_items == 0)
+          {
+          printf("ERROR - ws%if setting not found in config.ini\n",i);
+          }
+        else
+          {
+          printf("ws%if CONFIG RESULT = '%s'\n",i,configresult);
+       // TODO: the following probably needs to be multiplied by 1,000,000.0
+          chBuf.channelDef[i].channelFreq = (double) atof(configresult);
+          }
+        }
+      }
+
+    chBuf.channelNo = 2;  // temp for debugging
+    }  // end of handling channel 2
 
   // send CH command to Port D
     struct sockaddr_in si_DE;
     struct sockaddr_in si_LH;
 
     int s, s1;
-    printf("define socket\n");
+    printf("M: CH: define socket\n");
     if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
 	  {
 	  	printf("socket s error");
@@ -693,14 +743,14 @@ int makeCHrequest(int channelNo){
 	  }
     si_LH.sin_addr.s_addr = htonl(INADDR_ANY);
  // Prep to receive AK from DE
-    printf("Bind to port for receiving AK or NK from DE\n");
+    printf("M: CH: Bind to port %i for receiving AK or NK from DE\n",DE_CONF_IN_port[channelNo]);
     if( bind(s1, (struct sockaddr*)&si_LH, sizeof(si_LH)) == -1)
       {
         printf("s1 bind error\n");
      //   die("s1 bind error");
       }
 
-    printf("send\n");
+    printf("M: send\n");
 		//send the message
     if (sendto(s, &chBuf, sizeof(chBuf) , 0 , (struct sockaddr *) &si_DE, sizeof(si_DE))==-1)
 		{
@@ -718,7 +768,7 @@ int makeCHrequest(int channelNo){
          }
     else
          {
-         printf("Received %s from DE at %s:%d\n",replyBuf.cmd, inet_ntoa(si_DE.sin_addr),
+         printf("M: Received %s from DE at %s:%d\n",replyBuf.cmd, inet_ntoa(si_DE.sin_addr),
                 ntohs(si_DE.sin_port));
 
          if (memcmp(replyBuf.cmd,"AK",2) == 0)  // did we get AK from DE?
@@ -1662,8 +1712,8 @@ int main(int argc, char *argv[]) {
     strcpy(firehoseR_path,configresult);
     } 
 
-  // Send CREATE CHANNEL to DE for up to 3 channels  TODO: add WSPR
-  for(int channel=0;channel < 2;channel++)
+  // Send CREATE CHANNEL to DE for up to 3 channels 
+  for(int channel=0;channel < 3;channel++)
     {
     DE_CONF_IN_port[channel] = 0;
     printf("Create Channel %i request\n", channel);
@@ -1672,12 +1722,30 @@ int main(int argc, char *argv[]) {
     }
   // send CONFIGURE CHANNELS to set up the created channels
   int crc;
-  for(int channel=0;channel < 2;channel++)
+
+/*
+  for(int channel=0;channel < 4;channel++)
     {
     crc = makeCHrequest(channel);
-    printf("Config channel rc for channel %i = %i\n",channel, rc);
-    sleep(0.2);
+    printf("M: CONFIGURE CHANNEL command for channel %i, rc = %i\n",channel, rc);
+    sleep(0.1);
     }
+*/
+    printf("M: makeCHrequest for channel 2\n");
+    crc = makeCHrequest(2);
+    printf("M: CONFIGURE CHANNEL command for channel 2, rc = %i\n", rc);
+    sleep(0.2);
+
+    printf("M: makeCHrequest for channel 1\n");
+    crc = makeCHrequest(1);
+    printf("M: CONFIGURE CHANNEL command for channel 1, rc = %i\n",rc);
+    sleep(0.2);
+
+    printf("M: makeCHrequest for channel 0\n");
+    crc = makeCHrequest(0);
+    printf("M: CONFIGURE CHANNEL command for channel 0, rc = %i\n",rc);
+    sleep(0.2);
+
 
     int hbrc = 0;
     long h;
