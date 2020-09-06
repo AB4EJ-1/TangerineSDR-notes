@@ -37,6 +37,7 @@
 #define UDPPORT 7100
 #define FLEXFT_IN 7790
 #define FLEXDATA_IN 7791
+#define FLEXWSPR_IN 7792
 
 struct flexDataSample
   {
@@ -74,6 +75,7 @@ struct sockaddr_in portF_addr;
 
 int sock;
 int sockft8out;
+int sockwsprout;
 int sock1;
 int sock2;
 int sock3;
@@ -113,6 +115,138 @@ static uint16_t DE_CONF_IN_port;  // port B ; DE listens for config request on t
 static uint16_t LH_DATA_IN_port;  // port F; LH listens for spectrum data on this port
 static uint16_t DE_CH_IN_port;    // port D; DE listens channel setup on this port
 static uint16_t LH_DATA_OUT_port; // for sending (outbound) data (e.g., mic audio) to DE
+
+/////////////////////////////////////////////////////////////////////
+void *sendwsprflex(void * threadid){
+
+  fd_set readfd;
+  int count;
+  int streamNo = 0;
+  ft8active = 1;
+  printf("in Flex wspr thread; init sock4\n");
+  sock4 = socket(AF_INET, SOCK_DGRAM, 0);
+  printf("after socket assign, sock4= %i\n",sock4);
+  if(sock4 < 0) {
+    printf("sock4 error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
+  int yes = 1;  // make socket re-usable
+  if(setsockopt(sock4, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+   printf("sock4: Error setting sock option SO_REUSEADDR\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+   }
+
+  printf("sock4 created\n");
+  int addr_len = sizeof(struct sockaddr_in);
+  memset((void*)&flex_addr, 0, addr_len);
+  flex_addr.sin_family = AF_INET;
+  flex_addr.sin_addr.s_addr = htons(INADDR_ANY);
+  flex_addr.sin_port = htons(FLEXWSPR_IN);
+  printf("bind sock4\n:");
+  int ret = bind(sock4, (struct sockaddr*)&flex_addr, addr_len);
+  if (ret < 0){
+    printf("bind error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+     }
+  FD_ZERO(&readfd);
+  FD_SET(sock4, &readfd);
+  printf("in flex WSPR thread read from port %i\n",FLEXWSPR_IN);
+ // client_addr.sin_port = htons(LH_DATA_IN_port);
+// temporary hard code for ft8 port testing
+  client_addr2.sin_family = AF_INET;
+  client_addr2.sin_addr.s_addr = client_addr.sin_addr.s_addr;
+  client_addr2.sin_port = htons(40006);
+ ret = 1;
+
+// note that this clears all copies of ft8buffer_out
+ memset(&ft8buffer_out,0,sizeof(ft8buffer_out));
+ uint64_t samplecount = 0;  // number of IQ samples processed from input
+ uint64_t totaloutputbuffercount[4];  // number of buffers sent
+ uint64_t totalinputsamplecount[4];
+ int outputbuffercount[4];
+ for (int i = 0; i < 4; i++)
+   {
+   outputbuffercount[i] = 0;
+   totaloutputbuffercount[i] = 0;
+   totalinputsamplecount[i] = -1;  // so that first increment goes to zero
+   }
+
+ while(1==1) {  // repeating loop
+
+   if(stopwspr)
+	 {
+     puts("wspr UDP thread end; close sock4");
+     ft8active = 0;
+     close(sock4);
+	 pthread_exit(NULL);
+	 }
+
+ // if(ret > 0){
+  // if (FD_ISSET(sock4, &readfd)){
+  //  printf("try read\n");
+    count = recvfrom(sock4, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
+
+    streamNo = (int16_t)iqbuffer2.stream_ID[3];
+ 
+// build ft8buffer header
+
+   memcpy(ft8buffer_out[streamNo].VITA_hdr1, iqbuffer2.VITA_hdr1,sizeof(iqbuffer2.VITA_hdr1));
+   ft8buffer_out[streamNo].stream_ID[0] = 0x46;    // F
+   ft8buffer_out[streamNo].stream_ID[1] = 0x54;    // T
+   ft8buffer_out[streamNo].stream_ID[2] = iqbuffer2.stream_ID[2]; // copy from input
+   ft8buffer_out[streamNo].stream_ID[3] = iqbuffer2.stream_ID[3]; // copy from input
+   ft8buffer_out[streamNo].VITA_packetsize = sizeof(ft8buffer_out[0]);
+   ft8buffer_out[streamNo].time_stamp = (uint32_t)time(NULL);
+   ft8buffer_out[streamNo].sample_count = totaloutputbuffercount[streamNo];
+
+  for(int inputbuffercount =0; inputbuffercount < 512; inputbuffercount++)
+   {
+   totalinputsamplecount[streamNo]++;  // goes to zero on first buffer
+   if((totalinputsamplecount[streamNo] % 128) != 0)  // crummy decimation; DE should do correctly
+     continue;
+   // inputbuffercount is multiple of 12 (or zero); save it
+   
+   ft8buffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].I_val = iqbuffer2.flexDataSample[inputbuffercount].I_val;
+   ft8buffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].Q_val = iqbuffer2.flexDataSample[inputbuffercount].Q_val;
+
+    outputbuffercount[streamNo]++;
+
+    if(outputbuffercount[streamNo] >= 1024)  // have we filled the output buffer?
+     {
+      printf("wspr: try to send, streamNo = %i \n",streamNo);
+
+      int sentBytes = sendto(sockwsprout, (const struct dataBuf *)&ft8buffer_out[streamNo], sizeof(ft8buffer_out[0]), 0, 
+	      (struct sockaddr*)&client_addr2, sizeof(client_addr2));
+       outputbuffercount[streamNo] = 0;
+       totaloutputbuffercount[streamNo] ++;
+   //    printf("sent bytes %i\n",sentBytes);
+      }
+
+    }  // end of inputbuffercount loop (512 samples in the flex IQ packet)
+
+
+    
+ //   }  // after FD_ISSET
+ //  }  // end of if statement on return code from socket setup (if ret)
+  } // end of repeating loop
+
+ }  // end of function
+
+
+
+
+
+
 
 /////////////////////////////////////////////////////////////////////
 void *sendFT8flex(void * threadid){
@@ -647,6 +781,15 @@ int *run_DE(void)
     return (ptoi);
     }
 
+  sockwsprout = socket(AF_INET, SOCK_DGRAM, 0);  // for sending wspr data
+  if (sockwsprout < 0) {
+    perror("sockwsprout error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
   addr_len = sizeof(struct sockaddr_in);
   memset((void*)&server_addr, 0, addr_len);
   server_addr.sin_family = AF_INET;
@@ -836,6 +979,25 @@ printf("I think it is: %c %c \n",bufstr[0],bufstr[1]);
       continue;
      }
 
+printf("check for SW \n");
+printf("I think it is: %c %c \n",bufstr[0],bufstr[1]);
+//       for getting flex FT 8 data
+    if(memcmp(bufstr, "SW",2)==0)  // Flex data
+     {
+      printf("Start FlexRadio / wspr command received; starting thread\n");
+      stopft8 = 0;
+      pthread_t thread1;
+      int rc = pthread_create(&thread1, NULL, sendwsprflex, NULL);
+      continue;
+     }
+
+printf("check for XW \n");
+    if(memcmp(bufstr, "XW",2)==0)
+      {
+      printf("Stop wspr command received\n");
+      stopwspr = 1;
+      continue;
+      }
 
 
 
