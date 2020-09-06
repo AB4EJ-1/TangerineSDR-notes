@@ -172,7 +172,6 @@ while ((read = getline(&line, &len, fp)) != -1) {
 
 
 
-
 ///////////////////////////////////////////////////////////////////////////
 ///////// Thread for uploading firehoseR data to Central Control //////////
 void firehose_uploader(void *threadid) {
@@ -296,17 +295,16 @@ void sendCommandToDE(int channelNo, char command[2]) {
 		}
 
     ssize_t recv_len = 0;
-    printf("M: waiting for AK or other DE response, on port %i\n",ntohs(si_LH.sin_port));
+    printf("M: waiting DE response, on port %i\n",ntohs(si_LH.sin_port));
     int addr_len = sizeof(struct sockaddr_in);
 
     memset(&buf,0,sizeof(buf));
 
     printf("M: now: recvfrom (coming from DE)\n");
 
-// Unexplained result here - the DE returns AK, and it is in the buffer, but
-//  recv_len is set to zero. It should return buffer length.
-// Zero may indicate the socket is closed (maybe by the other system?)
-
+// recv_len of zero generally indicates the socket is closed.
+// This can happen if app.py closes connection or tries to open a new connection
+// when one is already established (if that happens, it indicates a bug in app.py)
 
     if (recv_len = recvfrom(s1, buf, 2, 0, (struct sockaddr *) &si_LH, 
                &addr_len) < 0)
@@ -330,7 +328,7 @@ void sendCommandToDE(int channelNo, char command[2]) {
             printf("Received OK from DE\n");
             DE_OK = 1;
             } 
-
+// TODO: here need code to forward any AK reecived to app.py to update status
          if(memcmp(&buf,DATARATE_RESPONSE,2) == 0)
            {
            printf("M: DR detected\n");
@@ -352,20 +350,16 @@ void sendCommandToDE(int channelNo, char command[2]) {
                replyBuf.dataRate[i].rateValue); 
              dataRatesReceived = i;
              }
-         //  dataRatesReceived = 1;
+         
            }
          }
-
-
 
     close(s);
     close(s1);
     puts("M: Sending of command to DE completed");
   // end of code to send command to Port D
 
-
 }
-
 
 
 /////////////////////////////////////////////////////////////////
@@ -439,7 +433,6 @@ void *  processUserActions(void *threadid){
         printf("M: Received %li bytes from client starting with %x %x\n", n, cmdBuf.cmd[0], cmdBuf.cmd[1]); 
 
 
-
         if (memcmp (cmdBuf.cmd, START_DATA_COLL, 2) == 0)
           {
           cmdBuf.channelNo = 0;  // this is for ringbuffer-type data
@@ -465,6 +458,28 @@ void *  processUserActions(void *threadid){
 
         if (memcmp (cmdBuf.cmd, START_FT8_COLL, 2) == 0)  // SF
           {
+
+          printf("M: process command to start FT8\n");
+          char mkcommand[20] = "mkdir ";
+          strcat(mkcommand,pathToRAMdisk);
+          strcat(mkcommand,"/FT8");
+
+          printf("M: issue command: %s\n",mkcommand);
+          int rt = system(mkcommand);
+          strcpy(mkcommand,"rm ");
+          strcat(mkcommand,pathToRAMdisk);
+          strcat(mkcommand,"/FT8/*.*");
+
+          printf("M: issue command: %s\n",mkcommand);
+          rt = system(mkcommand);
+          strcpy(mkcommand,"killall -9 ft8rcvr");  // halt any existing instance(s)
+          printf("M: issue command: %s\n",mkcommand);
+          rt = system(mkcommand);
+          strcpy(mkcommand,"./ft8rcvr &");  // start instance of receiver
+          printf("M: issue command: %s\n",mkcommand);
+          rt = system(mkcommand);
+
+
           memcpy(&cmdBuf.cmd, "SC",2);
           cmdBuf.channelNo = 1;  // this is for FT8-type data
           }
