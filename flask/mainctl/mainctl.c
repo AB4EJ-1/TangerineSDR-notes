@@ -415,6 +415,7 @@ void *  processUserActions(void *threadid){
           memcpy(&cmdBuf.cmd, "SC",2);
           cmdBuf.channelNo = 1;  // this is for FT8-type data
           }
+
         if (memcmp (cmdBuf.cmd, STOP_FT8_COLL, 2) == 0)
           {
           memcpy(&cmdBuf.cmd, "XC",2);
@@ -424,15 +425,45 @@ void *  processUserActions(void *threadid){
 
         if (memcmp (cmdBuf.cmd, START_WSPR_COLL, 2) == 0)
           {
+
+         
+          printf("M: process command to start WSPR rcvr\n");
+          char mkcommand[40] = "mkdir ";
+          strcat(mkcommand,pathToRAMdisk);
+          strcat(mkcommand,"/WSPR");
+
+          printf("M: issue command: %s\n",mkcommand);
+          int rt = system(mkcommand);
+          strcpy(mkcommand,"rm ");
+          strcat(mkcommand,pathToRAMdisk);
+          strcat(mkcommand,"/WSPR/*.*");
+
+          printf("M: issue command: %s\n",mkcommand);
+          rt = system(mkcommand);
+          strcpy(mkcommand,"killall -9 wsprrcvr");  // halt any existing instance(s)
+          printf("M: issue command: %s\n",mkcommand);
+          rt = system(mkcommand);
+          strcpy(mkcommand,"./mainctl/wsprrcvr &");  // start instance of receiver
+          printf("M: issue command: %s\n",mkcommand);
+          rt = system(mkcommand);
+          printf("M: retcode = %i\n",rt);
+
+         // The command to DE to start data collection for any mode is SC;
+         // The different modes are each associated with a specific channel.
+
           cmdBuf.channelNo = 2;  // this is for WSPR-type data
           memcpy(&cmdBuf.cmd, "SC",2);
-  // here add code to start WSPR decoder
+
           }
 
         if (memcmp (cmdBuf.cmd, STOP_WSPR_COLL, 2) == 0)
           {
+          char mkcommand[20] = "";
           cmdBuf.channelNo = 2;  // this is for WSPR-type data
           memcpy(&cmdBuf.cmd, "XC",2);
+          strcpy(mkcommand,"killall -9 wsprrcvr");  // halt any existing instance(s)
+          printf("M: issue command: %s\n",mkcommand);
+          int rt = system(mkcommand);
           }
 
 
@@ -671,6 +702,7 @@ int makeCHrequest(int channelNo){
 // on that mode, so that (a) if user has changed frequency or other setting, it takes effect;,
 // and (b) channel setup should be done only for the mode(s) user has started so that
 // any already-running data collection is not disturbed.
+
   if(channelNo == 2)  // this is a WSPR-type channel
     {
     memcpy(chBuf.VITA_type,"V4",2);  // specify standard VITA-49
@@ -678,9 +710,6 @@ int makeCHrequest(int channelNo){
     // determine how many subchannels are configured
     chBuf.channelDatarate = 375;   // hard coded for FT8 decoder
     chBuf.activeSubChannels = 0;
-
-
-
 
     for(int i=0;i < 8;i++) {
       sprintf(target,"wsant%i",i);
