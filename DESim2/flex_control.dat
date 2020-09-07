@@ -1,8 +1,11 @@
+nc 192.168.1.66 4992
 c0|client udpport 7790
 c1|stream create daxiq=1 port=7790
 c2|stream create daxiq=2 port=7790
 c3|client udpport 7791
 c4|stream create daxiq=3 port=7791
+c5|client udpport 7792
+c6|stream create daxiq=4 port 7792
 
 c5|stream remove 0x20000000
 
