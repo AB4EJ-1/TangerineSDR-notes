@@ -171,7 +171,8 @@ int main() {
       sprintf(channel_no,"ws%if",i);
       num_items = rconfig(channel_no,configresult,0);
       if(num_items == 1)
-        dialfreq[i] = atof(configresult) * 1000000;
+        dialfreq[i] = atof(configresult);
+        idialfreq = atoi(configresult);
         printf("dialfreq %i %f \n",i,dialfreq[i]);
       }
      }
@@ -220,7 +221,7 @@ int main() {
      int seconds = info->tm_sec;
      int minute = info->tm_min;
      printf("WSPR countdown = %i:%i \n",minute,seconds);
-     if(minute % 2 == 0 && (seconds == 0 | seconds == 1 | seconds == 2) )  // is it the top of an even minute?
+     if(minute % 2 == 0 && (seconds == 1 | seconds == 2 | seconds == 3) )  // is it the top of an even minute?
       {
       recording_active = 1; // start recording
       }
@@ -281,7 +282,8 @@ int main() {
        // c2 header
        fwrite(zeros, 1,14, fp[streamID]);
        fwrite(&type, 1, 4, fp[streamID]);
-       double dialfreq1 = dialfreq[streamID];
+       double dialfreq1 = dialfreq[0];  // TODO: temporary
+       printf("WSRC: freq = %f\n",dialfreq[0]);  // TODO: temp value
        fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
 
 
@@ -321,17 +323,26 @@ int main() {
            printf("WSPR decoding...\n");
            char chstr[4];
            sprintf(chstr,"%i",streamID);
-           char mycmd[100];
+           char mycmd[200];
  
            int ret = system(mycmd);
 
-           sprintf(mycmd,"./wsprd -JC 5000 %s > %s/WSPR/decoded%i.txt",name[streamID],pathToRAMdisk,streamID);
+           sprintf(mycmd,"./wsprd -JC 5000 -f %f %s > %s/WSPR/decoded%i.txt",dialfreq[streamID],name[streamID],pathToRAMdisk,streamID);
            printf("issue command: %s\n",mycmd);
            // Note: this assumes that decoder (wsprd_del) deletes work file when done.
            ret = system(mycmd);
            printf("wspr decode ran, rc = %i\n",ret);
-           sprintf(mycmd,"cat /mnt/RAM_disk/WSPR/decoded3.txt  >> /mnt/RAM_disk/WSPR/decode_hist.txt");
+         // for complete list of all WSPR decodes, see /home/odroid/projects/TangerineSDR-notes/flask/ALL_WSPR.TXT
+         //  sprintf(mycmd,"cat /mnt/RAM_disk/WSPR/decoded3.txt  >> /mnt/RAM_disk/WSPR/decode_hist.txt");
+         //  ret = system(mycmd);
+
+           sprintf(mycmd,"sort -nr -k 4,4 %s/WSPR/decoded%i.txt | awk '!seen[$1\"_\"$2\"_\"int($6)\"_\"$7] {print} {++seen[$1\"_\"$2\"_\"int($6)\"_\"$7]}' | sort -n -k 1,1 -k 2,2 -k 6,6 -o  %s/WSPR/decoded%iz.txt",pathToRAMdisk,streamID,pathToRAMdisk,streamID);
            ret = system(mycmd);
+           printf("issue command: %s\n",mycmd);
+           sprintf(mycmd,"curl -sS -m 30 -F allmept=@\"%s/WSPR/decoded%iz.txt\" -F call=AB4EJ -F grid=EM63fj https://wsprnet.org/meptspots.php", pathToRAMdisk,streamID);
+           ret = system(mycmd);
+           printf("issue command: %s\n",mycmd);
+
            recording_active = 0;
 
 /*
