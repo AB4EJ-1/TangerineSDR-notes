@@ -30,6 +30,7 @@
 #include <math.h>
 #include <complex.h>
 #include "de_signals.h"
+#include <pthread.h>
 
 // #define PORT	 40003   // TODO: needs to be computed/configurable
 #define BUFSIZE  8300
@@ -47,6 +48,7 @@ struct tm *gmt;
 FILE *fp[8];
 float complex IQval;
 double dialfreq[8];  // array of dial frequencies for wspr
+int idialfreq[8];
 
 int wspractive[8];    // flag to indicate if a given wspr channel is collecting data
 int wsprcounter[8];   // counter of how many wspr samples saved in this collection period
@@ -56,18 +58,71 @@ int upload = 0;      // set to 1 if user wants to upload spots to PSKReporter
 float chfrequency[8];
 int wspractive[8];      // indicates if wspr has started for this streamNo
 
-//static char pathToRAMdisk[100] = "/mnt/RAM_disk";  // temp hard-coded
+static char pathToRAMdisk[100];
 
 extern char rconfig(char * arg, char * result, int testThis);
 
+
+///////////////////////////////////////////////////////////////////////////////
+void *  processWorkfile(void * streamID){
+ // int streamIDt = *((int *) streamID);
+  int streamIDt = (uint64_t)streamID;
+
+  printf("Start processWorkfile thread, stream %i\n", streamIDt);
+  
+
+
+       //   printf("WSPR decoding...\n");
+           char chstr[4];
+           sprintf(chstr,"%i",streamIDt);
+           char mycmd[200];
+ 
+           int ret = system(mycmd);
+
+           sprintf(mycmd,"./wsprd -JC 5000 -f %f %s > %s/WSPR/decoded%i.txt",dialfreq[streamIDt],name[streamIDt],pathToRAMdisk,streamIDt);
+           printf("issue command: %s\n",mycmd);
+           // Note: this assumes that decoder (wsprd_del) deletes work file when done.
+           ret = system(mycmd);
+           printf("wspr decode ran, rc = %i\n",ret);
+
+ // TODO: following section to run only if wspr_upload = On in config.ini
+
+         // for complete list of all WSPR decodes, see /home/odroid/projects/TangerineSDR-notes/flask/ALL_WSPR.TXT
+
+           sprintf(mycmd,"sort -nr -k 4,4 %s/WSPR/decoded%i.txt | awk '!seen[$1\"_\"$2\"_\"int($6)\"_\"$7] {print} {++seen[$1\"_\"$2\"_\"int($6)\"_\"$7]}' | sort -n -k 1,1 -k 2,2 -k 6,6 -o  %s/WSPR/decoded%iz.txt",pathToRAMdisk,streamIDt,pathToRAMdisk,streamIDt);
+           printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+
+           sprintf(mycmd,"curl -sS -m 30 -F allmept=@\"%s/WSPR/decoded%iz.txt\" -F call=AB4EJ -F grid=EM63fj https://wsprnet.org/meptspots.php", pathToRAMdisk,streamIDt);
+           printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+           sprintf(mycmd,"rm %s",name[streamIDt]);  // delete the work file
+           printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+
+
+printf("End of processingWorkfile, stream %i\n",streamIDt);
+
+
+
+
+
+
+
+} // end of processWorkfile thread
+
+
+
+
+
 int main() { 
 
-  char pathToRAMdisk[100];
+ // char pathToRAMdisk[100];
   char configresult[100];
   char mycallsign[20];
   char mygrid[20];
-  char myantenna0[50];  // there is length limit on these in upload-to-pskreporter
-  char myantenna1[50];
+//  char myantenna0[50];  // there is length limit on these in upload-to-pskreporter
+ // char myantenna1[50];
   // for c2 header
   char zeros[15] = "000000_000.c2";
   int32_t type = 2;
@@ -110,6 +165,7 @@ int main() {
     } 
   printf("grid =%s\n",mygrid);
 
+/*
   num_items = rconfig("antenna0",configresult,0);
   if(num_items == 0)
     {
@@ -121,21 +177,22 @@ int main() {
     strcpy(myantenna0,configresult);
     } 
   printf("antenna0 =%s\n",myantenna0);
+*/
 
-  num_items = rconfig("psk_upload",configresult,0);
+  num_items = rconfig("wspr_upload",configresult,0);
   if(num_items == 0)
     {
-    printf("ERROR - psk_upload setting not found in config.ini\n");
+    printf("ERROR - wspr_upload setting not found in config.ini\n");
     }
   else
     {
-    printf("psk_upload CONFIG RESULT = '%s'\n",configresult);
+    printf("wspr_upload CONFIG RESULT = '%s'\n",configresult);
     if(strncmp(configresult, "On", 2) == 0)
       upload = 1;
     else
       upload = 0;
     } 
-  printf("antenna0 =%s\n",myantenna0);
+
 
     num_items = rconfig("dataport2",configresult,0);
     LH_DATA_IN_port = atoi(configresult);
@@ -145,44 +202,42 @@ int main() {
     int streamID = 0;
 	int sockfd; 
 	struct sockaddr_in servaddr, cliaddr; 
-    int idialfreq = 0;
 
     for(int i=0; i<8; i++)  // Go thru 8 possible channels & set up
       {
       wspractive[i] = 0;  // mark them all inactive to start
       inputcount[i] = 0;
-      char channel_no[8];
+      char subchannel_no[8];
       char result[5]="";
-      sprintf(channel_no,"wsant%i",i);
-
-
-  num_items = rconfig(channel_no,configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - channel setting not found in config.ini\n");
-    }
-  else
-    {
-    printf("%s CONFIG RESULT = '%s'\n",channel_no,configresult);
-    strcpy(result,configresult);
-     
-    if(strncmp(result,"0",1) == 0 | strncmp(result,"1",1) ==0)
-      {
-      sprintf(channel_no,"ws%if",i);
-      num_items = rconfig(channel_no,configresult,0);
-      if(num_items == 1)
-        dialfreq[i] = atof(configresult);
-        idialfreq = atoi(configresult);
-        printf("dialfreq %i %f \n",i,dialfreq[i]);
-      }
-     }
-    }
+      // here we check to see which WSPR antenna ports are set to 0 to 1 (i.e., not Off)
+      sprintf(subchannel_no,"wsant%i",i);
+      num_items = rconfig(subchannel_no,configresult,0);
+      if(num_items == 0)
+        {
+        printf("ERROR - channel setting not found in config.ini\n");
+        }
+      else
+        {
+        printf("%s CONFIG RESULT = '%s'\n",subchannel_no,configresult);
+        strcpy(result,configresult);
+     // Get the dial freq. for activated subchannels
+        if(strncmp(result,"0",1) == 0 | strncmp(result,"1",1) ==0)
+          {
+          sprintf(subchannel_no,"ws%if",i);
+          num_items = rconfig(subchannel_no,configresult,0);
+          if(num_items == 1)
+            dialfreq[i] = atof(configresult);
+            idialfreq[i] = atoi(configresult);  // integer value of this for use in file name
+            printf("WSPR dialfreq %i %f \n",i,dialfreq[i]);
+          }
+         }
+      }  // end of loop for going thru channels
 
 	// Create socket file descriptor 
 	if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
 		perror("socket creation failed"); 
 		exit(EXIT_FAILURE); 
-	} 
+	  } 
 	
 	memset(&servaddr, 0, sizeof(servaddr)); 
 	memset(&cliaddr, 0, sizeof(cliaddr)); 
@@ -204,9 +259,13 @@ int main() {
 
 	len = sizeof(cliaddr); //len is value/resuslt 
 
-
    time_t rawtime;
    struct tm * info ;
+
+// The following while loop processes all packets coming in to this LH_DATA_in port.
+// There may be multiple streams (each one has its own stream ID); these are handled
+// as subchannels of WSPR data. The 4th byte (wsprbuffer.stream_ID[3]) is stream ID,
+// which is standard location for this in VITA format.
 
     while(1) // loop until process is killed
      {
@@ -214,14 +273,20 @@ int main() {
 	  n = recvfrom(sockfd, &wsprbuffer, BUFSIZE, 
 				MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
 				&len);
-     streamID = (int)wsprbuffer.stream_ID[3];  // TODO: check this, it is hard coded
+     streamID = (int)wsprbuffer.stream_ID[3];  
      
      time(&rawtime);
      info = gmtime(&rawtime);
      int seconds = info->tm_sec;
      int minute = info->tm_min;
-     printf("WSPR countdown = %i:%i \n",minute,seconds);
-     if(minute % 2 == 0 && (seconds == 1 | seconds == 2 | seconds == 3) )  // is it the top of an even minute?
+     int countdownMin = 0;
+     if(minute % 2 == 0)
+       { countdownMin = 1; }
+
+     int countdownSec = 60 - seconds;
+     printf("WSPR decoding for stream %i will start in %i min. %i sec.\n",streamID,countdownMin,countdownSec);
+    // we start recording if this buffer was created at top of an even minute
+     if(minute % 2 == 0 && (seconds == 1 | seconds == 2 | seconds == 3) ) 
       {
       recording_active = 1; // start recording
       }
@@ -231,37 +296,31 @@ int main() {
       }
     
     int first_buffer = 1;
-    while(recording_active)
+    while(recording_active)  // this loop processes all packets for the 2 min. recording interval
      {
-     if(!first_buffer)
-       {
+     if(!first_buffer)  // do we already have the first packet?
+       {  // this gets all remaining packets after the first
 	   n = recvfrom(sockfd, &wsprbuffer, BUFSIZE, 
 				MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
 				&len);
-      streamID = (int)wsprbuffer.stream_ID[3];  // TODO: check this, it is hard coded
+      streamID = (int)wsprbuffer.stream_ID[3];  // we will interleave packets when > 1 channel running.
        }
       else
        {
        printf("In recording_active section\n");
+       first_buffer = 0;  // set so that subsequent passes thru loop do the recvfrom
        }
     
-      first_buffer = 0;
-
      time(&rawtime);
      info = gmtime(&rawtime);
      int seconds = info->tm_sec;
      int minute = info->tm_min;
 
-
-     printf("WSRC: time: %i:%i sample count %i\n",minute,seconds,wsprcounter[streamID]);
-     
-     
-	// printf("streamID : %i\n", (int)wsprbuffer.stream_ID[3]); 
-     // do this for the first sample
+     printf("WSRC: time: %i:%i streamID %i,sample count %i\n",minute,seconds,streamID,wsprcounter[streamID]);
+    
+     // do this for the first packet of each subchannel
      if(wspractive[streamID] == 0) //this wspr stream not yet active
       {
-
-
        wspractive[streamID] = 1;   // mark this wspr stream as active
        wsprcounter[streamID] = 0;            // zero this counter
        inputcount[streamID] = 0;
@@ -270,8 +329,8 @@ int main() {
        t = time(NULL);
        if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
-        strftime(date, 12, "%y%m%d_%H%M", gmt);
-        sprintf(name[streamID], "%s/WSPR/wspr_%i_%i_%d_%s.c2", pathToRAMdisk, streamID, idialfreq,1,date); 
+       strftime(date, 12, "%y%m%d_%H%M", gmt);
+       sprintf(name[streamID], "%s/WSPR/wspr_%i_%i_%d_%s.c2", pathToRAMdisk, streamID, idialfreq[streamID],1,date); 
 
        printf("create raw data WSPR file %s\n",name[streamID]);
        if((fp[streamID] = fopen(name[streamID], "wb")) == NULL)
@@ -282,14 +341,15 @@ int main() {
        // c2 header
        fwrite(zeros, 1,14, fp[streamID]);
        fwrite(&type, 1, 4, fp[streamID]);
-       double dialfreq1 = dialfreq[0];  // TODO: temporary
-       printf("WSRC: freq = %f\n",dialfreq[0]);  // TODO: temp value
-       fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
-
+       double dialfreq1 = dialfreq[streamID-1];  // TODO: this may change with Tangerine DE; check
+       printf("WSRC: stream ID %i freq = %f\n",streamID,dialfreq[streamID-1]); 
+       fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]); // write dial freq into work file
 
        }
+
   // when we drop thru to here, we are ready to start recording data
 
+       // process the 1024 complex samples in this packet
        for(int i=0; i < 1024 && wsprcounter[streamID] <= WSPRFSIZE; i++)   // go thru input buffer
          {
          inputcount[streamID]++;
@@ -303,7 +363,6 @@ int main() {
          if(wsprcounter[streamID] >= WSPRFSIZE)   // have we filled output?
            {
 
- 
            if(wsprcounter[streamID] >= (WSPRFSIZE+3000))  // have we already done this?
              {
              break;
@@ -318,8 +377,14 @@ int main() {
 
            wspractive[streamID] = 0;  // mark it inactive
            fclose(fp[streamID]);
-         // trigger processing of the wspr data file
+           uint64_t arg = streamID;
+           pthread_t thread;
+           pthread_create(&thread, 0, processWorkfile, (void *) arg);
 
+
+
+         // trigger processing of the wspr data file
+/*
            printf("WSPR decoding...\n");
            char chstr[4];
            sprintf(chstr,"%i",streamID);
@@ -332,47 +397,25 @@ int main() {
            // Note: this assumes that decoder (wsprd_del) deletes work file when done.
            ret = system(mycmd);
            printf("wspr decode ran, rc = %i\n",ret);
+
+ // TODO: following section to run only if wspr_upload = On in config.ini
+
          // for complete list of all WSPR decodes, see /home/odroid/projects/TangerineSDR-notes/flask/ALL_WSPR.TXT
-         //  sprintf(mycmd,"cat /mnt/RAM_disk/WSPR/decoded3.txt  >> /mnt/RAM_disk/WSPR/decode_hist.txt");
-         //  ret = system(mycmd);
 
            sprintf(mycmd,"sort -nr -k 4,4 %s/WSPR/decoded%i.txt | awk '!seen[$1\"_\"$2\"_\"int($6)\"_\"$7] {print} {++seen[$1\"_\"$2\"_\"int($6)\"_\"$7]}' | sort -n -k 1,1 -k 2,2 -k 6,6 -o  %s/WSPR/decoded%iz.txt",pathToRAMdisk,streamID,pathToRAMdisk,streamID);
-           ret = system(mycmd);
            printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+
            sprintf(mycmd,"curl -sS -m 30 -F allmept=@\"%s/WSPR/decoded%iz.txt\" -F call=AB4EJ -F grid=EM63fj https://wsprnet.org/meptspots.php", pathToRAMdisk,streamID);
-           ret = system(mycmd);
            printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+           sprintf(mycmd,"rm %s",name[streamID]);  // delete the work file
+           printf("issue command: %s\n",mycmd);
+           ret = system(mycmd);
+
+*/
 
            recording_active = 0;
-
-/*
-           if(upload == 1)
-             {
-             printf("Upload to PSKReporter\n");
-             sprintf(mycmd,"./mainctl/upload-to-pskreporter %s %s %s %s/wspr/decoded%d.txt", 
-                mycallsign, mygrid, myantenna0, pathToRAMdisk, streamID);
-             ret = system(mycmd);
-             printf("psk upload ran, rc = %i\n",ret);
-             }
-*/
-/*
-    do  {  // wait unti top of next even minute
-       time_t rawtime;
-       struct tm * info ;
-       time(&rawtime);
-       info = gmtime(&rawtime);
-       int seconds = info->tm_sec;
-       int minute = info->tm_min;
-       printf("WRCVR: countdown to start WSPR %i:%i\n",minute,seconds);
-       if (seconds == 0 && minute % 2 == 0)
-         {
-         break;
-         }
-       sleep(1);
-
-        } while(1);
-*/
-
 
           
            }

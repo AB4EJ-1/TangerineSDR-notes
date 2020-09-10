@@ -13,5 +13,5 @@ ft8rcvr: ft8rcvr.c
 	gcc ft8rcvr.c readconfig.c -o ft8rcvr  -I/home/odroid/projects/TangerineSDR-notes/includes -lconfig
 
 wsprrcvr: wsprrcvr.c
-	gcc wsprrcvr.c readconfig.c -o wsprrcvr  -I/home/odroid/projects/TangerineSDR-notes/includes -lconfig
+	gcc wsprrcvr.c readconfig.c -o wsprrcvr  -I/home/odroid/projects/TangerineSDR-notes/includes -lconfig -lpthread
 
