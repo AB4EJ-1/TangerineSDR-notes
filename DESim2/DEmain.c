@@ -81,6 +81,7 @@ int sock2;
 int sock3;
 int sock5;
 static int sock4;
+static int sock6;
 long cmdthreadID;
 int CCport;
 int cmdport;
@@ -123,11 +124,11 @@ void *sendwsprflex(void * threadid){
   int count;
   int streamNo = 0;
   ft8active = 1;
-  printf("in Flex wspr thread; init sock4\n");
-  sock4 = socket(AF_INET, SOCK_DGRAM, 0);
-  printf("after socket assign, sock4= %i\n",sock4);
-  if(sock4 < 0) {
-    printf("sock4 error\n");
+  printf("in Flex wspr thread; init sock6\n");
+  sock6 = socket(AF_INET, SOCK_DGRAM, 0);
+  printf("after socket assign, sock6= %i\n",sock6);
+  if(sock6 < 0) {
+    printf("sock6 error\n");
     int r=-1;
     int *ptoi;
     ptoi = &r;
@@ -135,22 +136,22 @@ void *sendwsprflex(void * threadid){
     }
 
   int yes = 1;  // make socket re-usable
-  if(setsockopt(sock4, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
-   printf("sock4: Error setting sock option SO_REUSEADDR\n");
+  if(setsockopt(sock6, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+   printf("sock6: Error setting sock option SO_REUSEADDR\n");
     int r=-1;
     int *ptoi;
     ptoi = &r;
     return (ptoi);
    }
 
-  printf("sock4 created\n");
+  printf("sock6 created\n");
   int addr_len = sizeof(struct sockaddr_in);
   memset((void*)&flex_addr, 0, addr_len);
   flex_addr.sin_family = AF_INET;
   flex_addr.sin_addr.s_addr = htons(INADDR_ANY);
   flex_addr.sin_port = htons(FLEXWSPR_IN);
-  printf("bind sock4\n:");
-  int ret = bind(sock4, (struct sockaddr*)&flex_addr, addr_len);
+  printf("bind sock6\n:");
+  int ret = bind(sock6, (struct sockaddr*)&flex_addr, addr_len);
   if (ret < 0){
     printf("bind error\n");
     int r=-1;
@@ -159,7 +160,7 @@ void *sendwsprflex(void * threadid){
     return (ptoi);
      }
   FD_ZERO(&readfd);
-  FD_SET(sock4, &readfd);
+  FD_SET(sock6, &readfd);
   printf("in flex WSPR thread read from port %i\n",FLEXWSPR_IN);
  // client_addr.sin_port = htons(LH_DATA_IN_port);
 // temporary hard code for ft8 port testing
@@ -185,16 +186,16 @@ void *sendwsprflex(void * threadid){
 
    if(stopwspr)
 	 {
-     puts("wspr UDP thread end; close sock4");
+     puts("wspr UDP thread end; close sock6");
      ft8active = 0;
-     close(sock4);
+     close(sock6);
 	 pthread_exit(NULL);
 	 }
 
  // if(ret > 0){
-  // if (FD_ISSET(sock4, &readfd)){
+  // if (FD_ISSET(sock6, &readfd)){
   //  printf("try read\n");
-    count = recvfrom(sock4, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
+    count = recvfrom(sock6, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
 
     streamNo = (int16_t)iqbuffer2.stream_ID[3];
  
@@ -766,6 +767,15 @@ int *run_DE(void)
   sock5 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port 
   if (sock5 < 0) {
     perror("sock5 error\n");
+    int r=-1;
+    int *ptoi;
+    ptoi = &r;
+    return (ptoi);
+    }
+
+  sock6 = socket(AF_INET, SOCK_DGRAM, 0);  // for reply via Port 
+  if (sock6 < 0) {
+    perror("sock6 error\n");
     int r=-1;
     int *ptoi;
     ptoi = &r;
