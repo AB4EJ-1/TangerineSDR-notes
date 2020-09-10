@@ -236,7 +236,7 @@ int main() {
          { fprintf(stderr,"Could not open file %s \n",name[streamID]);
           return -1;
          }
-       double dialfreq1 = dialfreq[streamID];
+       double dialfreq1 = dialfreq[streamID-1];  // streamIDs start with 1, list with 0 (TODO: may change with TangerineDE)
        fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
        }
   // when we drop thru to here, we are ready to start recording data
@@ -274,7 +274,7 @@ int main() {
            char mycmd[100];
  
            int ret = system(mycmd);
-
+           // Format of the upload file:   see https://pskreporter.info/pskdev.html
            sprintf(mycmd,"./ft8d_del %s > %s/FT8/decoded%i.txt",name[streamID],pathToRAMdisk,streamID);
            printf("issue command: %s\n",mycmd);
            // Note: this assumes that decoder (ft8d_del) deletes work file when done.
@@ -285,6 +285,7 @@ int main() {
              printf("Upload to PSKReporter\n");
              sprintf(mycmd,"./mainctl/upload-to-pskreporter %s %s %s %s/FT8/decoded%d.txt", 
                 mycallsign, mygrid, myantenna0, pathToRAMdisk, streamID);
+             printf("Issue command: %s\n",mycmd);
              ret = system(mycmd);
              printf("psk upload ran, rc = %i\n",ret);
              }
