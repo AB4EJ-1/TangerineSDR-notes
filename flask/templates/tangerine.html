@@ -92,7 +92,7 @@ setInterval("updateList()",15000)
             <div style = font-size:15px; font-weight:bold; margin-left:100px;>
                {{ form.modeR }}Ringbuffer<br>
                {{ form.modeS }}Snapshotter<br>
-               {{ form.modeF }}Continuous Upload<br>
+               {{ form.modeF }}Continuous Upload(Firehose-R)<br>
               <input type = "submit" name = "csubmit" value = "Save" />
                {{ form.startDC }}
                {{ form.stopDC  }}
@@ -115,7 +115,7 @@ setInterval("updateList()",15000)
          <td>
          <fieldset style="width:350px;margin-right:100px;" align = "left">
           <legend>FT8 spots by band</legend>
-             <div style = "font-size:15px;margin-left:10px;
+             <div style = "font-size:15px;margin-left:2px;
                height:150px;width:300px;overflow:auto;" ><font size="2" face=" Courier New">
                   <span id=result></span>  
                <br><br>

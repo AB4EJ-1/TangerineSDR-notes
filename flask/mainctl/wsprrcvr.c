@@ -56,7 +56,7 @@ int inputcount[8];
 int upload = 0;      // set to 1 if user wants to upload spots to PSKReporter
 
 float chfrequency[8];
-int wspractive[8];      // indicates if wspr has started for this streamNo
+
 
 static char pathToRAMdisk[100];
 
@@ -71,7 +71,6 @@ void *  processWorkfile(void * streamID){
   printf("Start processWorkfile thread, stream %i\n", streamIDt);
   
 
-
        //   printf("WSPR decoding...\n");
            char chstr[4];
            sprintf(chstr,"%i",streamIDt);
@@ -79,7 +78,7 @@ void *  processWorkfile(void * streamID){
  
            int ret = system(mycmd);
 
-           sprintf(mycmd,"./wsprd -JC 5000 -f %f %s > %s/WSPR/decoded%i.txt",dialfreq[streamIDt],name[streamIDt],pathToRAMdisk,streamIDt);
+           sprintf(mycmd,"nice -n10 ./wsprd -JC 5000 -f %f %s > %s/WSPR/decoded%i.txt",dialfreq[streamIDt],name[streamIDt],pathToRAMdisk,streamIDt);
            printf("issue command: %s\n",mycmd);
            // Note: this assumes that decoder (wsprd_del) deletes work file when done.
            ret = system(mycmd);
@@ -89,30 +88,20 @@ void *  processWorkfile(void * streamID){
 
          // for complete list of all WSPR decodes, see /home/odroid/projects/TangerineSDR-notes/flask/ALL_WSPR.TXT
 
-           sprintf(mycmd,"sort -nr -k 4,4 %s/WSPR/decoded%i.txt | awk '!seen[$1\"_\"$2\"_\"int($6)\"_\"$7] {print} {++seen[$1\"_\"$2\"_\"int($6)\"_\"$7]}' | sort -n -k 1,1 -k 2,2 -k 6,6 -o  %s/WSPR/decoded%iz.txt",pathToRAMdisk,streamIDt,pathToRAMdisk,streamIDt);
+           sprintf(mycmd,"nice -n10 sort -nr -k 4,4 %s/WSPR/decoded%i.txt | awk '!seen[$1\"_\"$2\"_\"int($6)\"_\"$7] {print} {++seen[$1\"_\"$2\"_\"int($6)\"_\"$7]}' | sort -n -k 1,1 -k 2,2 -k 6,6 -o  %s/WSPR/decoded%iz.txt",pathToRAMdisk,streamIDt,pathToRAMdisk,streamIDt);
            printf("issue command: %s\n",mycmd);
            ret = system(mycmd);
 
-           sprintf(mycmd,"curl -sS -m 30 -F allmept=@\"%s/WSPR/decoded%iz.txt\" -F call=AB4EJ -F grid=EM63fj https://wsprnet.org/meptspots.php", pathToRAMdisk,streamIDt);
+           sprintf(mycmd,"nice -n9 curl -sS -m 30 -F allmept=@\"%s/WSPR/decoded%iz.txt\" -F call=AB4EJ -F grid=EM63fj https://wsprnet.org/meptspots.php", pathToRAMdisk,streamIDt);
            printf("issue command: %s\n",mycmd);
            ret = system(mycmd);
            sprintf(mycmd,"rm %s",name[streamIDt]);  // delete the work file
            printf("issue command: %s\n",mycmd);
            ret = system(mycmd);
 
-
-printf("End of processingWorkfile, stream %i\n",streamIDt);
-
-
-
-
-
-
+           printf("End of processingWorkfile, stream %i\n",streamIDt);
 
 } // end of processWorkfile thread
-
-
-
 
 
 int main() { 
@@ -126,7 +115,7 @@ int main() {
   // for c2 header
   char zeros[15] = "000000_000.c2";
   int32_t type = 2;
-
+  int recording_active = 0;
   int num_items = 0;
   printf("wsprrcvr start\n");
   num_items = rconfig("ramdisk_path",configresult,0);
@@ -165,19 +154,6 @@ int main() {
     } 
   printf("grid =%s\n",mygrid);
 
-/*
-  num_items = rconfig("antenna0",configresult,0);
-  if(num_items == 0)
-    {
-    printf("ERROR - antenna0 setting not found in config.ini\n");
-    }
-  else
-    {
-    printf("antenna0 CONFIG RESULT = '%s'\n",configresult);
-    strcpy(myantenna0,configresult);
-    } 
-  printf("antenna0 =%s\n",myantenna0);
-*/
 
   num_items = rconfig("wspr_upload",configresult,0);
   if(num_items == 0)
@@ -269,12 +245,12 @@ int main() {
 
     while(1) // loop until process is killed
      {
-      int recording_active = 0;
+
 	  n = recvfrom(sockfd, &wsprbuffer, BUFSIZE, 
 				MSG_WAITALL, ( struct sockaddr *) &cliaddr, 
 				&len);
      streamID = (int)wsprbuffer.stream_ID[3];  
-     
+     recording_active = 0;
      time(&rawtime);
      info = gmtime(&rawtime);
      int seconds = info->tm_sec;
@@ -341,8 +317,8 @@ int main() {
        // c2 header
        fwrite(zeros, 1,14, fp[streamID]);
        fwrite(&type, 1, 4, fp[streamID]);
-       double dialfreq1 = dialfreq[streamID-1];  // TODO: this may change with Tangerine DE; check
-       printf("WSRC: stream ID %i freq = %f\n",streamID,dialfreq[streamID-1]); 
+       double dialfreq1 = dialfreq[streamID];  // TODO: this may change with Tangerine DE; check
+       printf("WSRC: stream ID %i freq = %f\n",streamID,dialfreq[streamID]); 
        fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]); // write dial freq into work file
 
        }
@@ -377,45 +353,26 @@ int main() {
 
            wspractive[streamID] = 0;  // mark it inactive
            fclose(fp[streamID]);
-           uint64_t arg = streamID;
-           pthread_t thread;
-           pthread_create(&thread, 0, processWorkfile, (void *) arg);
+
+
+        //   sprintf(mycmd,"nice -n10 ./wsprd -JC 5000 -f %f %s > %s/WSPR/decoded%i.txt",dialfreq[streamIDt],name[streamIDt],pathToRAMdisk,streamIDt);
 
 
 
-         // trigger processing of the wspr data file
-/*
-           printf("WSPR decoding...\n");
-           char chstr[4];
-           sprintf(chstr,"%i",streamID);
            char mycmd[200];
- 
+         //  int idialfreq = dialfreq[streamID];
+           sprintf(mycmd, "sh ./decode_and_send.sh %s %i %s %s %f %s  &",pathToRAMdisk,streamID,"AB4EJ","EM63fj",dialfreq[streamID],name[streamID]);
+      //     TODO: the above must use configured values
+           printf("WSRC: issue command %s\n",mycmd);
            int ret = system(mycmd);
+           printf("WSRC: decoding for stream %i started\n",streamID);
+           
 
-           sprintf(mycmd,"./wsprd -JC 5000 -f %f %s > %s/WSPR/decoded%i.txt",dialfreq[streamID],name[streamID],pathToRAMdisk,streamID);
-           printf("issue command: %s\n",mycmd);
-           // Note: this assumes that decoder (wsprd_del) deletes work file when done.
-           ret = system(mycmd);
-           printf("wspr decode ran, rc = %i\n",ret);
 
- // TODO: following section to run only if wspr_upload = On in config.ini
-
-         // for complete list of all WSPR decodes, see /home/odroid/projects/TangerineSDR-notes/flask/ALL_WSPR.TXT
-
-           sprintf(mycmd,"sort -nr -k 4,4 %s/WSPR/decoded%i.txt | awk '!seen[$1\"_\"$2\"_\"int($6)\"_\"$7] {print} {++seen[$1\"_\"$2\"_\"int($6)\"_\"$7]}' | sort -n -k 1,1 -k 2,2 -k 6,6 -o  %s/WSPR/decoded%iz.txt",pathToRAMdisk,streamID,pathToRAMdisk,streamID);
-           printf("issue command: %s\n",mycmd);
-           ret = system(mycmd);
-
-           sprintf(mycmd,"curl -sS -m 30 -F allmept=@\"%s/WSPR/decoded%iz.txt\" -F call=AB4EJ -F grid=EM63fj https://wsprnet.org/meptspots.php", pathToRAMdisk,streamID);
-           printf("issue command: %s\n",mycmd);
-           ret = system(mycmd);
-           sprintf(mycmd,"rm %s",name[streamID]);  // delete the work file
-           printf("issue command: %s\n",mycmd);
-           ret = system(mycmd);
-
-*/
-
-           recording_active = 0;
+           for(int i = 0; i < 8; i++)
+             {
+             recording_active = recording_active | wspractive[i];
+             }
 
           
            }

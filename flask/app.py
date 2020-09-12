@@ -4,6 +4,7 @@ import socket
 import _thread
 import time
 import os
+import os.path, time
 import subprocess
 from subprocess import Popen, PIPE
 import configparser
@@ -42,13 +43,20 @@ app.secret_key = 'development key'
 app.config.from_object(Config)
 csrf.init_app(app)
 
-global theStatus, theDataStatus, thePropStatus
-statusControl = 0
+global theStatus, theDataStatus, thePropStatus, statusmain
+global statusFT8, statusWSPR, statusRG, statusSnap, statusFHR
+# statusControl = 0
 received = ""
 dataCollStatus = 0;
 theStatus = "Not yet started"
 theDataStatus = ""
 thePropStatus = 0
+statusFT8 = 0
+statusWSPR = 0
+statusRG = 0
+statusSnap = 0
+statusFHR = 0
+statusmain = 0
 global tcp_client
 f = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
@@ -77,16 +85,6 @@ LED_SET            = "SB"
 UNLINK             = "UL"
 HALT_DE            = "XX"
 
-class hbThread (threading.Thread):
-   def __init__(self, threadID, name, counter):
-      threading.Thread.__init__(self)
-      self.threadID = threadID
-      self.name = name
-      self.counter = counter
-   def run(self):
-      print ("Starting " + self.name)
-      ping_mainctl()
-      print ("Exiting " + self.name)
 
 def is_numeric(s):
   try:
@@ -117,6 +115,8 @@ def send_to_mainctl(cmdToSend,waitTime):
      #  print("F: decoded:",d)
        print("F: buftype is '",received[0:2],"'")
        print("F: bytes=",received[0],"/",received[1],"/",received[2])
+       theStatus = "Active"
+       statusmain = 1
 #       print("find:",received[0:2].find("DR"))
        if(d.find("DR") !=  -1):
          print("F: DR buffer received")
@@ -206,7 +206,8 @@ def send_channel_config():  # send channel configuration command to DE
 @app.route("/", methods = ['GET', 'POST'])
 def sdr():
    form = MainControlForm()
-   global theStatus, theDataStatus, tcp_client
+   global theStatus, theDataStatus, tcp_client, statusmain
+   global statusFT8, statusWSPR, statusRG, statusSnap, statusFHR
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
 
@@ -243,14 +244,8 @@ def sdr():
       print("F: Main control POST; modeS=",form.modeS.data)
       print("F: Main control POST; modeF=",form.modeF.data)
       form.errline = ""
- #     if form.validate() == False:
- #        print("F: failed validation")
- #        flash('All fields are required.')
- #        return render_template('tangerine.html', form = form)
- #     else:
+
       result = request.form
-  #       print('F: mode set to:"',form.mode.data,'"')
-  #       parser.set('settings','mode',form.mode.data)  # update config file to reflect mode setting
 
  # Check for errors and missing configurations
 
@@ -258,6 +253,7 @@ def sdr():
         print("F: error - user selected both ringbuffer and firehose")
         form.errline = "Select EITHER Ringbuffer or Firehose mode"
         return render_template('tangerine.html', form = form)
+
 
 # Other checks to be added include - paths/directories exist for all selected outputs;
 #  URL for Central Control; at least one subchannel setup exists
@@ -305,6 +301,12 @@ def sdr():
 #        return  render_template('tangerine.html', form = form)
 
       if(form.startDC.data ): # User clicked button to start ringbuffer-type data collection
+
+            if(statusmain != 1):
+              print("F: user tried to start data collection before starting mainctl")
+              form.errline = "ERROR. You must Start/restart mainctl before starting data collection"
+              return render_template('tangerine.html', form = form)
+
             if   ( len(parser['settings']['firehoser_path']) < 1 
                    and form.mode.data == 'firehoseR') :
               print("F: configured temp firehose path='", parser['settings']['firehoser_path'],"'", len(parser['settings']['firehoser_path']))
@@ -335,6 +337,15 @@ def sdr():
           # This always refers to channel zero (i.e., subchannels supported)
            #   send_to_mainctl(START_DATA_COLL + "," + subdir,1)
               send_to_mainctl(START_DATA_COLL,1)
+              if(parser['settings']['snapshotter_mode'] == "On"):
+                statusSnap = 1
+              else:
+                statusSnap = 0 
+              if(parser['settings']['ringbuffer_mode'] == "On"):
+                statusRG = 1
+              else:
+                statusRG = 0 
+
               dataCollStatus = 1
 # write metadata describing channels into the drf_properties file
               ant = []
@@ -361,20 +372,47 @@ def sdr():
       if(form.stopDC.data ):
             send_to_mainctl(STOP_DATA_COLL,0.5)
             dataCollStatus = 0
+            statusRG = 0
 
-      if(form.startprop.data):
+      if(form.startprop.data):  # user hit button to start propagation monitoring
+
+        if(statusmain != 1):
+           print("F: user tried to start data collection before starting mainctl")
+           form.errline = "ERROR. You must Start/restart mainctl before starting FT8?WSPR"
+           return render_template('tangerine.html', form = form)
+
         if(form.propFT.data == True):
             send_to_mainctl(START_FT8_COLL,0)
+            statusFT8 = 1
         if(form.propWS.data == True):
             send_to_mainctl(START_WSPR_COLL,0)
+            statusWSPR = 1
         thePropStatus = 1
 
       if(form.stopprop.data) :
         if(form.propFT.data == True):
             send_to_mainctl(STOP_FT8_COLL,0)
+            statusFT8 = 0
         if(form.propWS.data == True):
             send_to_mainctl(STOP_WSPR_COLL,0)
+            statusWSPR = 0
         thePropStatus = 0
+
+      theDataStatus = ""
+   #   print("configured modes RG '"+parser['settings']['ringbuffer_mode']+"' Snap '"+parser['settings']['snapshotter_mode']+"'");
+   #   if(parser['settings']['ringbuffer_mode'] == "On"):
+      theDataStatus = theDataStatus + "Ringbuffer " + parser['settings']['ringbuffer_mode'] +";"
+      if(statusFT8 == 1):
+        theDataStatus = theDataStatus + "FT8 active; "
+      if(statusWSPR == 1):
+        theDataStatus = theDataStatus + "WSPR active; "
+      if(statusRG == 1):
+        theDataStatus = theDataStatus + "Ringbuffer active; "
+      if(statusSnap == 1):
+        theDataStatus = theDataStatus + "Snapshotter active; "
+        
+      if(statusFHR == 1):
+        theDataStatus = theDataStatus + "Firehose-R active"
 
       print("F: end of control loop; theStatus=", theStatus)
       form.destatus = theStatus
@@ -383,7 +421,7 @@ def sdr():
 
 @app.route("/restart") # restarts mainctl program
 def restart():
-   global theStatus, theDataStatus, tcp_client
+   global theStatus, theDataStatus, tcp_client, statusmain
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    print("F: restart")
@@ -414,6 +452,8 @@ def restart():
     # Establish connection to TCP server and exchange data
      print("F: *** WC: *** connect to socket, port ", server_port)
      tcp_client.connect((host_ip, server_port))
+     theStatus = "Active"
+     statusmain = 1;
    except Exception as e: 
      print(e)
      theStatus = "F: TCP connect to mainctl, Exception " + str(e)
@@ -487,58 +527,11 @@ def channelantennasetup():
    global theStatus, theDataStatus
    return render_template('channelantennasetup.html')
 
-#@app.route("/desetup1",methods=['POST','GET'])
-#def desetup1():
-#   print("hit desetup1; request.method=",request.method)
-#   global theStatus, theDataStatus
-#   form = ChannelControlForm()
-#   channellistform = ChannelListForm()
-
-#   form.chp_setting = [('0'),('0')]
-#   parser = configparser.ConfigParser(allow_no_value=True)
-#   parser.read('config.ini')
-#   ringbufferPath = parser['settings']['ringbuffer_path']
-#   theStatus = ""
-#   if request.method == 'GET':
-# temporary.   This list must be built based on DE report of available data rates
-#    rate =[('4000',4000),('8000',8000),('12000',12000),('24000',24000)]
-#    rate_list = []
-#    for r in range(3):
-#      rate_list.append(rate[r])
- #   print("rate_list=",rate_list)
- #   form.channelrate.choices = rate_list
-    
-  #  print("channellistform channels=",channellistform.channels)
-  #  return render_template('desetup1.html',
-#	  ringbufferPath = ringbufferPath,
-#      form = form, status = theStatus,
-#      channellistform = channellistform)
-
- #  if request.method == 'POST':
- #     result = request.form
- #     ringbufferPath = parser['settings']['ringbuffer_path']
- #     print("F: result=", result.get('csubmit'))
- #     if result.get('csubmit') == "Set no. of channels":
- #       channelcount = result.get('channelcount')
-#        channellistform.channels.min_entries = channelcount
-  #      print("set #channels to ",channelcount)
-  #      form.port_list = []
-  #      form.freq_list = []
-  #      form.rate_list = []       
-  #      for ch in range(int(channelcount)):
-  #        channelform = ChannelForm()
-  #        channelform.channel_freq = 0.0
-  #        channellistform.channels.append_entry(channelform)
-
-   #     print("return to desetup2")
-   #     return render_template('desetup2.html',
-#	      ringbufferPath = ringbufferPath, channelcount = channelcount,
- #         form = form, status = theStatus,
- #         channellistform = channellistform)
 
 @app.route("/desetup",methods=['POST','GET'])
 def desetup():
    global theStatus, theDataStatus
+   global statusFT8, statusWSPR, statusRG, statusSnap, statusFHR
    print("hit desetup2; request.method=",request.method)
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
@@ -654,7 +647,7 @@ def desetup():
 
    if result.get('csubmit') == "Save Changes":
      statusCheck = True
-     theStatus = "ERROR-"
+  #   theStatus = "ERROR-"
      channelcount = result.get('channelcount')
      channelrate = result.get('channelrate')
      maxringbufsize = result.get('maxRingbufsize')
@@ -669,7 +662,8 @@ def desetup():
 
      rgPathExists = os.path.isdir(result.get('ringbufferPath'))
      print("path / directory existence check: ", rgPathExists)
-   
+     if (statusRG == 1 or statusFHR == 1 or statusSnap == 1 ):
+       dataCollStatus = 1
      if rgPathExists == False:
       theStatus = "Ringbuffer path invalid or not a directory. "
       statusCheck = False
@@ -704,8 +698,6 @@ def desetup():
        parser.write(fp)
        fp.close()
    
-
-
 
      channellistform = ChannelListForm()
      channelcount = parser['channels']['numChannels']
@@ -924,14 +916,17 @@ def notification():
       smtppw = smtppw, status = theStatus)
 
 
-
+# configuration of FT8 subchannels
 @app.route("/propagation",methods=['POST','GET'])
 def propagation():   
    global theStatus, theDataStatus
+   global statusFT8, statusWSPR, statusRG, statusSnap, statusFHR
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    psk = False
+   if(statusFT8 == 1 or statusWSPR == 1):
+     form.status = "Propagation monitoring is active"
    if request.method == 'GET':
      form.antennaport0.data =     parser['settings']['ftant0']
      form.antennaport1.data =     parser['settings']['ftant1']
@@ -969,6 +964,9 @@ def propagation():
        print("F: CANCEL")
      else:
        print("F: POST ringbufferPath =", result.get('ringbufferPath'))
+       if(statusFT8 == 1 or statusWSPR == 1):
+         form.status = "ERROR. Stop FT8/WSPR before changing these settings."
+         return render_template('ft8setup.html', form = form)
        parser.set('settings', 'ftant0',            form.antennaport0.data)
        parser.set('settings', 'ft80f',             form.ft80f.data)
        parser.set('settings', 'ftant1',            form.antennaport1.data)
@@ -1017,14 +1015,17 @@ def propagation():
       form = form
       )
 
-
+# configure WSPR settings
 @app.route("/propagation2",methods=['POST','GET'])
 def propagation2():
    global theStatus, theDataStatus
+   global statusFT8, statusWSPR, statusRG, statusSnap, statusFHR
    form = ChannelControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    psk = False
+   if(statusFT8 == 1 or statusWSPR == 1):
+     form.status = "Propagation monitoring is active"
    if request.method == 'GET':
      form.antennaport0.data =     parser['settings']['wsant0']
      form.antennaport1.data =     parser['settings']['wsant1']
@@ -1062,7 +1063,9 @@ def propagation2():
      if result.get('csubmit') == "Discard Changes":
        print("F: CANCEL")
      else:
-
+       if(statusFT8 == 1 or statusWSPR == 1):
+         form.status = "ERROR. Stop FT8/WSPR before changing these settings."
+         return render_template('wsprsetup.html', form = form)
        parser.set('settings', 'wsant0',            form.antennaport0.data)
        parser.set('settings', 'ws0f',              form.ws0f.data)
        parser.set('settings', 'wsant1',            form.antennaport1.data)
@@ -1112,13 +1115,12 @@ def propagation2():
       )
 
 
-
-
-
 # The following is called by a java script in tangerine.html for showing the
 # most recent number of FT8 spots by band
+
 @app.route('/_ft8list')
 def ft8list():
+# print("ft8list")
   ft8string = ""
   band = []
  # print("Entering _/ft8list")
@@ -1136,25 +1138,32 @@ def ft8list():
     for fno in range(len(band)):
 # TODO: following needs to come from configuration
      fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
-  #   print("checking file",fname)
+    # print("checking file",fname)
+     dm = time.ctime(os.path.getmtime(fname))
+   #  dm = "d"
      f = open(fname,"r")
-    # print("ft8list" + len(f.readlines()))
+   #  print("file opened")
+   #  print("ft8list" + str(len(f.readlines())) )
+    # print("ft8 readlines")
      plist.append(len(f.readlines()))
- #    print(plist)
+    # print("append done")
+    # print(plist)
      f.close()
       
 # here we build a JSON string to populate the FT8 panel
     ft8string = '{'
-    ft8string = ft8string + '"0":"MHz  spots",'
+    ft8string = ft8string + '"0":"MHz  spots ' + dm + '",'
+ #   print('ft8str',ft8string)
     for i in range(len(band)):
      pval = str(plist[i])
      ft8string = ft8string + '"' + str(i+1) + '":"' +  \
        str(band[i]) + ' - ' + pval + ' ",'
 
     ft8string = ft8string + '"end":" "}'
-  #  print("ft8string= " , ft8string)
+   # print("ft8string= " , ft8string)
   except Exception as ex:
-   # print(ex)
+    print("F: exception trying to build JSON FT8 list")
+    print(ex)
 # no-op
     z=1
 

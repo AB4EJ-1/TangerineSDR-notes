@@ -229,6 +229,7 @@ int main() {
        if((gmt = gmtime(&t)) == NULL)
           { fprintf(stderr,"Could not convert time\n"); }
         strftime(date, 12, "%y%m%d_%H%M", gmt);
+        idialfreq = dialfreq[streamID] / 1000000;  // get the integer part of the frequency in MHz for use in the file name
         sprintf(name[streamID], "%s/FT8/ft8_%i_%i_%d_%s.c2", pathToRAMdisk, streamID, idialfreq,1,date); 
 
        printf("create raw data FT8 file %s\n",name[streamID]);
@@ -236,7 +237,7 @@ int main() {
          { fprintf(stderr,"Could not open file %s \n",name[streamID]);
           return -1;
          }
-       double dialfreq1 = dialfreq[streamID-1];  // streamIDs start with 1, list with 0 (TODO: may change with TangerineDE)
+       double dialfreq1 = dialfreq[streamID];  // streamIDs start with 1, list with 0 (TODO: may change with TangerineDE)
        fwrite(&dialfreq1, 1, sizeof(dialfreq1), fp[streamID]);
        }
   // when we drop thru to here, we are ready to start recording data
@@ -275,7 +276,7 @@ int main() {
  
            int ret = system(mycmd);
            // Format of the upload file:   see https://pskreporter.info/pskdev.html
-           sprintf(mycmd,"./ft8d_del %s > %s/FT8/decoded%i.txt",name[streamID],pathToRAMdisk,streamID);
+           sprintf(mycmd,"nice -n11 ./ft8d_del %s > %s/FT8/decoded%i.txt",name[streamID],pathToRAMdisk,streamID);
            printf("issue command: %s\n",mycmd);
            // Note: this assumes that decoder (ft8d_del) deletes work file when done.
            ret = system(mycmd);
@@ -283,7 +284,7 @@ int main() {
            if(upload == 1)
              {
              printf("Upload to PSKReporter\n");
-             sprintf(mycmd,"./mainctl/upload-to-pskreporter %s %s %s %s/FT8/decoded%d.txt", 
+             sprintf(mycmd,"nice -n9 ./mainctl/upload-to-pskreporter %s %s %s %s/FT8/decoded%d.txt", 
                 mycallsign, mygrid, myantenna0, pathToRAMdisk, streamID);
              printf("Issue command: %s\n",mycmd);
              ret = system(mycmd);
