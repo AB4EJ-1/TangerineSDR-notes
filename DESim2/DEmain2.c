@@ -64,12 +64,14 @@ static struct flexDataBuf iqbuffer2;
 static struct VITAdataBuf iqbuffer2_in;
 static struct VITAdataBuf iqbuffer2_out;
 static struct VITAdataBuf ft8buffer_out[4];
+static struct VITAdataBuf wsprbuffer_out[8];
 
 static int LH_port;
 static int LH_IP;
 //static char[15];
 struct sockaddr_in client_addr;
 struct sockaddr_in client_addr2;
+struct sockaddr_in client_addr3;
 struct sockaddr_in server_addr;
 struct sockaddr_in config_in_addr;
 struct sockaddr_in portF_addr;
@@ -83,6 +85,8 @@ int sock1;
 int sock3;
 int sock5;
 int sock6;
+int sock7;
+
 //static int sock4;
 long cmdthreadID;
 static int CCport;
@@ -93,6 +97,7 @@ int stopDataColl;
 int stopft8;
 int stopwspr;
 int ft8active;
+int wspractive;
 int config_busy;
 int noOfChannels;
 int dataRate;  // rate at which activated channel runs
@@ -112,13 +117,13 @@ union {
     } cb ;
 
 
-
 static uint16_t LH_CONF_IN_port[3];  // port C, receives ACK or NAK from config request
 static uint16_t LH_CONF_OUT_port[3]; // for sending (outbound) config request to DE
 //static uint16_t DE_CONF_IN_portB;  // port B ; DE listens for CC on this port
 static uint16_t LH_DATA_IN_port[3];  // port F; LH listens for spectrum data on this port
 static uint16_t DE_CH_IN_port[3] = {50001,50002,50003};    // port D; DE listens channel setup on this port
 static uint16_t LH_DATA_OUT_port ; // for sending (outbound) data (e.g., mic audio) to DE (unused)
+
 
 /////////////////////////////////////////////////////////////////////
 void *sendFT8flex(void * threadid){
@@ -250,17 +255,18 @@ void *sendFT8flex(void * threadid){
 
 /////////////////////////////////////////////////////////////////////
 void *sendwsprflex(void * threadid){
-  int sock4;
+
+  struct flexDataBuf iqbuffer3;
   fd_set readfd;
   int count;
   int streamNo = 0;
-  ft8active = 1;
-  printf("in Flex wspr thread; init sock4\n");
-  sock4 = socket(AF_INET, SOCK_DGRAM, 0);  // for receiving IQ packets from FlexRadio (FT8)
+  wspractive = 1;
+  printf("in Flex wspr thread; init sock7\n");
+  sock7 = socket(AF_INET, SOCK_DGRAM, 0);  // for receiving IQ packets from FlexRadio (for WSPR)
 
-  printf("after wspr socket assign, wspr sock4= %i\n",sock4);
-  if(sock4 < 0) {
-    printf("sock4 error\n");
+  printf("after wspr socket assign, wspr sock7= %i\n",sock7);
+  if(sock7 < 0) {
+    printf("sock7 error\n");
     int r=-1;
     int *ptoi;
     ptoi = &r;
@@ -268,22 +274,22 @@ void *sendwsprflex(void * threadid){
     }
 
   int yes = 1;  // make socket re-usable
-  if(setsockopt(sock4, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
-   printf("sock4: Error setting sock option SO_REUSEADDR\n");
+  if(setsockopt(sock7, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+   printf("sock7: Error setting sock option SO_REUSEADDR\n");
     int r=-1;
     int *ptoi;
     ptoi = &r;
     return (ptoi);
    }
 
-  printf("sock4 created\n");
+  printf("sock7 created\n");
   int addr_len = sizeof(struct sockaddr_in);
   memset((void*)&flex_addr, 0, addr_len);
   flex_addr.sin_family = AF_INET;
   flex_addr.sin_addr.s_addr = htons(INADDR_ANY);
   flex_addr.sin_port = htons(FLEXWSPR_IN);
-  printf("bind sock4\n:");
-  int ret = bind(sock4, (struct sockaddr*)&flex_addr, addr_len);
+  printf("bind sock7\n:");
+  int ret = bind(sock7, (struct sockaddr*)&flex_addr, addr_len);
   if (ret < 0){
     printf("bind error\n");
     int r=-1;
@@ -292,13 +298,13 @@ void *sendwsprflex(void * threadid){
     return (ptoi);
      }
   FD_ZERO(&readfd);
-  FD_SET(sock4, &readfd);
-  printf("in flex FT8 thread read from port %i\n",FLEXFT_IN);
+  FD_SET(sock7, &readfd);
+  printf("in flex wspr thread read from port %i\n",FLEXWSPR_IN);
  // client_addr.sin_port = htons(LH_DATA_IN_port);
 // temporary hard code for ft8 port testing
-  client_addr2.sin_family = AF_INET;
-  client_addr2.sin_addr.s_addr = client_addr.sin_addr.s_addr;
-  client_addr2.sin_port = htons(LH_DATA_IN_port[2]);  // hard code to use Channel 2
+  client_addr3.sin_family = AF_INET;
+  client_addr3.sin_addr.s_addr = client_addr.sin_addr.s_addr;
+  client_addr3.sin_port = htons(LH_DATA_IN_port[2]);  // hard code to use Channel 2
  ret = 1;
 
 // note that this clears all copies of ft8buffer_out
@@ -316,50 +322,52 @@ void *sendwsprflex(void * threadid){
 
  while(1==1) {  // repeating loop
 
-   if(stopft8)
+   if(stopwspr == 1)
 	 {
-     puts("UDP thread end; close sock4");
+     puts("stopwspr flag set; UDP thread end; close sock7");
      ft8active = 0;
-     close(sock4);
+     close(sock7);
 	 pthread_exit(NULL);
 	 }
 
  // if(ret > 0){
-  // if (FD_ISSET(sock4, &readfd)){
+  // if (FD_ISSET(sock7, &readfd)){
   //  printf("try read\n");
-    count = recvfrom(sock4, &iqbuffer2, sizeof(iqbuffer2),0, (struct sockaddr*)&flex_addr, &addr_len);
-
-    streamNo = (int16_t)iqbuffer2.stream_ID[3];
+ //   printf("read from sock7\n");
+    count = recvfrom(sock7, &iqbuffer3, sizeof(iqbuffer3),0, (struct sockaddr*)&flex_addr, &addr_len);
+   // printf("got %i bytes from sock7\n",count);
+    streamNo = (int16_t)iqbuffer3.stream_ID[3];
  
-// build ft8buffer header
+// build wsprbuffer header
 
-   memcpy(ft8buffer_out[streamNo].VITA_hdr1, iqbuffer2.VITA_hdr1,sizeof(iqbuffer2.VITA_hdr1));
-   ft8buffer_out[streamNo].stream_ID[0] = 0x46;    // F
-   ft8buffer_out[streamNo].stream_ID[1] = 0x54;    // T
-   ft8buffer_out[streamNo].stream_ID[2] = iqbuffer2.stream_ID[2]; // copy from input
-   ft8buffer_out[streamNo].stream_ID[3] = iqbuffer2.stream_ID[3]; // copy from input
-   ft8buffer_out[streamNo].VITA_packetsize = sizeof(ft8buffer_out[0]);
-   ft8buffer_out[streamNo].time_stamp = (uint32_t)time(NULL);
-   ft8buffer_out[streamNo].sample_count = totaloutputbuffercount[streamNo];
+   memcpy(wsprbuffer_out[streamNo].VITA_hdr1, iqbuffer3.VITA_hdr1,sizeof(iqbuffer3.VITA_hdr1));
+   wsprbuffer_out[streamNo].stream_ID[0] = 0x57;    // W
+   wsprbuffer_out[streamNo].stream_ID[1] = 0x53;    // S
+   wsprbuffer_out[streamNo].stream_ID[2] = iqbuffer3.stream_ID[2]; // copy from input
+   wsprbuffer_out[streamNo].stream_ID[3] = iqbuffer3.stream_ID[3]; // copy from input
+   wsprbuffer_out[streamNo].VITA_packetsize = sizeof(wsprbuffer_out[0]);
+   wsprbuffer_out[streamNo].time_stamp = (uint32_t)time(NULL);
+   wsprbuffer_out[streamNo].sample_count = totaloutputbuffercount[streamNo];
 
   for(int inputbuffercount =0; inputbuffercount < 512; inputbuffercount++)
    {
    totalinputsamplecount[streamNo]++;  // goes to zero on first buffer
    if((totalinputsamplecount[streamNo] % 128) != 0)  // crummy decimation; TODO: correct this
      continue;
-   // inputbuffercount is multiple of 12 (or zero); save it
+   // inputbuffercount is multiple of 128 (or zero); save it
    
-   ft8buffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].I_val = iqbuffer2.flexDataSample[inputbuffercount].I_val;
-   ft8buffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].Q_val = iqbuffer2.flexDataSample[inputbuffercount].Q_val;
+   wsprbuffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].I_val = iqbuffer3.flexDataSample[inputbuffercount].I_val;
+   wsprbuffer_out[streamNo].theDataSample[outputbuffercount[streamNo]].Q_val = iqbuffer3.flexDataSample[inputbuffercount].Q_val;
 
     outputbuffercount[streamNo]++;
 
     if(outputbuffercount[streamNo] >= 1024)  // have we filled the output buffer?
      {
-      printf("wspr: try to send, streamNo = %i \n",streamNo);
+      printf("wspr: try to send to port %i, streamNo = %i \n",LH_DATA_IN_port[2],streamNo);
 
-      int sentBytes = sendto(sockwsprout, (const struct dataBuf *)&ft8buffer_out[streamNo], sizeof(ft8buffer_out[0]), 0, 
-	      (struct sockaddr*)&client_addr2, sizeof(client_addr2));
+      int sentBytes = sendto(sockwsprout, (const struct dataBuf *)&wsprbuffer_out[streamNo], sizeof(wsprbuffer_out[0]), 0, 
+	      (struct sockaddr*)&client_addr3, sizeof(client_addr3));
+      printf("#bytes sent: %i\n",sentBytes);
        outputbuffercount[streamNo] = 0;
        totaloutputbuffercount[streamNo] ++;
    //    printf("sent bytes %i\n",sentBytes);
@@ -801,8 +809,34 @@ void *handleCommands(void* c)
 
     if(memcmp(cmdBuf.cmd, STOP_DATA_COLL,2)==0  && channelNo == 1)
       {
-      printf("* * * * STOP DATA COLL received * * * *\n");
+      printf("* * * * STOP DATA COLL (FT8) received * * * *\n");
       stopft8 = 1;
+
+      client_addr.sin_port = htons(LH_CONF_IN_port[channelNo] ); 
+      count = 0;
+      count = sendto(sock1, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("Response AK = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port[channelNo]) ;
+      continue;
+      }
+
+    if ( (memcmp(cmdBuf.cmd, "SC",2)==0) && channelNo == 2)  // 
+     {
+      printf("Start FlexRadio / WSPR command received; starting thread\n");
+      stopwspr = 0;
+      pthread_t thread1;
+      int rc = pthread_create(&thread1, NULL, sendwsprflex, NULL);
+      printf("thread start rc = %d\n",rc);
+      client_addr.sin_port = htons(LH_CONF_IN_port[channelNo] ); 
+      count = 0;
+      count = sendto(sock1, "AK", 2, 0, (struct sockaddr*)&client_addr, addr_len);
+      printf("Response AK = %u bytes sent to LH port %u \n ",count, LH_CONF_IN_port[channelNo]) ;
+      continue;
+     }
+
+    if(memcmp(cmdBuf.cmd, STOP_DATA_COLL,2)==0  && channelNo == 2)
+      {
+      printf("* * * * STOP DATA COLL (WSPR)received * * * *\n");
+      stopwspr = 1;
 
       client_addr.sin_port = htons(LH_CONF_IN_port[channelNo] ); 
       count = 0;
@@ -1343,6 +1377,7 @@ printf("I think it is: %c %c \n",bufstr[0],bufstr[1]);
       continue;
      }
 
+/*
 printf("check for XW \n");
     if(memcmp(bufstr, "XW",2)==0)
       {
@@ -1350,6 +1385,7 @@ printf("check for XW \n");
       stopwspr = 1;
       continue;
       }
+*/
 
 
 
