@@ -373,6 +373,7 @@ def sdr():
             send_to_mainctl(STOP_DATA_COLL,0.5)
             dataCollStatus = 0
             statusRG = 0
+            statusSnap = 0
 
       if(form.startprop.data):  # user hit button to start propagation monitoring
 
