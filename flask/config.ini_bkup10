@@ -7,8 +7,8 @@ latitude = -37.123
 longitude = 87.432
 elevation = 100
 test_value = T123
-antenna0 = Hexbeam_on_50'_tower
-antenna1 = 80m_dipole_at_10'
+antenna0 = Hexbeam
+antenna1 = 80m_dipole
 
 [settings]
 mode = ringbuffer

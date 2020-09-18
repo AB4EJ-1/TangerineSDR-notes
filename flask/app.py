@@ -494,28 +494,42 @@ def chkstat():
 @app.route("/config",methods=['POST','GET'])
 def config():
    global theStatus, theDataStatus
+   form = MainControlForm()
    parser = configparser.ConfigParser(allow_no_value=True)
    parser.read('config.ini')
    if request.method == 'POST':
      result = request.form
      print("F: result of config post =")
-     print(result.get('theToken'))
+     print(result.get('theGrid'))
      parser.set('profile', 'token_value', result.get('theToken'))
      parser.set('profile', 'latitude',    result.get('theLatitude'))
      parser.set('profile', 'longitude',   result.get('theLongitude'))
      parser.set('profile', 'elevation',   result.get('theElevation'))
+     parser.set('profile','node',         result.get('theNode'))
+     parser.set('profile','callsign',     result.get('theCall'))
+     parser.set('profile','grid',         result.get('theGrid'))
+     parser.set('profile','antenna0',     result.get('antenna1'))
+     parser.set('profile','antenna1',     result.get('antenna2'))
      
      fp = open('config.ini','w')
      parser.write(fp)
      fp.close()
 
+   parser.read('config.ini')
    theToken =     parser['profile']['token_value']
    theLatitude =  parser['profile']['latitude']
    theLongitude = parser['profile']['longitude']
    theElevation = parser['profile']['elevation']
+   theNode =      parser['profile']['node']
+   theCall =      parser['profile']['callsign']
+   theGrid =      parser['profile']['grid']
+   antenna1 =     parser['profile']['antenna0']
+   antenna2 =     parser['profile']['antenna1']
    print("F: token = " + theToken)
    return render_template('config.html', theToken = theToken,
      theLatitude = theLatitude, theLongitude = theLongitude,
+     theNode = theNode, theCall = theCall, theGrid = theGrid,
+     antenna1 = antenna1, antenna2 = antenna2, form=form,
      theElevation = theElevation )
 
 @app.route("/clocksetup", methods = ['POST','GET'])
@@ -1137,8 +1151,9 @@ def ft8list():
   try:
     plist = []
     for fno in range(len(band)):
-# TODO: following needs to come from configuration
-     fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
+
+ #    fname = '/mnt/RAM_disk/FT8/decoded' + str(fno) +'.txt'
+     fname = parser['settings']['ramdisk_path'] + "/FT8/decoded"  + str(fno) +'.txt'
     # print("checking file",fname)
      dm = time.ctime(os.path.getmtime(fname))
    #  dm = "d"

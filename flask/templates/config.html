@@ -25,17 +25,23 @@
 	<td>
 	</td>
 	   <td class="bgtangerine" width="10%" valign="top" align="left">
-      <form action = "http://localhost:5000/config" method = "POST">
-         <p>Security Token <input type = "text" name = "theToken" value = {{ theToken }} /></p>
-         <p>Station Latitude <input type = "text" name = "theLatitude" value = {{ theLatitude }} /></p>
-         <p>Station Longitude <input type = "text" name = "theLongitude" value = {{ theLongitude }} /></p>
-         <p>Station Elevation (meters) <input type = "text" name = "theElevation" value = {{ theElevation }} /></p>
-		 <p class="links"><b><a href="/desetup">Data Engine Setup</a></b></p>
-		 <p class="links"><b><a href="/throttle">Set up Throttling of Upload Data</a></b></p>
-		 <p class="links"><b><a href="/callsign">Callsign Monitor</a></b></p>
-		 <p class="links"><b><a href="/index.html">Set up/Test Magnetometer</a></b></p>
-         <p><input type = "submit" name = "csubmit" value = "Save" /></p>
-         <p><input type = "submit" name = "csubmit"  value = "Discard Changes" /></p>
+       
+      <form action = "http://localhost:5000/config" method = "POST"> {{ form.hidden_tag() }} 
+         Node# <input type = "text" name = "theNode" value = {{ theNode }} />&nbsp;(6 characters; get from Central Control System) <br>
+            Callsign <input type = "text" name = "theCall" value = {{ theCall }} />&nbsp; (if you don't have a callsign, put SWL here) <br>
+            Grid <input type = "text" name = "theGrid" value = {{ theGrid }} /> &nbsp; (6 characters preferred)<br>
+         Security Token <input type = "text" name = "theToken" value = {{ theToken }} />&nbsp;(get from Central Control System)<br>
+         Station Latitude <input type = "text" name = "theLatitude" value = {{ theLatitude }} /><br>
+         Station Longitude <input type = "text" name = "theLongitude" value = {{ theLongitude }} /><br>
+         Station Elevation (meters) <input type = "text" name = "theElevation" value = {{ theElevation }} /><br>
+         Antenna 1<input type = "text" name = "antenna1" value = {{ antenna1 }} />&nbsp; (for_space_use_underscore_here)<br>
+         Antenna 2<input type = "text" name = "antenna2" value = {{ antenna2 }} />&nbsp; (for_space_use_underscore_here)<br>
+		 <p class="links"><b><a href="/desetup">Data Engine Setup</a></b><br>
+		 <p class="links"><b><a href="/throttle">Set up Throttling of Upload Data</a></b><br>
+		 <p class="links"><b><a href="/callsign">Callsign Monitor</a></b><br>
+		 <p class="links"><b><a href="/index.html">Set up/Test Magnetometer</a></b><br>
+         <p><input type = "submit" name = "csubmit" value = "Save" /><br>
+         <p><input type = "submit" name = "csubmit"  value = "Discard Changes" /><br>
     </form>
            </td>
   </tbody>
